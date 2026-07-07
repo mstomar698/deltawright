@@ -9,12 +9,15 @@ const SETTLE: SettleOptions = { quietMs: 60, maxWaitMs: 1000, animMaxMs: 200 };
 
 async function armMutateCollect(
   page: import('@playwright/test').Page,
-  mutate: () => void
+  mutate: () => void,
 ): Promise<CollectResult> {
   await page.evaluate(() => window.__deltawright!.arm());
   await page.evaluate(mutate);
   await page.evaluate((o) => window.__deltawright!.waitForSettle(o), SETTLE);
-  return page.evaluate<CollectResult, SettleOptions>((o) => window.__deltawright!.collect(o), SETTLE);
+  return page.evaluate<CollectResult, SettleOptions>(
+    (o) => window.__deltawright!.collect(o),
+    SETTLE,
+  );
 }
 
 test.beforeEach(async ({ page }) => {
@@ -32,7 +35,9 @@ test('add-then-remove within the window nets to nothing', async ({ page }) => {
   expect(res.nodes).toHaveLength(0);
 });
 
-test('an added subtree is reported as one ROOT plus its interactive descendants', async ({ page }) => {
+test('an added subtree is reported as one ROOT plus its interactive descendants', async ({
+  page,
+}) => {
   const res = await armMutateCollect(page, () => {
     const card = document.createElement('div');
     card.className = 'card';
@@ -52,7 +57,9 @@ test('an added subtree is reported as one ROOT plus its interactive descendants'
   expect(button?.name).toBe('Go');
 });
 
-test('attribute churn on a surviving element coalesces to one attrChanged node', async ({ page }) => {
+test('attribute churn on a surviving element coalesces to one attrChanged node', async ({
+  page,
+}) => {
   const res = await armMutateCollect(page, () => {
     const root = document.getElementById('root')!;
     root.className = 'a';

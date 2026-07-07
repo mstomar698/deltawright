@@ -88,7 +88,7 @@ export function serialize(delta: Delta): string {
     lines.push(
       delta.stats.hitMaxWait
         ? '  (no changes captured before maxWait cap — SUSPECTED MISS; raise maxWaitMs)'
-        : '  (no DOM changes detected)'
+        : '  (no DOM changes detected)',
     );
   }
   return lines.join('\n');

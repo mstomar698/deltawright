@@ -15,7 +15,9 @@ test.beforeEach(async ({ page }) => {
   await page.goto(FIXTURE_URL);
 });
 
-test('case 1 (north-star): popup delta is tiny, correct, and fully ACTIONABLE', async ({ page }) => {
+test('case 1 (north-star): popup delta is tiny, correct, and fully ACTIONABLE', async ({
+  page,
+}) => {
   const delta = await actAndObserve(page, (p) => p.click('#open-popup'), {
     label: 'click "Open popup"',
   });

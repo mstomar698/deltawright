@@ -32,7 +32,7 @@ export const DEFAULT_SETTLE: SettleOptions = {
 export async function actAndObserve(
   page: Page,
   action: Action,
-  opts: ActAndObserveOptions = {}
+  opts: ActAndObserveOptions = {},
 ): Promise<Delta> {
   const settle: SettleOptions = {
     quietMs: opts.quietMs ?? DEFAULT_SETTLE.quietMs,
@@ -49,11 +49,11 @@ export async function actAndObserve(
 
   const settleResult = await page.evaluate<SettleResult, SettleOptions>(
     (o) => window.__deltawright!.waitForSettle(o),
-    settle
+    settle,
   );
   const collected = await page.evaluate<CollectResult, SettleOptions>(
     (o) => window.__deltawright!.collect(o),
-    settle
+    settle,
   );
 
   // Reconcile each changed node's actionability with Playwright. Serial to keep

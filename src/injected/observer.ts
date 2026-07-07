@@ -11,7 +11,14 @@
 // It knows NOTHING about Playwright actionability — that reconciliation happens in
 // the host. This file only produces the geometry-based half of the delta.
 
-import type { RawNode, GeometryRead, ChangeKind, SettleOptions, SettleResult, CollectResult } from '../host/types';
+import type {
+  RawNode,
+  GeometryRead,
+  ChangeKind,
+  SettleOptions,
+  SettleResult,
+  CollectResult,
+} from '../host/types';
 
 interface DeltawrightApi {
   arm(): void;
@@ -174,7 +181,7 @@ declare global {
     // transient and nets to nothing. (A removed subtree reports only its root in
     // removedNodes, so no ancestor reduction is needed here.)
     const removed = [...removedCand].filter(
-      (el) => !el.isConnected && firstTouch.get(el) === 'remove'
+      (el) => !el.isConnected && firstTouch.get(el) === 'remove',
     );
 
     // attr changes on surviving elements NOT inside a freshly added subtree, with a
@@ -255,7 +262,8 @@ declare global {
     const cs = getComputedStyle(el);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const inViewport = r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh;
+    const inViewport =
+      r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh;
 
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
@@ -303,7 +311,8 @@ declare global {
     for (const el of roots) {
       if (typeof el.getAnimations !== 'function') continue;
       for (const a of el.getAnimations({ subtree: true })) {
-        if (a.playState === 'running' || a.playState === 'paused' || (a as any).pending) anims.add(a);
+        if (a.playState === 'running' || a.playState === 'paused' || (a as any).pending)
+          anims.add(a);
       }
     }
     if (anims.size === 0) return 0;
