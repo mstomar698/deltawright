@@ -21,6 +21,13 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   label?: string;
   /** Timeout for each per-node Playwright trial-action probe. */
   trialTimeoutMs?: number;
+  /**
+   * Max concurrent actionability trial-probes. The reconciliation is O(nodes) and a
+   * NOT-actionable node pays the full trialTimeoutMs, so serial reconciliation is
+   * slow on many-node deltas. Running probes concurrently turns that sum into ~max.
+   * Each node still gets Playwright's full authoritative trial (verdict unchanged).
+   */
+  reconcileConcurrency?: number;
 }
 
 export const DEFAULT_SETTLE: SettleOptions = {
@@ -28,6 +35,27 @@ export const DEFAULT_SETTLE: SettleOptions = {
   maxWaitMs: 2000,
   animMaxMs: 1000,
 };
+
+export const DEFAULT_RECONCILE_CONCURRENCY = 12;
+
+/** Map with bounded concurrency, preserving input order in the result. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!, i);
+    }
+  };
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
 
 export async function actAndObserve(
   page: Page,
@@ -56,15 +84,18 @@ export async function actAndObserve(
     settle,
   );
 
-  // Reconcile each changed node's actionability with Playwright. Serial to keep
-  // the trial probes (which scroll-into-view) deterministic.
-  const nodes: DeltaNode[] = [];
-  for (const raw of collected.nodes) {
-    const actionability = await annotateActionability(page, raw, {
-      trialTimeoutMs: opts.trialTimeoutMs,
-    });
-    nodes.push({ ...raw, actionability });
-  }
+  // Reconcile each changed node's actionability with Playwright, bounded-concurrent
+  // so a delta with many NOT-actionable nodes doesn't pay N * trialTimeoutMs serially.
+  // Every node still receives its own full authoritative trial (verdict unchanged);
+  // only the wall-time collapses from sum toward max.
+  const nodes: DeltaNode[] = await mapWithConcurrency(
+    collected.nodes,
+    opts.reconcileConcurrency ?? DEFAULT_RECONCILE_CONCURRENCY,
+    (raw): Promise<DeltaNode> =>
+      annotateActionability(page, raw, { trialTimeoutMs: opts.trialTimeoutMs }).then(
+        (actionability) => ({ ...raw, actionability }),
+      ),
+  );
 
   return {
     action: opts.label ?? 'action',

@@ -23,6 +23,15 @@ All notable changes to this project are documented here. The format is based on
   info-parity), recall 30/30 and settle 0/30-capped on all interactions, and the O(nodes)
   actionability time cost is confirmed (hover-reveal controls pay the full trial timeout).
 
+### Changed
+
+- Actionability reconciliation is now **bounded-concurrent** instead of serial (#18):
+  each changed node still receives its full authoritative Playwright trial (verdicts
+  unchanged — the northstar cases and real-app recall 30/30 confirm), but probes run
+  concurrently, so a many-node delta no longer pays `N × trialTimeoutMs`. Measured: the
+  reconcile step ~8× faster on a 305-node delta (overall action 12.3 s → 3.4 s; the
+  remainder is the settle cap, #13). New option: `reconcileConcurrency` (default 12).
+
 ### Fixed
 
 - Pin the token encoding to `cl100k_base`: the `gpt-tokenizer` 3.x bump had silently
