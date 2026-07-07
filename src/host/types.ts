@@ -60,6 +60,8 @@ export interface DeltaStats {
   hitMaxWait: boolean;
   /** How many running animations we awaited before reading final geometry. */
   animationsAwaited: number;
+  /** Changed nodes dropped as background churn by causal attribution (#15). */
+  droppedBackground: number;
 }
 
 export interface RawDelta {
@@ -128,4 +130,17 @@ export interface CollectResult {
   nodes: RawNode[];
   rawRecords: number;
   animationsAwaited: number;
+  droppedBackground: number;
+}
+
+/**
+ * Pre-arm baseline sampling for causal attribution (#15): observe the page briefly
+ * before the action to learn which (element, channel) pairs are already churning, so
+ * that background is excluded from the delta rather than attributed to the action.
+ */
+export interface BaselineOptions {
+  /** Max time to sample the pre-action background footprint, ms. */
+  baselineMs: number;
+  /** If no mutation is seen within this long, the page is quiet — exit early, ms. */
+  earlyExitMs: number;
 }
