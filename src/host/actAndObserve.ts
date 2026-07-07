@@ -1,7 +1,14 @@
 import type { Page } from '@playwright/test';
 import { ensureInjected } from './inject';
 import { annotateActionability } from './actionability';
-import type { CollectResult, Delta, DeltaNode, SettleOptions, SettleResult } from './types';
+import type {
+  BaselineOptions,
+  CollectResult,
+  Delta,
+  DeltaNode,
+  SettleOptions,
+  SettleResult,
+} from './types';
 
 /**
  * The v0.1 core primitive. Perform ONE action and return a compact structured
@@ -28,6 +35,16 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
    * Each node still gets Playwright's full authoritative trial (verdict unchanged).
    */
   reconcileConcurrency?: number;
+  /**
+   * Causal attribution (#15): sample a short pre-action window to learn which
+   * (element, channel) pairs are already churning, and exclude that background churn
+   * from the delta. On by default; set `baseline: false` to disable. `baselineMs`
+   * caps the sample; it early-exits after `baselineEarlyExitMs` on a quiet page, so
+   * quiet pages pay little.
+   */
+  baseline?: boolean;
+  baselineMs?: number;
+  baselineEarlyExitMs?: number;
 }
 
 export const DEFAULT_SETTLE: SettleOptions = {
@@ -37,6 +54,8 @@ export const DEFAULT_SETTLE: SettleOptions = {
 };
 
 export const DEFAULT_RECONCILE_CONCURRENCY = 12;
+
+export const DEFAULT_BASELINE: BaselineOptions = { baselineMs: 150, earlyExitMs: 60 };
 
 /** Map with bounded concurrency, preserving input order in the result. */
 async function mapWithConcurrency<T, R>(
@@ -69,6 +88,20 @@ export async function actAndObserve(
   };
 
   await ensureInjected(page);
+
+  // Causal attribution (#15): learn the background footprint before arming (unless
+  // disabled). sampleBaseline early-exits on a quiet page, so this is cheap there.
+  if (opts.baseline !== false) {
+    const baseline: BaselineOptions = {
+      baselineMs: opts.baselineMs ?? DEFAULT_BASELINE.baselineMs,
+      earlyExitMs: opts.baselineEarlyExitMs ?? DEFAULT_BASELINE.earlyExitMs,
+    };
+    await page.evaluate<{ sampledMs: number; footprintSize: number }, BaselineOptions>(
+      (o) => window.__deltawright!.sampleBaseline(o),
+      baseline,
+    );
+  }
+
   await page.evaluate(() => window.__deltawright!.arm());
 
   // Perform the action through Playwright so we inherit its auto-wait +
@@ -105,6 +138,7 @@ export async function actAndObserve(
       settleMs: settleResult.settleMs,
       hitMaxWait: settleResult.hitMaxWait,
       animationsAwaited: collected.animationsAwaited,
+      droppedBackground: collected.droppedBackground,
     },
   };
 }

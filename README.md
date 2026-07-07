@@ -161,9 +161,13 @@ geometry and a pointer-actionability verdict — shown by cases 2–4.
 large-page token win *is* now measured (`npm run bench`,
 [findings](docs/summaries/v0.5-real-app-benchmark-findings.md)): the delta is **~1% of a
 full re-snapshot** on a large table, and **0.15–0.87× the before+after diff at information
-parity** — a real win. And the predicted weaknesses show up too: on a *live-updating* SPA,
-mutation noise leaks into the delta and settle never quiesces (both confirmed and quantified,
-feeding v0.5 issues #13/#15/#18). Still directional, not an admissible §10 verdict (#25).
+parity** — a real win. The predicted live-SPA weaknesses were confirmed and then **fixed**:
+robust settle (#13) stops the cap, causal attribution (#15) excludes background churn, and
+bounded-concurrent reconciliation (#18) removes the O(nodes) time cost. On a live, 300-cell
+churning page the delta is now **identical to a quiet page** — noise_ratio 76× → **1.0**,
+null-action false positives 301 → **0**, delta 8958 → **99 tokens**, i.e. ~1% of the
+before+after diff (which has no causal attribution). Still one framework / not the full §10
+verdict (#25).
 
 ## Deferred to v0.5
 

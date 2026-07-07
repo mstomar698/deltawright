@@ -25,6 +25,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Causal attribution / mutation-noise filtering** (#15, §6.2 "where the value is
+  earned"). Attribution moves from time-window-scoped to causal: a short pre-arm
+  **baseline** (default 150 ms, early-exits on a quiet page) learns which
+  `(element, channel)` pairs are already churning, and that background is excluded
+  from the delta. Channel-granular, so an action that changes a churning node's
+  *different* attribute is still kept; and it only excludes what churned *before* the
+  action, so a "select-all"-style change is kept. On the live-SPA benchmark this
+  collapses the noise: **noise_ratio 13.8/76.3 → 1.0**, **null-action false positives
+  51/301 → 0**, **large-noisy delta 8958 → 99 tokens** — the delta on a 300-cell
+  churning page is now identical to a quiet page (4 nodes), real change preserved
+  (captured 3/3). New options `baseline`/`baselineMs`/`baselineEarlyExitMs`; new stat
+  `droppedBackground`. Regression suite: `test/causal.spec.ts`. Residual (element-adding
+  background churn: toasts/virtualized lists) documented in the observer.
 - **Robust settle detection** (#13, retires DW-01): settle now resolves on **structural
   quiescence** — once an element add/remove is seen, it waits only for *structural* quiet,
   treating background ticker churn (attribute/text updates) as non-structural. So on a

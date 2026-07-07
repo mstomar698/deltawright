@@ -18,10 +18,12 @@ import type {
   SettleOptions,
   SettleResult,
   CollectResult,
+  BaselineOptions,
 } from '../host/types';
 
 interface DeltawrightApi {
   arm(): void;
+  sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
   waitForSettle(opts: SettleOptions): Promise<SettleResult>;
   collect(opts: SettleOptions): Promise<CollectResult>;
   reset(): void;
@@ -46,6 +48,14 @@ declare global {
   let lastStructuralAt: number | null = null;
   let sawStructural = false;
   let armStart = 0;
+
+  // Background footprint (#15, causal attribution): the (element -> channels) that
+  // were ALREADY churning before the action. Populated by sampleBaseline; consumed
+  // and cleared by collect. `bgText` = elements with recurring text churn; `bgAttr`
+  // = per-element set of attribute names with recurring churn. Excluding these keeps
+  // the delta to the action's effect instead of the whole live page.
+  let bgText = new Set<Element>();
+  let bgAttr = new Map<Element, Set<string>>();
 
   const isElement = (n: Node): n is Element => n.nodeType === 1;
   const isText = (n: Node): n is Text => n.nodeType === 3;
@@ -149,12 +159,67 @@ declare global {
     });
   }
 
+  // --- Baseline (causal attribution, #15) ----------------------------------
+  function noteBackground(m: MutationRecord): void {
+    if (m.type === 'attributes' && isElement(m.target)) {
+      const name = m.attributeName ?? '';
+      (bgAttr.get(m.target) ?? bgAttr.set(m.target, new Set<string>()).get(m.target)!).add(name);
+    } else if (m.type === 'characterData') {
+      const parent = (m.target as CharacterData).parentElement;
+      if (parent) bgText.add(parent);
+    } else if (m.type === 'childList' && isElement(m.target)) {
+      // textContent updates land as text-node childList churn on the parent element.
+      m.addedNodes.forEach((n) => {
+        if (isText(n) && n.parentElement) bgText.add(n.parentElement);
+      });
+      m.removedNodes.forEach((n) => {
+        if (isText(n)) bgText.add(m.target as Element);
+      });
+    }
+  }
+
+  // Observe the page briefly BEFORE the action to learn what is already churning, so
+  // background can be excluded from the delta. Early-exits on a quiet page so it adds
+  // little latency there. Never drops the action's real change: it only excludes
+  // (element, channel) pairs that were recurring before the action existed.
+  function sampleBaseline(
+    opts: BaselineOptions,
+  ): Promise<{ sampledMs: number; footprintSize: number }> {
+    bgText = new Set();
+    bgAttr = new Map();
+    return new Promise((resolve) => {
+      let sawAny = false;
+      const obs = new MutationObserver((muts) => {
+        sawAny = true;
+        for (const m of muts) noteBackground(m);
+      });
+      obs.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
+      const start = performance.now();
+      const check = () => {
+        const elapsed = performance.now() - start;
+        if ((!sawAny && elapsed >= opts.earlyExitMs) || elapsed >= opts.baselineMs) {
+          obs.disconnect();
+          resolve({ sampledMs: Math.round(elapsed), footprintSize: bgText.size + bgAttr.size });
+        } else {
+          setTimeout(check, 20);
+        }
+      };
+      check();
+    });
+  }
+
   // --- Coalescing ----------------------------------------------------------
   interface NetDelta {
     addedRoots: Element[];
     removed: Element[];
     attrChanged: Array<{ el: Element; attrs: string[] }>;
     textChanged: Element[];
+    droppedBackground: number;
   }
 
   function ancestorInSet(el: Element, set: Set<Element>): boolean {
@@ -223,19 +288,38 @@ declare global {
     // attr changes on surviving elements NOT inside a freshly added subtree, with a
     // net-compare: keep an attribute only if its current value differs from the
     // earliest observed oldValue (drops churn-to-original; skips our own stamp).
+    // Attributes already churning in the pre-arm baseline are dropped as background.
+    let droppedBackground = 0;
     const attrChanged: Array<{ el: Element; attrs: string[] }> = [];
     for (const [el, perEl] of attrOld) {
       if (!el.isConnected || inAddedSubtree(el)) continue;
+      const bg = bgAttr.get(el);
       const attrs: string[] = [];
       for (const [name, old] of perEl) {
         if (name === 'data-dw-ref') continue;
-        if (el.getAttribute(name) !== old) attrs.push(name);
+        if (el.getAttribute(name) === old) continue; // no net change
+        if (bg && bg.has(name)) {
+          droppedBackground++; // background attribute churn — not the action's effect
+          continue;
+        }
+        attrs.push(name);
       }
       if (attrs.length) attrChanged.push({ el, attrs });
     }
-    const textChanged = [...textCand].filter((el) => el.isConnected && !inAddedSubtree(el));
 
-    return { addedRoots, removed, attrChanged, textChanged };
+    // text changes on surviving elements, excluding elements already churning text in
+    // the pre-arm baseline (background).
+    const textChanged: Element[] = [];
+    for (const el of textCand) {
+      if (!el.isConnected || inAddedSubtree(el)) continue;
+      if (bgText.has(el)) {
+        droppedBackground++;
+        continue;
+      }
+      textChanged.push(el);
+    }
+
+    return { addedRoots, removed, attrChanged, textChanged, droppedBackground };
   }
 
   // --- Node classification & labeling -------------------------------------
@@ -422,10 +506,15 @@ declare global {
       return node;
     });
 
-    return { nodes, rawRecords, animationsAwaited };
+    // Consume the baseline footprint so a subsequent action without a fresh
+    // sampleBaseline starts clean (no stale background exclusions).
+    bgText = new Set();
+    bgAttr = new Map();
+
+    return { nodes, rawRecords, animationsAwaited, droppedBackground: net.droppedBackground };
   }
 
-  window.__deltawright = { arm, waitForSettle, collect, reset };
+  window.__deltawright = { arm, sampleBaseline, waitForSettle, collect, reset };
 })();
 
 // Ensure this file is treated as a module (for `import type` above) without
