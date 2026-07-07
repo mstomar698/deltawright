@@ -3,5 +3,10 @@ import { resolve, dirname } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+export const fixtureUrl = (name: string) => pathToFileURL(resolve(here, 'fixtures', name)).href;
+
 /** file:// URL of the controlled north-star fixture. */
-export const FIXTURE_URL = pathToFileURL(resolve(here, 'fixtures/northstar.html')).href;
+export const FIXTURE_URL = fixtureUrl('northstar.html');
+
+/** file:// URL of the live-ticking-page settle fixture. */
+export const LIVE_FIXTURE_URL = fixtureUrl('livepage.html');

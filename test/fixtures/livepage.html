@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright live-page settle fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #rows { margin-top: 12px; }
+    .row { font-size: 12px; }
+    .dialog {
+      position: fixed; left: 320px; top: 160px; width: 320px; padding: 16px;
+      background: #fff; border: 1px solid #333; border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+    .dialog button { font-size: 15px; padding: 6px 12px; }
+  </style>
+</head>
+<body>
+  <h1>Live page</h1>
+  <p>A background ticker mutates the DOM every 60&nbsp;ms, so it never goes quiet.</p>
+  <div class="controls">
+    <button id="open-delayed">Open (delayed insert)</button>
+    <button id="open-instant">Open (instant insert)</button>
+  </div>
+  <div id="log">tick 0</div>
+  <div id="rows"></div>
+
+  <script>
+    // Build 20 rows with a "live" cell the ticker updates continuously.
+    const rows = document.getElementById('rows');
+    for (let i = 0; i < 20; i++) {
+      const d = document.createElement('div');
+      d.className = 'row';
+      d.innerHTML = 'row ' + i + ': <span class="live" data-i="' + i + '">0</span>';
+      rows.appendChild(d);
+    }
+
+    // The background ticker: real, continuous DOM churn (never quiets for 120 ms).
+    let tick = 0;
+    const live = document.querySelectorAll('.live');
+    setInterval(() => {
+      tick++;
+      document.getElementById('log').textContent = 'tick ' + tick;
+      live.forEach((el, i) => {
+        el.textContent = String((tick * 7 + i) % 1000);
+      });
+    }, 60);
+
+    function makeDialog() {
+      const dlg = document.createElement('div');
+      dlg.className = 'dialog';
+      dlg.setAttribute('role', 'dialog');
+      dlg.setAttribute('aria-label', 'Live dialog');
+      dlg.innerHTML = '<p>Appeared on a live, churning page.</p><button class="ok">OK</button>';
+      return dlg;
+    }
+
+    // The action's real effect appears after a delay, WHILE the ticker keeps firing.
+    document.getElementById('open-delayed').addEventListener('click', () => {
+      setTimeout(() => document.body.appendChild(makeDialog()), 150);
+    });
+
+    // Variant: the effect appears immediately (still on a live page).
+    document.getElementById('open-instant').addEventListener('click', () => {
+      document.body.appendChild(makeDialog());
+    });
+  </script>
+</body>
+</html>

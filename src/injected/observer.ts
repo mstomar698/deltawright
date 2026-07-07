@@ -3,7 +3,7 @@
 //
 // Responsibilities (the "arm -> settle -> collect" side that must live in the page):
 //   - arm():          start ONE MutationObserver, buffering raw records.
-//   - waitForSettle(): the v0.1 settle heuristic (quiescence, tunable). SEE NOTE.
+//   - waitForSettle(): the settle heuristic (structural quiescence, tunable). SEE NOTE.
 //   - collect():      stop, coalesce records into a net set of changed elements,
 //                     wait for animations so geometry is final, then read
 //                     geometry + elementFromPoint for each and stamp data-dw-ref.
@@ -40,16 +40,35 @@ declare global {
   let records: MutationRecord[] = [];
   let firstMutationAt: number | null = null;
   let lastMutationAt: number | null = null;
+  // Structural = a childList mutation that adds/removes ELEMENT nodes. Background
+  // churn (attribute changes + text-node updates) is NOT structural, so tracking
+  // structural quiescence lets settle resolve on a live-ticking page (#13).
+  let lastStructuralAt: number | null = null;
+  let sawStructural = false;
   let armStart = 0;
 
   const isElement = (n: Node): n is Element => n.nodeType === 1;
   const isText = (n: Node): n is Text => n.nodeType === 3;
 
+  const listHasElement = (list: NodeList): boolean => {
+    for (const n of list) if (n.nodeType === 1) return true;
+    return false;
+  };
+
   function onMutations(muts: MutationRecord[]): void {
     const now = performance.now();
     if (firstMutationAt === null) firstMutationAt = now;
     lastMutationAt = now;
-    for (const m of muts) records.push(m);
+    for (const m of muts) {
+      records.push(m);
+      if (
+        m.type === 'childList' &&
+        (listHasElement(m.addedNodes) || listHasElement(m.removedNodes))
+      ) {
+        lastStructuralAt = now;
+        sawStructural = true;
+      }
+    }
   }
 
   function arm(): void {
@@ -78,6 +97,8 @@ declare global {
     records = [];
     firstMutationAt = null;
     lastMutationAt = null;
+    lastStructuralAt = null;
+    sawStructural = false;
   }
 
   function stop(): void {
@@ -89,22 +110,37 @@ declare global {
     }
   }
 
-  // --- Settle detection (v0.1) --------------------------------------------
-  // HEURISTIC, intentionally simple and tunable. This is the #1 thing to harden
-  // in v0.5. Rule: resolve when we've seen at least one mutation AND the DOM has
-  // been quiet for `quietMs`, OR when `maxWaitMs` elapses. `lastMutationAt`
-  // starts null so "no mutations yet" NEVER counts as settled — that defeats the
-  // delayed-insert trap (click -> silence -> insert-after-timeout).
+  // --- Settle detection (v0.5) --------------------------------------------
+  // LABELED, TUNABLE heuristic (design-watch DW-01). Two quiescence signals:
+  //   - STRUCTURAL quiescence: once a structural change (element add/remove) is seen,
+  //     wait until no NEW structural change for `quietMs`. Background ticker churn
+  //     (attribute/text) is not structural, so this resolves promptly on a LIVE page
+  //     and still waits through a delayed insert (the insert IS the structural signal).
+  //   - ANY quiescence: the DOM is fully quiet for `quietMs` (the quiet-page path). It
+  //     never fires on a continuously-churning page, so it cannot settle early there.
+  // Resolve on either, or at the `maxWaitMs` cap. `*At` start null so "nothing yet"
+  // never counts as settled (defeats the delayed-insert trap).
+  //
+  // Known residuals (→ #15 causal attribution): (1) a purely non-structural
+  // (attribute/text-only) action effect on a live page can't be told apart from
+  // background churn and waits to the cap; (2) background churn that ADDS elements
+  // every tick (toasts, virtualized lists) reads as structural — a recurrence-footprint
+  // refinement (classify a repeatedly-inserted container as background) is future work.
   function waitForSettle(opts: SettleOptions): Promise<SettleResult> {
     const start = performance.now();
     const deadline = start + opts.maxWaitMs;
     return new Promise<SettleResult>((resolve) => {
       const check = () => {
         const now = performance.now();
-        const quiet = lastMutationAt !== null && now - lastMutationAt >= opts.quietMs;
+        const structuralQuiet =
+          sawStructural && lastStructuralAt !== null && now - lastStructuralAt >= opts.quietMs;
+        const anyQuiet = lastMutationAt !== null && now - lastMutationAt >= opts.quietMs;
         const capped = now >= deadline;
-        if (quiet || capped) {
-          resolve({ settleMs: Math.round(now - armStart), hitMaxWait: capped && !quiet });
+        if (structuralQuiet || anyQuiet || capped) {
+          resolve({
+            settleMs: Math.round(now - armStart),
+            hitMaxWait: capped && !structuralQuiet && !anyQuiet,
+          });
           return;
         }
         setTimeout(check, Math.min(opts.quietMs, 25));
