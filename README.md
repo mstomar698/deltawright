@@ -157,6 +157,14 @@ verdict agrees with what a real Playwright action then does.
 What v0.1 *does* demonstrate is the two dimensions the snapshot lacks entirely —
 geometry and a pointer-actionability verdict — shown by cases 2–4.
 
+**Update — v0.5 real-app benchmark (#23, directional).** On a real React SPA the
+large-page token win *is* now measured (`npm run bench`,
+[findings](docs/summaries/v0.5-real-app-benchmark-findings.md)): the delta is **~1% of a
+full re-snapshot** on a large table, and **0.15–0.87× the before+after diff at information
+parity** — a real win. And the predicted weaknesses show up too: on a *live-updating* SPA,
+mutation noise leaks into the delta and settle never quiesces (both confirmed and quantified,
+feeding v0.5 issues #13/#15/#18). Still directional, not an admissible §10 verdict (#25).
+
 ## Deferred to v0.5
 
 - **Robust settle detection** (the #1 thing to harden — see `docs/decisions/design-watches.md` DW-01). v0.1 is a simple quiescence heuristic.

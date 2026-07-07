@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Real-app benchmark harness (`bench/`, `npm run bench`): compares the delta vs
+  before+after+diff vs full re-snapshot on a real React SPA, with info-parity,
+  noise-floor (null-action), settle, and timing metrics. First directional findings
+  in `docs/summaries/v0.5-real-app-benchmark-findings.md` (issue #23): the token win
+  holds (delta 0.01× a large re-snapshot; 0.15–0.87× the diff at info-parity), and
+  noise/settle/time weaknesses are confirmed and quantified (feeding #13/#15/#18).
+
+### Fixed
+
+- Pin the token encoding to `cl100k_base`: the `gpt-tokenizer` 3.x bump had silently
+  switched the default `encode` to o200k, invalidating every "cl100k" label. Counts
+  are an OpenAI proxy; ratios are the tokenizer-robust signal.
+
 ## [0.1.0] - 2026-07-07
 
 ### Added

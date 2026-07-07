@@ -1,0 +1,26 @@
+
+[small-quiet] rows=10 noise=false ...
+[large-quiet] rows=300 noise=false ...
+[small-noisy] rows=50 noise=true ...
+[large-noisy] rows=300 noise=true ...
+
+=== RESULTS (median of 3 trials) ===
+
+┌─────────┬───────────────┬──────────────┬───────────────────┬─────────────┬───────────────────┬──────────────┬─────────────────────┬──────────────┬─────────────┬────────────────┬───────────┬────────┬──────────┬───────────────┬───────────────────┐
+│ (index) │ scenario      │ delta_tokens │ delta_lite_tokens │ diff_tokens │ resnapshot_tokens │ lite_vs_diff │ delta_vs_resnapshot │ delta_nodes  │ noise_ratio │ null_false_pos │ settle_ms │ capped │ captured │ delta_wall_ms │ incumbent_wall_ms │
+├─────────┼───────────────┼──────────────┼───────────────────┼─────────────┼───────────────────┼──────────────┼─────────────────────┼──────────────┼─────────────┼────────────────┼───────────┼────────┼──────────┼───────────────┼───────────────────┤
+│ 0       │ 'small-quiet' │ 99           │ 40                │ 46          │ 604               │ 0.87         │ 0.16                │ '1->4'       │ 1           │ 0              │ 163       │ '0/3'  │ '3/3'    │ 281           │ 167               │
+│ 1       │ 'large-quiet' │ 99           │ 40                │ 46          │ 14524             │ 0.87         │ 0.01                │ '1->4'       │ 1           │ 0              │ 163       │ '0/3'  │ '3/3'    │ 281           │ 228               │
+│ 2       │ 'small-noisy' │ 1458         │ 346               │ 2166        │ 2674              │ 0.16         │ 0.55                │ '1803->55'   │ 13.8        │ 51             │ 2036      │ '3/3'  │ '3/3'    │ 3917          │ 2044              │
+│ 3       │ 'large-noisy' │ 8958         │ 1846              │ 12666       │ 15424             │ 0.15         │ 0.58                │ '10303->305' │ 76.3        │ 301            │ 2043      │ '3/3'  │ '3/3'    │ 12260         │ 2131              │
+└─────────┴───────────────┴──────────────┴───────────────────┴─────────────┴───────────────────┴──────────────┴─────────────────────┴──────────────┴─────────────┴────────────────┴───────────┴────────┴──────────┴───────────────┴───────────────────┘
+
+legend (tokens = cl100k proxy; RATIOS are the tokenizer-robust signal):
+  delta_tokens      = full delta (geometry + actionability verdict per node).
+  delta_lite_tokens = info-parity: delta stripped to what-changed only, vs the a11y diff.
+  lite_vs_diff  <1  => the delta is more compact than the incumbent diff at equal info.
+  delta_vs_resnapshot <1 => delta smaller than re-dumping the full a11y tree (MCP default).
+  noise_ratio       = reported nodes / meaningful (modal=4); >1 => background churn leaked in.
+  null_false_pos    = nodes reported for a NO-OP action (pure noise-floor false positives).
+  capability axis (NOT a token score): the delta carries geometry + a Playwright-aligned
+  verdict the a11y snapshot/diff structurally cannot.
