@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
 import type { Actionability, RawNode, Verdict } from './types';
 
 /**
@@ -74,7 +74,7 @@ function primaryAction(node: RawNode): 'click' | 'fill' | 'select' {
  * action check (see primaryAction).
  */
 export async function annotateActionability(
-  page: Page,
+  target: Page | Frame,
   node: RawNode,
   opts: AnnotateOptions = {},
 ): Promise<Actionability> {
@@ -91,7 +91,7 @@ export async function annotateActionability(
   }
 
   const timeout = opts.trialTimeoutMs ?? DEFAULT_TRIAL_TIMEOUT_MS;
-  const locator = page.locator(`[data-dw-ref="${node.ref}"]`);
+  const locator = target.locator(`[data-dw-ref="${node.ref}"]`);
   const action = primaryAction(node);
 
   let playwright: { actionable: boolean; error?: string };

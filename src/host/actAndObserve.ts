@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
 import { ensureInjected } from './inject';
 import { annotateActionability } from './actionability';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
@@ -46,6 +46,12 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   baseline?: boolean;
   baselineMs?: number;
   baselineEarlyExitMs?: number;
+  /**
+   * Same-origin iframe traversal (#34, opt-in): also observe child frames and merge
+   * their changes into the delta, with geometry offset to page-global coordinates and
+   * refs prefixed (`f1e2`). Cross-origin/uninjectable frames are skipped. Off by default.
+   */
+  frames?: boolean;
   /**
    * DOM-less fallback (#20): when the DOM delta is empty (e.g. a `<canvas>`/WebGL draw
    * that mutates no DOM), screenshot before/after and report the changed pixel region
@@ -116,6 +122,65 @@ function pixelRegionNode(region: ChangedRegion): DeltaNode {
   };
 }
 
+interface ArmedFrame {
+  frame: Frame;
+  tag: string;
+  offset: { x: number; y: number };
+}
+
+/** Inject + baseline + arm each same-origin child frame before the action (#34). */
+async function armChildFrames(
+  page: Page,
+  enabled: boolean,
+  baseline: BaselineOptions | null,
+): Promise<ArmedFrame[]> {
+  if (!enabled) return [];
+  const mainFrame = page.mainFrame();
+  const children = page.frames().filter((f) => f !== mainFrame);
+  const armed: ArmedFrame[] = [];
+  for (let i = 0; i < children.length; i++) {
+    const frame = children[i]!;
+    try {
+      await ensureInjected(frame);
+      if (baseline) {
+        await frame.evaluate((o) => window.__deltawright!.sampleBaseline(o), baseline);
+      }
+      await frame.evaluate(() => window.__deltawright!.arm());
+      let offset = { x: 0, y: 0 };
+      try {
+        const box = await (await frame.frameElement()).boundingBox();
+        if (box) offset = { x: box.x, y: box.y };
+      } catch {
+        // cross-origin frameElement may throw — leave the offset at 0.
+      }
+      armed.push({ frame, tag: `f${i + 1}`, offset });
+    } catch {
+      // can't inject (cross-origin CSP / detached) — skip this frame.
+    }
+  }
+  return armed;
+}
+
+/** Offset a child-frame node to page-global coordinates and namespace its refs. */
+function offsetFrameNode(node: DeltaNode, c: ArmedFrame): DeltaNode {
+  const geometry = node.geometry
+    ? {
+        ...node.geometry,
+        rect: {
+          ...node.geometry.rect,
+          x: node.geometry.rect.x + c.offset.x,
+          y: node.geometry.rect.y + c.offset.y,
+        },
+      }
+    : node.geometry;
+  return {
+    ...node,
+    ref: c.tag + node.ref,
+    parentRef: node.parentRef ? c.tag + node.parentRef : node.parentRef,
+    geometry,
+  };
+}
+
 export async function actAndObserve(
   page: Page,
   action: Action,
@@ -133,13 +198,15 @@ export async function actAndObserve(
   // DOM reports no change.
   const beforeShot = opts.screenshotFallback ? await page.screenshot() : null;
 
-  // Causal attribution (#15): learn the background footprint before arming (unless
-  // disabled). sampleBaseline early-exits on a quiet page, so this is cheap there.
-  if (opts.baseline !== false) {
-    const baseline: BaselineOptions = {
-      baselineMs: opts.baselineMs ?? DEFAULT_BASELINE.baselineMs,
-      earlyExitMs: opts.baselineEarlyExitMs ?? DEFAULT_BASELINE.earlyExitMs,
-    };
+  // Causal attribution (#15): learn the background footprint before arming.
+  const baseline: BaselineOptions | null =
+    opts.baseline === false
+      ? null
+      : {
+          baselineMs: opts.baselineMs ?? DEFAULT_BASELINE.baselineMs,
+          earlyExitMs: opts.baselineEarlyExitMs ?? DEFAULT_BASELINE.earlyExitMs,
+        };
+  if (baseline) {
     await page.evaluate<{ sampledMs: number; footprintSize: number }, BaselineOptions>(
       (o) => window.__deltawright!.sampleBaseline(o),
       baseline,
@@ -147,6 +214,9 @@ export async function actAndObserve(
   }
 
   await page.evaluate(() => window.__deltawright!.arm());
+
+  // Same-origin iframe traversal (#34, opt-in): arm child frames too, before the action.
+  const childFrames = await armChildFrames(page, opts.frames === true, baseline);
 
   // Perform the action through Playwright so we inherit its auto-wait +
   // actionability on the action target itself.
@@ -173,6 +243,31 @@ export async function actAndObserve(
         (actionability) => ({ ...raw, actionability }),
       ),
   );
+
+  // #34: settle + collect + reconcile each armed child frame; offset + prefix, append.
+  for (const c of childFrames) {
+    try {
+      await c.frame.evaluate<SettleResult, SettleOptions>(
+        (o) => window.__deltawright!.waitForSettle(o),
+        settle,
+      );
+      const cc = await c.frame.evaluate<CollectResult, SettleOptions>(
+        (o) => window.__deltawright!.collect(o),
+        settle,
+      );
+      const cn = await mapWithConcurrency(
+        cc.nodes,
+        opts.reconcileConcurrency ?? DEFAULT_RECONCILE_CONCURRENCY,
+        (raw): Promise<DeltaNode> =>
+          annotateActionability(c.frame, raw, { trialTimeoutMs: opts.trialTimeoutMs }).then(
+            (actionability) => offsetFrameNode({ ...raw, actionability }, c),
+          ),
+      );
+      nodes.push(...cn);
+    } catch {
+      // a frame that navigated/detached mid-action — skip it.
+    }
+  }
 
   // DOM-less fallback (#20): if nothing mutated the DOM but pixels may have changed
   // (canvas/WebGL/cross-origin), diff the screenshots and report the changed region.

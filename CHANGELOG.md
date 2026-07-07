@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Same-origin iframe traversal** (#34, opt-in `frames: true`): also injects/arms/collects
+  child frames and merges their changes into the delta, with geometry offset to page-global
+  coordinates and refs namespaced (`f1e2`); reconciliation uses the frame's own locator.
+  Additive — the default (main-frame) path is byte-unchanged (all prior tests green).
+  Cross-origin/uninjectable frames are skipped. Regression suite `test/iframe.spec.ts`.
 - **Screenshot-diff fallback** for the DOM-less boundary (#20, opt-in
   `screenshotFallback: true`): when an action mutates no DOM but changes pixels (a
   `<canvas>`/WebGL draw, cross-origin content), Deltawright diffs a before/after

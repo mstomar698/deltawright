@@ -3,8 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { extname, join, normalize } from 'node:path';
 
-// Minimal static server for the vendored corpus. Needed because ES-module apps (Vue
-// TodoMVC) can't load over file://. Serves bench/corpus/ read-only on a random port.
+// Minimal static server. Needed because ES-module apps (Vue TodoMVC) can't load over
+// file://, and because same-origin iframe tests need a real HTTP origin. Serves a
+// directory read-only on a random port.
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -15,22 +16,21 @@ const MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-const corpusDir = fileURLToPath(new URL('./corpus', import.meta.url));
-
-export interface CorpusServer {
+export interface StaticServer {
   origin: string;
   close: () => Promise<void>;
 }
 
-export async function startCorpusServer(): Promise<CorpusServer> {
+export async function startStaticServer(rootDir: string): Promise<StaticServer> {
+  const root = normalize(rootDir);
   const server = createServer((req, res) => {
     void (async () => {
       try {
         const url = new URL(req.url ?? '/', 'http://localhost');
         let pathname = decodeURIComponent(url.pathname);
         if (pathname.endsWith('/')) pathname += 'index.html';
-        const filePath = normalize(join(corpusDir, pathname));
-        if (!filePath.startsWith(corpusDir)) {
+        const filePath = normalize(join(root, pathname));
+        if (!filePath.startsWith(root)) {
           res.writeHead(403).end('forbidden');
           return;
         }
@@ -51,4 +51,9 @@ export async function startCorpusServer(): Promise<CorpusServer> {
     origin: `http://127.0.0.1:${port}`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
+}
+
+/** The benchmark corpus server (bench/corpus). */
+export function startCorpusServer(): Promise<StaticServer> {
+  return startStaticServer(fileURLToPath(new URL('./corpus', import.meta.url)));
 }
