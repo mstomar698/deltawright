@@ -1,4 +1,8 @@
-import { encode } from 'gpt-tokenizer';
+// Pin the encoding explicitly (cl100k_base): the package's default export changed
+// its BPE across a major bump, which would silently move token counts. cl100k is an
+// OpenAI proxy — the deployment tokenizer (Claude) differs — so treat absolute
+// counts as approximate and RATIOS (delta vs snapshot/diff) as the robust signal.
+import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
 import type { Delta, DeltaNode } from './types';
 
 // Renders a Delta to the compact, LLM-friendly text format from §3 of the design
