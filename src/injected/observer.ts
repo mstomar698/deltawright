@@ -57,6 +57,10 @@ declare global {
   let bgText = new Set<Element>();
   let bgAttr = new Map<Element, Set<string>>();
 
+  // Open shadow roots the observer is attached to (web components), so shadow-DOM
+  // changes appear in the delta. Reset per arm; observer.disconnect() clears them. (#19)
+  let observedRoots = new Set<ShadowRoot>();
+
   const isElement = (n: Node): n is Element => n.nodeType === 1;
   const isText = (n: Node): n is Text => n.nodeType === 3;
 
@@ -65,18 +69,46 @@ declare global {
     return false;
   };
 
+  const OBSERVE_OPTIONS: MutationObserverInit = {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeOldValue: true,
+    characterData: true,
+    characterDataOldValue: true,
+  };
+
+  // Attach the observer to every OPEN shadow root at/under `root` (recursively), so
+  // web-component internals are observed. Closed shadow roots are inaccessible. (#19)
+  function observeShadowRoots(root: ParentNode): void {
+    if (!observer) return;
+    const check = (el: Element) => {
+      const sr = el.shadowRoot;
+      if (sr && !observedRoots.has(sr)) {
+        observedRoots.add(sr);
+        observer!.observe(sr, OBSERVE_OPTIONS);
+        observeShadowRoots(sr);
+      }
+    };
+    if (root instanceof Element) check(root);
+    for (const el of root.querySelectorAll('*')) check(el);
+  }
+
   function onMutations(muts: MutationRecord[]): void {
     const now = performance.now();
     if (firstMutationAt === null) firstMutationAt = now;
     lastMutationAt = now;
     for (const m of muts) {
       records.push(m);
-      if (
-        m.type === 'childList' &&
-        (listHasElement(m.addedNodes) || listHasElement(m.removedNodes))
-      ) {
-        lastStructuralAt = now;
-        sawStructural = true;
+      if (m.type === 'childList') {
+        if (listHasElement(m.addedNodes) || listHasElement(m.removedNodes)) {
+          lastStructuralAt = now;
+          sawStructural = true;
+        }
+        // A newly added element may host (or contain) open shadow roots to observe.
+        m.addedNodes.forEach((n) => {
+          if (n.nodeType === 1) observeShadowRoots(n as Element);
+        });
       }
     }
   }
@@ -89,14 +121,8 @@ declare global {
     document.querySelectorAll('[data-dw-ref]').forEach((el) => el.removeAttribute('data-dw-ref'));
     armStart = performance.now();
     observer = new MutationObserver(onMutations);
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeOldValue: true,
-      characterData: true,
-      characterDataOldValue: true,
-    });
+    observer.observe(document.documentElement, OBSERVE_OPTIONS);
+    observeShadowRoots(document); // open shadow roots (web components)
   }
 
   function reset(): void {
@@ -109,6 +135,7 @@ declare global {
     lastMutationAt = null;
     lastStructuralAt = null;
     sawStructural = false;
+    observedRoots = new Set();
   }
 
   function stop(): void {
@@ -396,7 +423,11 @@ declare global {
     if (!centerInViewport) {
       offscreen = true;
     } else {
-      const top = document.elementFromPoint(cx, cy);
+      // A shadow-DOM element: document.elementFromPoint retargets to the host, so query
+      // the element's own root to hit-test shadow content. (#19)
+      const rootNode = el.getRootNode();
+      const fromPoint = rootNode instanceof ShadowRoot ? rootNode : document;
+      const top = fromPoint.elementFromPoint(cx, cy);
       if (!top) {
         offscreen = true; // null despite in-viewport center: treat as unreachable
       } else if (top === el || el.contains(top)) {
