@@ -1,0 +1,22 @@
+
+[add] insert (delta-favorable, clean) .......
+[toggle] attribute-flip (over-report risk) .......
+[delete] removal .......
+[filter-nav] NAVIGATION (re-snapshot home turf) .......
+
+=== ADMISSIBLE RESULTS (real TodoMVC React, N=30, 2 warm-up discarded) ===
+
+┌─────────┬──────────────┬──────────────┬─────────────┬────────────────────┬───────────────────┬────────────────────┬─────────────────────┬───────┬─────────┬────────┬──────────────┬──────────────┬──────────────────┐
+│ (index) │ interaction  │ delta_tokens │ lite_tokens │ struct_diff_tokens │ resnapshot_tokens │ lite_vs_structdiff │ delta_vs_resnapshot │ nodes │ capture │ capped │ delta_ms_med │ delta_ms_p75 │ incumbent_ms_med │
+├─────────┼──────────────┼──────────────┼─────────────┼────────────────────┼───────────────────┼────────────────────┼─────────────────────┼───────┼─────────┼────────┼──────────────┼──────────────┼──────────────────┤
+│ 0       │ 'add'        │ 110          │ 30          │ 29                 │ 242               │ 1.03               │ 0.45                │ 4     │ '30/30' │ '0/30' │ 1414         │ 1421         │ 140              │
+│ 1       │ 'toggle'     │ 80           │ 22          │ 32                 │ 243               │ 0.69               │ 0.33                │ 3     │ '30/30' │ '0/30' │ 1722         │ 1735         │ 165              │
+│ 2       │ 'delete'     │ 41           │ 12          │ 44                 │ 220               │ 0.27               │ 0.19                │ 2     │ '30/30' │ '0/30' │ 1416         │ 1418         │ 215              │
+│ 3       │ 'filter-nav' │ 62           │ 24          │ 44                 │ 217               │ 0.55               │ 0.29                │ 3     │ '30/30' │ '0/30' │ 215          │ 216          │ 164              │
+└─────────┴──────────────┴──────────────┴─────────────┴────────────────────┴───────────────────┴────────────────────┴─────────────────────┴───────┴─────────┴────────┴──────────────┴──────────────┴──────────────────┘
+
+legend (deterministic corpus => token counts exact; only time varies):
+  lite_vs_structdiff <1 => delta more compact than a STRUCTURE-AWARE diff at info-parity.
+  delta_vs_resnapshot <1 => delta smaller than re-dumping the full a11y tree.
+  capture = trials where the delta captured the primary intended change (recall).
+  capability axis (not tokens): delta also carries geometry + actionability the diff lacks.
