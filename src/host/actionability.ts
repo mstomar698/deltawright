@@ -63,12 +63,18 @@ export interface AnnotateOptions {
 export async function annotateActionability(
   page: Page,
   node: RawNode,
-  opts: AnnotateOptions = {}
+  opts: AnnotateOptions = {},
 ): Promise<Actionability> {
   const gVerdict = geometryVerdict(node);
 
   if (!node.geometry) {
-    return { verdict: 'n/a', reason: 'removed', geometryVerdict: 'n/a', playwright: null, agreed: true };
+    return {
+      verdict: 'n/a',
+      reason: 'removed',
+      geometryVerdict: 'n/a',
+      playwright: null,
+      agreed: true,
+    };
   }
 
   const timeout = opts.trialTimeoutMs ?? DEFAULT_TRIAL_TIMEOUT_MS;
@@ -85,7 +91,9 @@ export async function annotateActionability(
 
   // Playwright wins.
   const verdict: Verdict = playwright.actionable ? 'ACTIONABLE' : 'NOT-actionable';
-  const reason = playwright.actionable ? null : geometryReason(node) ?? playwright.error ?? 'not-actionable';
+  const reason = playwright.actionable
+    ? null
+    : (geometryReason(node) ?? playwright.error ?? 'not-actionable');
   const agreed = gVerdict === verdict;
 
   return { verdict, reason, geometryVerdict: gVerdict, playwright, agreed };

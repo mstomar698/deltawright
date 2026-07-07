@@ -1,0 +1,9 @@
+node_modules
+dist
+test-results
+playwright-report
+package-lock.json
+test/fixtures
+docs
+*.md
+ideation-agent-delta-layer.md

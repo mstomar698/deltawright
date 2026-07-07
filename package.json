@@ -14,20 +14,48 @@
     "actionability",
     "delta"
   ],
+  "homepage": "https://github.com/mstomar698/deltawright#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mstomar698/deltawright.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mstomar698/deltawright/issues"
+  },
+  "author": "mstomar698",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "test": "playwright test",
     "demo": "tsx demo/run-demo.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.10.0",
     "esbuild": "^0.24.0",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
     "gpt-tokenizer": "^2.8.1",
+    "prettier": "^3.9.4",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.63.0"
   }
 }

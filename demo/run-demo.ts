@@ -41,37 +41,47 @@ const browser = await chromium.launch({ headless: true });
   console.log();
   console.log(`delta size   : ${tokens} tokens (cl100k proxy), ${text.length} chars`);
   console.log(
-    `coalescing   : ${delta.stats.rawRecords} raw MutationRecords -> ${delta.nodes.length} reported nodes`
+    `coalescing   : ${delta.stats.rawRecords} raw MutationRecords -> ${delta.nodes.length} reported nodes`,
   );
   console.log(
-    `settle       : ${delta.stats.settleMs}ms ${delta.stats.hitMaxWait ? '(hit maxWait)' : '(quiesced)'}, ${delta.stats.animationsAwaited} animations awaited`
+    `settle       : ${delta.stats.settleMs}ms ${delta.stats.hitMaxWait ? '(hit maxWait)' : '(quiesced)'}, ${delta.stats.animationsAwaited} animations awaited`,
   );
   console.log(
-    `agreement    : ${delta.nodes.every((n) => n.actionability.agreed) ? 'geometry & Playwright AGREE on every node' : 'DISAGREEMENT'}`
+    `agreement    : ${delta.nodes.every((n) => n.actionability.agreed) ? 'geometry & Playwright AGREE on every node' : 'DISAGREEMENT'}`,
   );
 
   // Honest baseline: a full-page a11y snapshot of THIS (small) page.
   const snapshot = await page.locator('body').ariaSnapshot();
   const snapTokens = tokenCount(snapshot);
   console.log(
-    `\nbaseline     : full-page a11y snapshot = ${snapTokens} tokens (whole page, no geometry, no actionability).`
+    `\nbaseline     : full-page a11y snapshot = ${snapTokens} tokens (whole page, no geometry, no actionability).`,
   );
   console.log(
-    `               NO token win here: the delta (${tokens}) is ${tokens > snapTokens ? 'LARGER' : 'smaller'} than the snapshot (${snapTokens}).`
+    `               NO token win here: the delta (${tokens}) is ${tokens > snapTokens ? 'LARGER' : 'smaller'} than the snapshot (${snapTokens}).`,
   );
   console.log(
-    '               Token savings are a large-SPA property, unmeasured in v0.1. The value shown here is'
+    '               Token savings are a large-SPA property, unmeasured in v0.1. The value shown here is',
   );
   console.log(
-    '               the two dimensions the snapshot lacks — geometry + actionability — in cases 2-4.'
+    '               the two dimensions the snapshot lacks — geometry + actionability — in cases 2-4.',
   );
   await page.close();
 }
 
 // ── Cases 2 & 3: the "present-but-not-actionable" gap ─────────────────────
 for (const c of [
-  { id: '#open-covered', label: 'click "Open covered popup"', target: 'Renew', title: 'CASE 2 — popup partly covered by an overlay' },
-  { id: '#open-offscreen', label: 'click "Insert off-screen"', target: 'Ghost action', title: 'CASE 3 — element inserted off-screen' },
+  {
+    id: '#open-covered',
+    label: 'click "Open covered popup"',
+    target: 'Renew',
+    title: 'CASE 2 — popup partly covered by an overlay',
+  },
+  {
+    id: '#open-offscreen',
+    label: 'click "Insert off-screen"',
+    target: 'Ghost action',
+    title: 'CASE 3 — element inserted off-screen',
+  },
 ]) {
   const page = await fresh(browser);
   const delta = await actAndObserve(page, (p) => p.click(c.id), { label: c.label });
@@ -87,9 +97,11 @@ for (const c of [
     .map((l) => l.trim())
     .find((l) => l.includes(`"${c.target}"`));
 
-  console.log(`a11y snapshot says : ${snapLine ?? '(node present)'}   <- looks directly interactive`);
   console.log(
-    `deltawright says   : ${c.target} -> ${node.actionability.verdict} (${node.actionability.reason})`
+    `a11y snapshot says : ${snapLine ?? '(node present)'}   <- looks directly interactive`,
+  );
+  console.log(
+    `deltawright says   : ${c.target} -> ${node.actionability.verdict} (${node.actionability.reason})`,
   );
 
   // Confirm reality: a real Playwright click on the flagged node is refused.
@@ -101,8 +113,10 @@ for (const c of [
   }
   console.log(
     `reality check      : real Playwright click ${realFailed ? 'FAILED' : 'succeeded'} -> verdict ${
-      realFailed === (node.actionability.verdict === 'NOT-actionable') ? 'MATCHED reality ✓' : 'MISMATCH ✗'
-    }`
+      realFailed === (node.actionability.verdict === 'NOT-actionable')
+        ? 'MATCHED reality ✓'
+        : 'MISMATCH ✗'
+    }`,
   );
   await page.close();
 }
@@ -121,10 +135,10 @@ for (const c of [
   console.log(render(delta).text);
   console.log();
   console.log(
-    `geometry alone     : ${submit.actionability.geometryVerdict} (looks reachable — visible, uncovered)`
+    `geometry alone     : ${submit.actionability.geometryVerdict} (looks reachable — visible, uncovered)`,
   );
   console.log(
-    `deltawright verdict: ${submit.actionability.verdict} (${submit.actionability.reason}) — Playwright wins`
+    `deltawright verdict: ${submit.actionability.verdict} (${submit.actionability.reason}) — Playwright wins`,
   );
   console.log(`agreed             : ${submit.actionability.agreed} (surfaced as [geom:...] above)`);
   await page.close();
