@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **MCP server** (#22, `npm run mcp` / `deltawright-mcp` bin): a stdio Model Context
+  Protocol server so agents (Claude Code, Cursor, …) consume deltas natively. Tools:
+  `navigate(url)`, `act_and_observe({action, selector, value?})` — returns the compact
+  delta (what changed + actionability, no re-snapshot) — and `snapshot()` fallback.
+  Logic lives in a testable `DeltawrightSession`; validated end-to-end over the protocol
+  in `test/mcp.spec.ts` (an MCP client spawns the server, lists tools, gets a delta).
+
 - Real-app benchmark harness (`bench/`, `npm run bench`): compares the delta vs
   before+after+diff vs full re-snapshot on a real React SPA, with info-parity,
   noise-floor (null-action), settle, and timing metrics. First directional findings

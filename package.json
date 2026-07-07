@@ -32,11 +32,16 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mcp": "./src/mcp/server.ts"
+  },
+  "bin": {
+    "deltawright-mcp": "./src/mcp/server.ts"
   },
   "scripts": {
     "test": "playwright test",
     "demo": "tsx demo/run-demo.ts",
+    "mcp": "tsx src/mcp/server.ts",
     "bench": "tsx bench/run-bench.ts",
     "bench:admissible": "tsx bench/run-admissible.ts",
     "typecheck": "tsc --noEmit",
@@ -64,5 +69,9 @@
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   }
 }

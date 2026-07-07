@@ -106,9 +106,24 @@ surfaces what geometry thought — e.g. a visible-but-disabled button:
 ~ button "Submit" [e2] @ (336,416 78x33) NOT-actionable (disabled) [geom:ACTIONABLE]
 ```
 
-The verdict is **pointer/click actionability** ("can this be clicked?"), probed with
-Playwright's `click({ trial: true })`. Role-aware probes (e.g. `fill` editability for
-text inputs) are a v0.5 refinement.
+The verdict is **role-aware** (#17): it matches the action an agent would use — `click`
+for buttons/links, `fill` for text inputs (so a *covered* input is actionable but a
+*read-only* one is not), `selectOption` for selects. Playwright's judgment wins.
+
+## Use it as an MCP server
+
+Deltawright ships a stdio MCP server so agents consume deltas natively — *Playwright MCP
+tells the agent what's on the page; Deltawright tells it what just changed and whether it
+can act on it.*
+
+```bash
+npm run mcp            # or the `deltawright-mcp` bin
+```
+
+Tools: **`navigate`** (open a URL → its a11y snapshot), **`act_and_observe`** (perform one
+`click`/`fill`/`select`/`check`/`press` on a selector → the compact delta, *instead of*
+re-snapshotting), and **`snapshot`** (full-tree fallback). Point Claude Code / Cursor at it
+via their MCP config (`command: "npx"`, `args: ["tsx", "src/mcp/server.ts"]`, or the bin).
 
 ## How it works
 
@@ -176,7 +191,7 @@ verdict (#25).
 - **Role-aware actionability probes** (`fill`/`selectOption`/`hover` editability) so the verdict matches the *specific* action, not just click.
 - **Shadow DOM + same-origin iframe** traversal.
 - **Screenshot-diff fallback** for canvas/WebGL and cross-origin regions (no DOM to observe).
-- **MCP server** surface (`act_and_observe`, `describe_changes`, `full_snapshot`) so agents consume deltas natively.
+- ~~**MCP server** surface~~ — shipped (#22); a `describe_changes` tool and a distributable JS build remain.
 - **Test-gen opinion**: stable-selector candidates and assertion suggestions per changed node.
 - Cross-browser (Firefox/WebKit) and terminal observability (human, not agent, input).
 
