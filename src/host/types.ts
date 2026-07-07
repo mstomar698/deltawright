@@ -1,0 +1,131 @@
+// Shared types for the Deltawright delta. The injected page script produces a
+// `RawDelta` (geometry + change classification, no Playwright knowledge); the
+// host annotates each node with Playwright's authoritative actionability verdict
+// to produce a `Delta`, which the serializer renders to the compact text format.
+
+export type ChangeKind = 'added' | 'removed' | 'attrChanged' | 'textChanged';
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** What the injected script can observe about a node from the DOM/layout alone. */
+export interface GeometryRead {
+  /** getBoundingClientRect(), viewport coordinates, rounded. */
+  rect: Rect;
+  /** Does the rect intersect the layout viewport at all? */
+  inViewport: boolean;
+  display: string;
+  visibility: string;
+  opacity: string;
+  pointerEvents: string;
+  /**
+   * document.elementFromPoint(center): is the topmost element at this node's
+   * center the node itself (or a descendant of it)?
+   */
+  hitSelf: boolean;
+  /** Human label of the covering element when hitSelf is false (e.g. "div.dw-overlay"). */
+  coveredBy: string | null;
+  /** True when the center point lies outside the viewport (elementFromPoint == null). */
+  offscreen: boolean;
+}
+
+/** One changed element node, as reported by the injected script. */
+export interface RawNode {
+  /** Stable ref stamped as data-dw-ref at drain time, e.g. "e1". */
+  ref: string;
+  kind: ChangeKind;
+  tag: string;
+  role: string | null;
+  name: string | null;
+  /** button / link / input-like — nodes an agent would try to act on. */
+  interactive: boolean;
+  /** Nearest ancestor that is itself a reported node, for nesting in the output. */
+  parentRef: string | null;
+  /** For attrChanged: which attributes changed net. */
+  changedAttrs?: string[];
+  /** null for removed nodes (no live geometry). */
+  geometry: GeometryRead | null;
+}
+
+export interface DeltaStats {
+  /** Raw MutationRecords seen before coalescing (compression evidence). */
+  rawRecords: number;
+  /** Wall time from arm to settle, in ms. */
+  settleMs: number;
+  /** True if settle hit the maxWait cap rather than going quiet. */
+  hitMaxWait: boolean;
+  /** How many running animations we awaited before reading final geometry. */
+  animationsAwaited: number;
+}
+
+export interface RawDelta {
+  nodes: RawNode[];
+  stats: DeltaStats;
+}
+
+export type Verdict = 'ACTIONABLE' | 'NOT-actionable' | 'n/a';
+
+/**
+ * The reconciliation of geometry read vs. Playwright's authoritative judgment.
+ *
+ * NOTE (v0.1): the verdict is POINTER/CLICK actionability — it answers "can this be
+ * clicked?" and is probed with Playwright's `click({ trial: true })`. This matches
+ * the design doc's model (a covered control is NOT-actionable). Role-aware probes
+ * (e.g. `fill` editability for text inputs, which does not hit-test) are a v0.5
+ * refinement; see docs/decisions/design-watches.md (DW-02).
+ */
+export interface Actionability {
+  /** Final verdict — Playwright's judgment wins any disagreement. */
+  verdict: Verdict;
+  /**
+   * Human reason for a NOT-actionable verdict, e.g. "covered-by div.dw-overlay".
+   * Best-effort, geometry-first gloss: only `verdict` is Playwright-authoritative,
+   * so when geometry and Playwright both say NOT-actionable for DIFFERENT causes,
+   * this may name the geometry cause rather than Playwright's.
+   */
+  reason: string | null;
+  /** What the geometry read alone concluded (kept to expose disagreements). */
+  geometryVerdict: Verdict;
+  /** Playwright's trial-action result; null when not probed (e.g. removed nodes). */
+  playwright: { actionable: boolean; error?: string } | null;
+  /** Did the geometry read and Playwright agree? A false here is the signal to surface. */
+  agreed: boolean;
+}
+
+export interface DeltaNode extends RawNode {
+  actionability: Actionability;
+}
+
+export interface Delta {
+  /** Human label of the action that produced this delta. */
+  action: string;
+  nodes: DeltaNode[];
+  stats: DeltaStats;
+}
+
+// --- Injected-script <-> host interchange types --------------------------
+
+/** Tunable v0.1 settle heuristic knobs (all ms). */
+export interface SettleOptions {
+  /** Declare settled after the DOM is quiet for this long (after >=1 mutation). */
+  quietMs: number;
+  /** Hard cap on total wait from arm, regardless of quiescence. */
+  maxWaitMs: number;
+  /** Budget for waiting out CSS animations/transitions before reading geometry. */
+  animMaxMs: number;
+}
+
+export interface SettleResult {
+  settleMs: number;
+  hitMaxWait: boolean;
+}
+
+export interface CollectResult {
+  nodes: RawNode[];
+  rawRecords: number;
+  animationsAwaited: number;
+}

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright north-star fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 40px; color: #111; }
+    h1 { font-size: 20px; }
+    .controls button { font-size: 16px; padding: 8px 16px; margin-right: 8px; }
+
+    /* Dialog: inserted after a delay, then animated in via a CSS transition.
+       The transition moves geometry WITHOUT firing mutations — the settle
+       logic must wait for getAnimations().finished to read the final rect. */
+    .dw-dialog {
+      position: fixed;
+      left: 320px;
+      top: 160px;
+      width: 380px;
+      box-sizing: border-box;
+      padding: 20px;
+      background: #ffffff;
+      border: 1px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transform: translateY(16px) scale(0.96);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .dw-dialog.dw-in { opacity: 1; transform: none; }
+    .dw-dialog p { margin: 0 0 14px; }
+    .dw-dialog .row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .dw-dialog button { font-size: 15px; padding: 7px 14px; }
+    .dw-dialog input { font-size: 15px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
+
+    /* Overlay that intercepts pointer events, positioned over a specific
+       target's measured rect (case 2). */
+    .dw-overlay { position: fixed; background: rgba(0, 0, 0, 0.45); z-index: 10; }
+
+    /* Off-screen container: fixed + far negative left => unreachable by any
+       scroll, so Playwright's scroll-into-view cannot make it actionable. */
+    .dw-offscreen {
+      position: fixed;
+      left: -10000px;
+      top: 0;
+      width: 220px;
+      padding: 12px;
+      background: #eef;
+      border: 1px solid #99c;
+    }
+
+    /* A fully visible, uncovered panel whose button is disabled: geometry says
+       "reachable" but Playwright says "not enabled" — a real disagreement. */
+    .dw-panel {
+      position: fixed;
+      left: 320px;
+      top: 400px;
+      padding: 16px;
+      background: #f7f7f7;
+      border: 1px solid #999;
+      border-radius: 8px;
+    }
+    .dw-panel button { font-size: 15px; padding: 7px 14px; }
+  </style>
+</head>
+<body>
+  <h1>Deltawright fixture</h1>
+  <p>Controlled north-star cases for the v0.1 delta primitive.</p>
+
+  <div class="controls">
+    <button id="open-popup">Open popup</button>
+    <button id="open-covered">Open covered popup</button>
+    <button id="open-offscreen">Insert off-screen</button>
+    <button id="open-disabled">Insert disabled control</button>
+  </div>
+
+  <script>
+    // Build the dialog subtree in one shot so the MutationObserver sees a single
+    // added subtree ROOT (not one record per descendant). `instant` inserts it
+    // already at its final state (no entrance transition) — used by the cases
+    // that need deterministic final geometry.
+    function makeDialog(instant) {
+      const dlg = document.createElement('div');
+      dlg.className = 'dw-dialog' + (instant ? ' dw-in' : '');
+      dlg.setAttribute('role', 'dialog');
+      dlg.setAttribute('aria-label', 'Session expired');
+      dlg.innerHTML =
+        '<p>Your session expired. Renew to continue.</p>' +
+        '<div class="row">' +
+        '  <button class="renew">Renew</button>' +
+        '  <button class="cancel">Cancel</button>' +
+        '</div>' +
+        '<input class="pw" type="password" placeholder="Password" aria-label="Password" />';
+      return dlg;
+    }
+
+    // Case 1 (north-star): delayed insert + brief CSS entrance animation. The
+    // transition moves geometry without firing mutations, so the settle logic
+    // must wait for animations before reading the final rect.
+    document.getElementById('open-popup').addEventListener('click', () => {
+      setTimeout(() => {
+        const dlg = makeDialog(false);
+        document.body.appendChild(dlg);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => dlg.classList.add('dw-in'))
+        );
+      }, 150);
+    });
+
+    // Case 2: dialog (inserted at final position) plus an overlay placed exactly
+    // over the "Renew" button so its center hit-point is covered => Renew is
+    // NOT-actionable, while "Cancel" stays clickable => ACTIONABLE. Both inserts
+    // happen synchronously in one tick, so they land in a single settle window
+    // and the overlay is positioned against Renew's FINAL geometry.
+    document.getElementById('open-covered').addEventListener('click', () => {
+      setTimeout(() => {
+        const dlg = makeDialog(true);
+        document.body.appendChild(dlg);
+        const r = dlg.querySelector('.renew').getBoundingClientRect();
+        const overlay = document.createElement('div');
+        overlay.className = 'dw-overlay';
+        overlay.setAttribute('data-role', 'blocker');
+        overlay.style.left = (r.left - 4) + 'px';
+        overlay.style.top = (r.top - 4) + 'px';
+        overlay.style.width = (r.width + 8) + 'px';
+        overlay.style.height = (r.height + 8) + 'px';
+        document.body.appendChild(overlay);
+      }, 150);
+    });
+
+    // Case 3: insert a container far off-screen (fixed + negative left =>
+    // unreachable by any scroll, so Playwright cannot make it actionable).
+    document.getElementById('open-offscreen').addEventListener('click', () => {
+      setTimeout(() => {
+        const box = document.createElement('div');
+        box.className = 'dw-offscreen';
+        box.setAttribute('role', 'region');
+        box.setAttribute('aria-label', 'Hidden panel');
+        box.innerHTML = '<button class="ghost">Ghost action</button>';
+        document.body.appendChild(box);
+      }, 150);
+    });
+
+    // Case 4: insert a visible, uncovered, but DISABLED button. Geometry sees a
+    // reachable topmost element (would say ACTIONABLE); Playwright sees "not
+    // enabled" (NOT-actionable). Exercises the disagreement branch — Playwright
+    // must win — and the "~ now disabled" style state line.
+    document.getElementById('open-disabled').addEventListener('click', () => {
+      setTimeout(() => {
+        const panel = document.createElement('div');
+        panel.className = 'dw-panel';
+        panel.setAttribute('role', 'group');
+        panel.setAttribute('aria-label', 'Actions');
+        panel.innerHTML = '<button class="submit" disabled aria-label="Submit">Submit</button>';
+        document.body.appendChild(panel);
+      }, 150);
+    });
+  </script>
+</body>
+</html>

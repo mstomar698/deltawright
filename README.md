@@ -1,0 +1,179 @@
+# Deltawright
+
+**A delta-and-actionability layer for Playwright agents: it tells the agent what
+changed after an action and whether it can act on it.**
+
+Deltawright is *not* a browser and *not* a Playwright replacement. It sits on top
+of Playwright + headless Chromium and, instead of dumping and re-dumping
+accessibility snapshots, turns a single action into a compact structured delta:
+what changed on the page, where it is, and whether it's actually actionable — using
+Playwright's own actionability judgment so the verdict matches reality.
+
+> Positioning: *Playwright MCP tells the agent what's on the page. Deltawright tells
+> it what just changed and whether it can act on it.* Use both.
+
+---
+
+## The gap it closes
+
+Agent-facing browser tools (Playwright MCP, Chrome DevTools MCP) represent pages as
+accessibility snapshots that are **layout-independent** — no geometry — and that
+**list every DOM element regardless of viewport** (an open Playwright issue,
+[#39955](https://github.com/microsoft/playwright/issues/39955)). So an element that
+"exists" but is covered by an overlay, off-screen, or `pointer-events:none` shows up
+as if directly interactive, the agent picks it, and the real click fails. And to
+learn *what a click did*, you diff a full before/after snapshot yourself.
+
+Deltawright inverts the loop: **delta-first**. Arm a `MutationObserver`, perform one
+action, wait for settle, and emit a tiny delta of the changed nodes only — each with
+geometry and an actionability verdict reconciled against Playwright.
+
+## The proof (v0.1)
+
+A button that opens a popup (inserted after a delay, with a CSS entrance animation):
+
+```
+after click "Open popup":
+  + dialog "Session expired" [e1] @ (320,160 380x154) topmost ACTIONABLE
+    + button "Renew" [e2] @ (341,213 79x35) ACTIONABLE
+    + button "Cancel" [e3] @ (430,213 79x35) ACTIONABLE
+    + textbox "Password" [e4] @ (341,260 338x33) ACTIONABLE
+```
+
+- **101 tokens** (cl100k proxy). 2 raw `MutationRecord`s coalesced to 4 reported nodes. No before/after diff.
+- Settle quiesced at ~340 ms; 2 CSS animations awaited so the geometry is final, not mid-animation.
+- Geometry and Playwright **agree on every node**.
+
+The two dimensions the a11y snapshot lacks — geometry and actionability — are the
+whole point. When the same button is **covered** or the element is **off-screen**:
+
+```
+CASE 2 — popup partly covered by an overlay
+  a11y snapshot says : - button "Renew"          <- looks directly interactive
+  deltawright says   : Renew -> NOT-actionable (covered-by div.dw-overlay)
+  reality check      : real Playwright click FAILED -> verdict MATCHED reality ✓
+
+CASE 3 — element inserted off-screen
+  a11y snapshot says : - button "Ghost action"   <- looks directly interactive
+  deltawright says   : Ghost action -> NOT-actionable (off-screen)
+  reality check      : real Playwright click FAILED -> verdict MATCHED reality ✓
+```
+
+Run it yourself:
+
+```bash
+npm install
+npx playwright install chromium   # if not already cached
+npm run demo                      # the three cases above
+npm test                          # 8 tests: coalescer units + north-star validation
+```
+
+## Use it
+
+```ts
+import { chromium } from '@playwright/test';
+import { actAndObserve, render } from 'deltawright';
+
+const browser = await chromium.launch();
+const page = await browser.newPage();
+await page.goto('https://example.com');
+
+const delta = await actAndObserve(page, (p) => p.click('#sign-in'), {
+  label: 'click "Sign in"',
+});
+
+const { text, tokens } = render(delta);
+console.log(text);      // the compact delta above
+console.log(tokens);    // measured token size
+
+// Structured access:
+for (const node of delta.nodes) {
+  node.name;                       // "Renew"
+  node.geometry?.rect;             // { x, y, width, height }
+  node.actionability.verdict;      // 'ACTIONABLE' | 'NOT-actionable' | 'n/a'
+  node.actionability.reason;       // 'covered-by div.dw-overlay' | 'off-screen' | ...
+  node.actionability.agreed;       // did geometry & Playwright agree?
+}
+```
+
+`actAndObserve(page, action, opts?)` options: `label`, and settle tunables
+`quietMs` (120), `maxWaitMs` (2000), `animMaxMs` (1000), plus `trialTimeoutMs` (1200).
+
+When the geometry read and Playwright disagree, **Playwright wins** and the delta
+surfaces what geometry thought — e.g. a visible-but-disabled button:
+
+```
+~ button "Submit" [e2] @ (336,416 78x33) NOT-actionable (disabled) [geom:ACTIONABLE]
+```
+
+The verdict is **pointer/click actionability** ("can this be clicked?"), probed with
+Playwright's `click({ trial: true })`. Role-aware probes (e.g. `fill` editability for
+text inputs) are a v0.5 refinement.
+
+## How it works
+
+```
+arm  → MutationObserver on document, buffering records
+act  → your action, run through Playwright (inherits auto-wait + actionability)
+settle → quiet for quietMs after the first mutation (capped at maxWaitMs),
+         then await running animations so geometry is final
+collect → coalesce records into a net {added, removed, attrChanged, textChanged}
+          set of elements; read rect + computed style + elementFromPoint per node;
+          stamp data-dw-ref
+annotate → per node, reconcile the geometry read with Playwright's authoritative
+           click({ trial: true }) verdict — Playwright wins any disagreement
+serialize → the compact §3 text format + token count
+```
+
+- Injected page script: [`src/injected/observer.ts`](src/injected/observer.ts)
+- Host wrapper: [`src/host/actAndObserve.ts`](src/host/actAndObserve.ts),
+  [`actionability.ts`](src/host/actionability.ts),
+  [`serialize.ts`](src/host/serialize.ts)
+
+## What v0.1 proves — and what it doesn't
+
+**Proven, on a controlled DOM page:** the core primitive works end-to-end — a click
+yields a correct, token-tiny, structured delta with geometry and a pointer-actionability
+verdict, with no before/after diff; and on the covered/off-screen/disabled cases the
+verdict agrees with what a real Playwright action then does.
+
+**Stated plainly — not proven:**
+
+- **No token win here.** The delta is 101 tokens vs an 87-token full-page a11y
+  snapshot of the same page — the delta is *larger*, not smaller. And the real
+  incumbent (snapshot **before + after + diff**) was not measured. Token savings are
+  an unmeasured large-SPA extrapolation; "token-tiny in absolute terms (~100 tokens)"
+  is honest, "cuts tokens vs the incumbent" is not shown.
+- **The trial↔real match is internal consistency, not independent ground truth.** The
+  verdict *is* a Playwright trial-click and the reality check *is* a Playwright real
+  click — the same engine, so agreement is near-tautological. The genuinely
+  independent evidence is the **a11y-snapshot-says-interactive vs delta-says-NOT-actionable**
+  contrast in cases 2–3.
+- **Only ran on a synthetic fixture.** The ideation §10 bar ("on your own real target
+  app") is *not* met; v0.1 clears a narrower engineering sub-bar. Mutation-noise
+  filtering (§6.2) is untested — attribution here is time-window-scoped, not causal.
+  See `docs/summaries/v0.1-milestone.md` for the honest go/no-go.
+
+What v0.1 *does* demonstrate is the two dimensions the snapshot lacks entirely —
+geometry and a pointer-actionability verdict — shown by cases 2–4.
+
+## Deferred to v0.5
+
+- **Robust settle detection** (the #1 thing to harden — see `docs/decisions/design-watches.md` DW-01). v0.1 is a simple quiescence heuristic.
+- **Mutation-noise filtering** on real React/Vue/Angular apps (a semantic-attribute whitelist; today attr changes on surviving elements are reported by name, though churn that nets to the original is already dropped).
+- **Role-aware actionability probes** (`fill`/`selectOption`/`hover` editability) so the verdict matches the *specific* action, not just click.
+- **Shadow DOM + same-origin iframe** traversal.
+- **Screenshot-diff fallback** for canvas/WebGL and cross-origin regions (no DOM to observe).
+- **MCP server** surface (`act_and_observe`, `describe_changes`, `full_snapshot`) so agents consume deltas natively.
+- **Test-gen opinion**: stable-selector candidates and assertion suggestions per changed node.
+- Cross-browser (Firefox/WebKit) and terminal observability (human, not agent, input).
+
+## Project docs
+
+- `ideation-agent-delta-layer.md` — the binding design doc.
+- `docs/plans/`, `docs/specs/`, `docs/decisions/`, `docs/contexts/`, `docs/summaries/` — the SDLC trail.
+- `CONTRIBUTING.md` — how to build, test, and open a PR.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

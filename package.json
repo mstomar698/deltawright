@@ -1,0 +1,33 @@
+{
+  "name": "deltawright",
+  "version": "0.1.0",
+  "description": "A delta-and-actionability layer for Playwright agents: it tells the agent what changed after an action and whether it can act on it.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "playwright",
+    "agent",
+    "llm",
+    "mcp",
+    "browser-testing",
+    "mutationobserver",
+    "actionability",
+    "delta"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "demo": "tsx demo/run-demo.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "gpt-tokenizer": "^2.8.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
