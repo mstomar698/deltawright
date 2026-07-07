@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Open shadow-DOM traversal** (#19): the observer now attaches into open shadow roots
+  (recursively, incl. ones added mid-action), so changes inside web components appear in
+  the delta; the geometry hit-test queries the element's own root (shadow
+  `elementFromPoint` instead of the retargeted host). Playwright's CSS pierces open
+  shadow DOM, so refs/actionability work across the boundary. Regression suite
+  `test/shadow.spec.ts`. Same-origin iframe traversal → #34; closed shadow roots are
+  inaccessible by design.
 - **MCP server** (#22, `npm run mcp` / `deltawright-mcp` bin): a stdio Model Context
   Protocol server so agents (Claude Code, Cursor, …) consume deltas natively. Tools:
   `navigate(url)`, `act_and_observe({action, selector, value?})` — returns the compact
