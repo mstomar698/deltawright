@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Screenshot-diff fallback** for the DOM-less boundary (#20, opt-in
+  `screenshotFallback: true`): when an action mutates no DOM but changes pixels (a
+  `<canvas>`/WebGL draw, cross-origin content), Deltawright diffs a before/after
+  screenshot and reports the changed region as a synthetic node (verdict `n/a` — no DOM
+  element to probe). Exposed `diffChangedRegion`. Regression suite `test/canvas.spec.ts`.
 - **Open shadow-DOM traversal** (#19): the observer now attaches into open shadow roots
   (recursively, incl. ones added mid-action), so changes inside web components appear in
   the delta; the geometry hit-test queries the element's own root (shadow

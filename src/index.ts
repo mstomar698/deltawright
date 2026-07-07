@@ -6,6 +6,8 @@ export type { Action, ActAndObserveOptions } from './host/actAndObserve';
 export { serialize, render, tokenCount } from './host/serialize';
 export { annotateActionability, geometryVerdict } from './host/actionability';
 export { ensureInjected, injectedSource } from './host/inject';
+export { diffChangedRegion } from './host/screenshot-diff';
+export type { ChangedRegion, DiffOptions } from './host/screenshot-diff';
 export type {
   Delta,
   DeltaNode,

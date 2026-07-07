@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright canvas fixture</title>
+</head>
+<body>
+  <h1>Canvas</h1>
+  <button id="draw">Draw</button>
+  <canvas id="c" width="400" height="300" style="display: block; border: 1px solid #ccc"></canvas>
+  <script>
+    const ctx = document.getElementById('c').getContext('2d');
+    // Drawing on the canvas changes pixels but mutates NO DOM — invisible to a
+    // MutationObserver, only detectable by a screenshot diff.
+    document.getElementById('draw').addEventListener('click', () => {
+      ctx.fillStyle = 'crimson';
+      ctx.fillRect(100, 80, 150, 120);
+    });
+  </script>
+</body>
+</html>
