@@ -15,11 +15,22 @@ npm run demo                      # prints the actual delta for all three cases
 ## Checks that must pass before a PR
 
 ```bash
-npm run typecheck                 # tsc --noEmit, zero errors
-npm test                          # all Playwright tests green
+npm run check                     # typecheck + lint + format:check + tests
 ```
 
-CI runs both on every PR (`.github/workflows/ci.yml`). A red check blocks merge.
+CI runs all of these on every PR across Node 20 and 22 (`.github/workflows/ci.yml`).
+A red check blocks merge.
+
+## Git hooks
+
+Hooks live in `.githooks/` and are wired automatically by the `prepare` script on
+`npm install` (`git config core.hooksPath .githooks`):
+
+- **pre-commit** — `typecheck` + `lint` + `format:check` (fast; no browser).
+- **commit-msg** — enforces [Conventional Commits](https://www.conventionalcommits.org/) (merge/revert commits pass through).
+- **pre-push** — runs the full Playwright test suite.
+
+Emergency bypass: `git commit --no-verify` — but CI enforces the same checks.
 
 ## Read first
 

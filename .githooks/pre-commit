@@ -1,0 +1,7 @@
+#!/bin/sh
+# Deltawright pre-commit: fast static checks. Browser tests run in pre-push/CI.
+set -e
+echo "[pre-commit] typecheck + lint + format:check"
+npm run typecheck
+npm run lint
+npm run format:check

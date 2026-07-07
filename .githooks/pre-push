@@ -1,0 +1,4 @@
+#!/bin/sh
+# Deltawright pre-push: run the full test suite before commits leave the machine.
+echo "[pre-push] running the Playwright test suite..."
+npm test
