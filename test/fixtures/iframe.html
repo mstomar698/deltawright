@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright iframe fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    iframe { display: block; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Parent</h1>
+  <button id="open">Open in iframe</button>
+  <iframe id="f" src="iframe-child.html" width="400" height="300" style="border: 1px solid #ccc"></iframe>
+  <script>
+    // The action, on the PARENT, inserts a dialog INTO the same-origin child frame's
+    // document — invisible to a MutationObserver on the parent.
+    document.getElementById('open').addEventListener('click', () => {
+      const doc = document.getElementById('f').contentDocument;
+      const dlg = doc.createElement('div');
+      dlg.className = 'dialog';
+      dlg.setAttribute('role', 'dialog');
+      dlg.setAttribute('aria-label', 'Iframe dialog');
+      dlg.style.cssText =
+        'position:fixed;left:40px;top:30px;width:200px;padding:12px;background:#fff;border:1px solid #333';
+      dlg.innerHTML = '<p>Inside a same-origin iframe.</p><button class="ok">OK</button>';
+      doc.body.appendChild(dlg);
+    });
+  </script>
+</body>
+</html>

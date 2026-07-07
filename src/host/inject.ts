@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
-import type { Page } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
 
 const observerEntry = fileURLToPath(new URL('../injected/observer.ts', import.meta.url));
 
@@ -36,9 +36,9 @@ export function injectedSource(): Promise<string> {
  * rather than page.evaluate(string) so the bundled IIFE runs cleanly regardless of
  * expression-vs-statement quirks.
  */
-export async function ensureInjected(page: Page): Promise<void> {
-  const present = await page.evaluate(() => typeof (window as any).__deltawright !== 'undefined');
+export async function ensureInjected(target: Page | Frame): Promise<void> {
+  const present = await target.evaluate(() => typeof (window as any).__deltawright !== 'undefined');
   if (present) return;
   const source = await injectedSource();
-  await page.addScriptTag({ content: source });
+  await target.addScriptTag({ content: source });
 }
