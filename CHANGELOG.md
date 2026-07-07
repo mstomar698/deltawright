@@ -49,6 +49,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Element-adding background-churn filter** (#30, extends #15): the pre-arm baseline now
+  also learns recurring element-**insertion** signatures (`parent > tag . class`), so a
+  background pattern that inserts elements every tick (toasts, live-feed rows, virtualized
+  lists) is excluded from the delta too — while a one-off insert like a modal (a unique
+  signature) is always kept. Additive to the baseline; `test/causal.spec.ts` proves a
+  toast-churning page reports the modal alone (`droppedBackground > 0`). The larger
+  advanced-attribution rewrite (in-window recurrence to drop the baseline latency, spatial
+  cohort, locality keep-overrides) remains open in #30.
 - **Role-aware actionability probes** (#17): the verdict now matches the action an agent
   would use on the node, not click-for-everything. Text inputs are probed with
   `isVisible + isEditable` (fill has no pointer hit-test), selects with

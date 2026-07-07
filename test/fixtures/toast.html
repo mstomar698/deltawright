@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright toast fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #toasts .toast { padding: 4px 8px; background: #eee; margin: 2px 0; font-size: 12px; }
+    .modal {
+      position: fixed; left: 320px; top: 160px; width: 280px; padding: 16px;
+      background: #fff; border: 1px solid #333; border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Toasts</h1>
+  <button id="open">Open modal</button>
+  <div id="toasts"></div>
+  <script>
+    // Background ELEMENT-adding churn: a new toast element every 60 ms — a recurring
+    // insertion signature (#toasts > div.toast), unlike the one-off modal.
+    let n = 0;
+    const toasts = document.getElementById('toasts');
+    setInterval(() => {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = 'toast ' + n++;
+      toasts.appendChild(t);
+    }, 60);
+
+    document.getElementById('open').addEventListener('click', () => {
+      const m = document.createElement('div');
+      m.className = 'modal';
+      m.setAttribute('role', 'dialog');
+      m.setAttribute('aria-label', 'Modal');
+      m.innerHTML = '<button class="ok">OK</button>';
+      document.body.appendChild(m);
+    });
+  </script>
+</body>
+</html>
