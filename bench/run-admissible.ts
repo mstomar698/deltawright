@@ -12,8 +12,6 @@
 // What it still does NOT cover (tracked in #25): a second framework (Vue), Tier-2
 // production sites via HAR replay, and Anthropic's tokenizer as the primary counter.
 import { chromium, type Browser, type Page } from '@playwright/test';
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 import {
   actAndObserve,
   render,
@@ -24,11 +22,17 @@ import {
 } from '../src/index';
 import { structuralDiff } from './structural-diff';
 import { minimalDeltaText } from './delta-lite';
+import { startCorpusServer } from './static-server';
 
 const VIEWPORT = { width: 1280, height: 720 };
 const N = 30; // measured reps per interaction
 const WARMUP = 2; // discarded (cold JIT / inject)
-const APP_URL = pathToFileURL(resolve('bench/corpus/todomvc-react/index.html')).href;
+
+// Two THIRD-PARTY frameworks (author-bias-free), same standardized TodoMVC selectors.
+const APPS = [
+  { name: 'react', path: 'todomvc-react' },
+  { name: 'vue', path: 'todomvc-vue' },
+];
 
 const snapshot = (p: Page) => p.locator('body').ariaSnapshot();
 const seed = (texts: string[]) => async (p: Page) => {
@@ -95,10 +99,13 @@ const INTERACTIONS: Interaction[] = [
   },
 ];
 
-async function freshApp(browser: Browser): Promise<{ close: () => Promise<void>; page: Page }> {
+async function freshApp(
+  browser: Browser,
+  url: string,
+): Promise<{ close: () => Promise<void>; page: Page }> {
   const ctx = await browser.newContext({ viewport: VIEWPORT });
   const page = await ctx.newPage();
-  await page.goto(APP_URL);
+  await page.goto(url);
   await page.waitForSelector('.new-todo');
   return { page, close: () => ctx.close() };
 }
@@ -113,8 +120,8 @@ interface DeltaSample {
   wallMs: number;
 }
 
-async function measureDelta(browser: Browser, ix: Interaction): Promise<DeltaSample> {
-  const { page, close } = await freshApp(browser);
+async function measureDelta(browser: Browser, ix: Interaction, url: string): Promise<DeltaSample> {
+  const { page, close } = await freshApp(browser, url);
   await ix.setup(page);
   const t0 = performance.now();
   const delta = await actAndObserve(page, ix.action, { label: ix.name });
@@ -139,8 +146,12 @@ interface IncumbentSample {
   wallMs: number;
 }
 
-async function measureIncumbent(browser: Browser, ix: Interaction): Promise<IncumbentSample> {
-  const { page, close } = await freshApp(browser);
+async function measureIncumbent(
+  browser: Browser,
+  ix: Interaction,
+  url: string,
+): Promise<IncumbentSample> {
+  const { page, close } = await freshApp(browser, url);
   await ix.setup(page);
   await ensureInjected(page);
   const t0 = performance.now();
@@ -167,55 +178,55 @@ const median = (xs: number[]) => pct(xs, 0.5);
 
 async function main() {
   const browser = await chromium.launch({ headless: true });
+  const server = await startCorpusServer();
   const rows: Record<string, unknown>[] = [];
 
-  for (const ix of INTERACTIONS) {
-    process.stdout.write(`\n[${ix.name}] ${ix.quadrant} `);
-    const dS: DeltaSample[] = [];
-    const iS: IncumbentSample[] = [];
-    for (let t = 0; t < N + WARMUP; t++) {
-      const d = await measureDelta(browser, ix);
-      const i = await measureIncumbent(browser, ix);
-      if (t >= WARMUP) {
-        dS.push(d);
-        iS.push(i);
+  for (const app of APPS) {
+    const url = `${server.origin}/${app.path}/`;
+    for (const ix of INTERACTIONS) {
+      process.stdout.write(`\n[${app.name}/${ix.name}] ${ix.quadrant} `);
+      const dS: DeltaSample[] = [];
+      const iS: IncumbentSample[] = [];
+      for (let t = 0; t < N + WARMUP; t++) {
+        const d = await measureDelta(browser, ix, url);
+        const i = await measureIncumbent(browser, ix, url);
+        if (t >= WARMUP) {
+          dS.push(d);
+          iS.push(i);
+        }
+        if (t % 5 === 0) process.stdout.write('.');
       }
-      if (t % 5 === 0) process.stdout.write('.');
+
+      const dTok = median(dS.map((s) => s.tokens));
+      const dLite = median(dS.map((s) => s.lite));
+      const sDiff = median(iS.map((s) => s.structDiffTokens));
+      const reSnap = median(iS.map((s) => s.resnapshotTokens));
+      const captureRate = dS.filter((s) => s.captured).length;
+      const nodes = median(dS.map((s) => s.nodes));
+      const cappedN = dS.filter((s) => s.capped).length;
+
+      rows.push({
+        app: app.name,
+        interaction: ix.name,
+        delta_tokens: dTok,
+        lite_tokens: dLite,
+        struct_diff_tokens: sDiff,
+        resnapshot_tokens: reSnap,
+        lite_vs_structdiff: sDiff ? +(dLite / sDiff).toFixed(2) : 0,
+        delta_vs_resnapshot: reSnap ? +(dTok / reSnap).toFixed(2) : 0,
+        nodes,
+        capture: `${captureRate}/${N}`,
+        capped: `${cappedN}/${N}`,
+        delta_ms_med: Math.round(median(dS.map((s) => s.wallMs))),
+        incumbent_ms_med: Math.round(median(iS.map((s) => s.wallMs))),
+      });
     }
-
-    const dTok = median(dS.map((s) => s.tokens));
-    const dLite = median(dS.map((s) => s.lite));
-    const sDiff = median(iS.map((s) => s.structDiffTokens));
-    const reSnap = median(iS.map((s) => s.resnapshotTokens));
-    const captureRate = dS.filter((s) => s.captured).length;
-    const nodes = median(dS.map((s) => s.nodes));
-    const cappedN = dS.filter((s) => s.capped).length;
-
-    rows.push({
-      interaction: ix.name,
-      delta_tokens: dTok,
-      lite_tokens: dLite,
-      struct_diff_tokens: sDiff,
-      resnapshot_tokens: reSnap,
-      lite_vs_structdiff: sDiff ? +(dLite / sDiff).toFixed(2) : 0,
-      delta_vs_resnapshot: reSnap ? +(dTok / reSnap).toFixed(2) : 0,
-      nodes,
-      capture: `${captureRate}/${N}`,
-      capped: `${cappedN}/${N}`,
-      delta_ms_med: Math.round(median(dS.map((s) => s.wallMs))),
-      delta_ms_p75: Math.round(
-        pct(
-          dS.map((s) => s.wallMs),
-          0.75,
-        ),
-      ),
-      incumbent_ms_med: Math.round(median(iS.map((s) => s.wallMs))),
-    });
   }
 
   await browser.close();
+  await server.close();
   console.log(
-    `\n\n=== ADMISSIBLE RESULTS (real TodoMVC React, N=${N}, ${WARMUP} warm-up discarded) ===\n`,
+    `\n\n=== ADMISSIBLE RESULTS (real TodoMVC React + Vue, N=${N}, ${WARMUP} warm-up discarded) ===\n`,
   );
   console.table(rows);
   console.log(
