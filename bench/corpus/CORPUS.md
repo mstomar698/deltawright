@@ -26,7 +26,19 @@ replayed offline"). Committing the pinned snapshot makes the benchmark independe
 network/CDN availability and immune to upstream drift. These files are excluded from
 lint/format (they are third-party build artifacts).
 
+## todomvc-vue
+
+- **Source:** [tastejs/todomvc](https://github.com/tastejs/todomvc), pinned commit
+  `07f3c4bcbd38e2a10c996493e9a541755f042f1b`, path `examples/vue/dist/` (a Vue 3 build).
+- **License:** MIT (TodoMVC).
+- **Vendored files + sha256:**
+  - `index.html` — `8d2fb97cb255c5bd26f19214a4c8992ed87c60592a19645a3dcdbba2790da697`
+  - `assets/index-CO9Gq1IP.js` — `a3369f75571a321455ce646feb7c242e559b57df21fe1a6d60a32a0064ae6d64`
+  - `assets/index-bgjkvPzV.css` — `0b471946c750dd088f0f535ac38548d353065992e8f7f88e993ccab97f7da556`
+- Uses ES modules, so it is served over HTTP by `bench/static-server.ts` (not `file://`).
+  Because TodoMVC's class names are standardized, the *same* interactions run on both
+  React and Vue unchanged.
+
 ## Not yet in the corpus (tracked in #25)
-- A second framework (Vue TodoMVC — uses ES modules, needs an HTTP origin, so a static
-  server rather than `file://`).
 - Tier-2 production sites captured to HAR/WARC and replayed offline.
+- Anthropic's tokenizer as the primary token counter (cl100k is an OpenAI proxy).
