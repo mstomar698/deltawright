@@ -2,6 +2,7 @@ node_modules
 dist
 test-results
 playwright-report
+bench/corpus
 package-lock.json
 test/fixtures
 docs

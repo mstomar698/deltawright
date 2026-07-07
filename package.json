@@ -38,6 +38,7 @@
     "test": "playwright test",
     "demo": "tsx demo/run-demo.ts",
     "bench": "tsx bench/run-bench.ts",
+    "bench:admissible": "tsx bench/run-admissible.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

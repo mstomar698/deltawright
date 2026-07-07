@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format is based on
   in `docs/summaries/v0.5-real-app-benchmark-findings.md` (issue #23): the token win
   holds (delta 0.01× a large re-snapshot; 0.15–0.87× the diff at info-parity), and
   noise/settle/time weaknesses are confirmed and quantified (feeding #13/#15/#18).
+- Admissible benchmark (`npm run bench:admissible`, issue #25): runs on a **real,
+  unmodified, third-party** app (TodoMVC React, pinned; `bench/corpus/CORPUS.md`) with
+  pre-registered interactions incl. a navigation, a **structure-aware order-insensitive
+  diff** (`bench/structural-diff.ts`, unit-tested), primary-change recall, and N=30 reps.
+  Findings (`docs/summaries/v0.5-admissible-benchmark-findings.md`): the token win holds
+  on code we didn't write (0.19–0.45× re-snapshot; 0.27–1.03× a structure-aware diff at
+  info-parity), recall 30/30 and settle 0/30-capped on all interactions, and the O(nodes)
+  actionability time cost is confirmed (hover-reveal controls pay the full trial timeout).
 
 ### Fixed
 
