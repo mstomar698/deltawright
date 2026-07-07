@@ -25,6 +25,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Robust settle detection** (#13, retires DW-01): settle now resolves on **structural
+  quiescence** — once an element add/remove is seen, it waits only for *structural* quiet,
+  treating background ticker churn (attribute/text updates) as non-structural. So on a
+  live-updating page it no longer waits out the full `maxWaitMs` cap, and still waits
+  through a delayed insert (the insert is the structural signal). The old full-DOM
+  quiescence remains as the quiet-page path. Regression suite: `test/settle.spec.ts` on a
+  60 ms-ticker fixture. Residual (attribute/text-only effect on a live page) → #15.
 - Actionability reconciliation is now **bounded-concurrent** instead of serial (#18):
   each changed node still receives its full authoritative Playwright trial (verdicts
   unchanged — the northstar cases and real-app recall 30/30 confirm), but probes run

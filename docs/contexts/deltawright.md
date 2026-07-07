@@ -34,8 +34,8 @@ reusing Playwright's own actionability judgment so the verdict matches reality.
 - `test/fixtures/northstar.html` · the three controlled cases.
 
 ## active design-watches
-- DW-01 · settle detection is a simple heuristic — verify tunables before trusting a delta on any new page shape.
 - DW-02 · actionability verdict must equal the real Playwright action — verify alignment when changing the probe or geometry read.
+- (DW-01 retired — #13 shipped robust structural-quiescence settle + regression suite.)
 
 ## open questions
 1. none blocking for v0.1.
