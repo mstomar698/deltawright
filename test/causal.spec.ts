@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { actAndObserve } from '../src/index';
-import { LIVE_FIXTURE_URL } from './helpers';
+import { LIVE_FIXTURE_URL, fixtureUrl } from './helpers';
 
 // Regression suite for causal attribution (#15). The live fixture's 60 ms ticker
 // churns ~20 <span class="live"> cells + #log continuously. Time-window attribution
@@ -35,4 +35,18 @@ test('a NO-OP on a live page yields ~no delta (the noise floor is filtered)', as
   // With causal attribution, a no-op on a churning page should report essentially
   // nothing — the background churn is not the action's effect.
   expect(delta.nodes.length).toBeLessThanOrEqual(2);
+});
+
+test('recurring element-adding background churn (toasts) is excluded; the modal is kept', async ({
+  page,
+}) => {
+  await page.goto(fixtureUrl('toast.html'));
+  const delta = await actAndObserve(page, (p) => p.click('#open'), { label: 'open modal' });
+
+  // The one-off modal (a unique insertion signature) is captured.
+  expect(delta.nodes.some((n) => n.role === 'dialog' || n.name === 'Modal')).toBe(true);
+  // The recurring background toasts were dropped, so the delta stays tiny (~the modal),
+  // not modal + N toast subtrees.
+  expect(delta.nodes.length).toBeLessThanOrEqual(3);
+  expect(delta.stats.droppedBackground, 'toasts counted as dropped background').toBeGreaterThan(0);
 });

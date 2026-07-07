@@ -56,6 +56,10 @@ declare global {
   // the delta to the action's effect instead of the whole live page.
   let bgText = new Set<Element>();
   let bgAttr = new Map<Element, Set<string>>();
+  // Recurring element-INSERTION signatures seen in the baseline (toasts / live-feed
+  // rows / virtualized lists), so background-added subtrees are excluded too (#30).
+  let bgInsert = new Set<string>();
+  let bgInsertCount = new Map<string, number>();
 
   // Open shadow roots the observer is attached to (web components), so shadow-DOM
   // changes appear in the delta. Reset per arm; observer.disconnect() clears them. (#19)
@@ -194,15 +198,33 @@ declare global {
     } else if (m.type === 'characterData') {
       const parent = (m.target as CharacterData).parentElement;
       if (parent) bgText.add(parent);
-    } else if (m.type === 'childList' && isElement(m.target)) {
-      // textContent updates land as text-node childList churn on the parent element.
+    } else if (m.type === 'childList') {
+      if (isElement(m.target)) {
+        // textContent updates land as text-node childList churn on the parent element.
+        m.addedNodes.forEach((n) => {
+          if (isText(n) && n.parentElement) bgText.add(n.parentElement);
+        });
+        m.removedNodes.forEach((n) => {
+          if (isText(n)) bgText.add(m.target as Element);
+        });
+      }
+      // Tally element-insertion signatures — one added repeatedly in the baseline is a
+      // background insertion pattern (toast, live-feed row, virtualized list item).
       m.addedNodes.forEach((n) => {
-        if (isText(n) && n.parentElement) bgText.add(n.parentElement);
-      });
-      m.removedNodes.forEach((n) => {
-        if (isText(n)) bgText.add(m.target as Element);
+        if (isElement(n)) {
+          const s = insertSig(n);
+          bgInsertCount.set(s, (bgInsertCount.get(s) ?? 0) + 1);
+        }
       });
     }
+  }
+
+  // Signature of an inserted element: parentTag > tag . firstClass|role. Specific
+  // enough that a unique modal never collides with a recurring background toast.
+  function insertSig(el: Element): string {
+    const parent = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
+    const cls = el.classList[0] ?? el.getAttribute('role') ?? '';
+    return `${parent}>${el.tagName.toLowerCase()}.${cls}`;
   }
 
   // Observe the page briefly BEFORE the action to learn what is already churning, so
@@ -214,6 +236,8 @@ declare global {
   ): Promise<{ sampledMs: number; footprintSize: number }> {
     bgText = new Set();
     bgAttr = new Map();
+    bgInsert = new Set();
+    bgInsertCount = new Map();
     return new Promise((resolve) => {
       let sawAny = false;
       const obs = new MutationObserver((muts) => {
@@ -231,7 +255,12 @@ declare global {
         const elapsed = performance.now() - start;
         if ((!sawAny && elapsed >= opts.earlyExitMs) || elapsed >= opts.baselineMs) {
           obs.disconnect();
-          resolve({ sampledMs: Math.round(elapsed), footprintSize: bgText.size + bgAttr.size });
+          // A signature inserted >= 2x during the baseline is a background pattern.
+          for (const [sig, count] of bgInsertCount) if (count >= 2) bgInsert.add(sig);
+          resolve({
+            sampledMs: Math.round(elapsed),
+            footprintSize: bgText.size + bgAttr.size + bgInsert.size,
+          });
         } else {
           setTimeout(check, 20);
         }
@@ -297,10 +326,21 @@ declare global {
       }
     }
 
-    // Net added = inserted AND still connected, reduced to subtree roots only.
+    // Net added = inserted AND still connected, reduced to subtree roots only. An added
+    // root whose insertion signature recurred in the baseline is background (a toast /
+    // virtualized row) and is dropped — the modal's unique signature is never in the set.
+    let droppedBackground = 0;
     const addedConnected = [...addedCand].filter((el) => el.isConnected);
     const addedSet = new Set(addedConnected);
-    const addedRoots = addedConnected.filter((el) => !ancestorInSet(el, addedSet));
+    const addedRoots: Element[] = [];
+    for (const el of addedConnected) {
+      if (ancestorInSet(el, addedSet)) continue; // a descendant of another added root
+      if (bgInsert.size > 0 && bgInsert.has(insertSig(el))) {
+        droppedBackground++;
+        continue;
+      }
+      addedRoots.push(el);
+    }
     const rootSet = new Set(addedRoots);
     const inAddedSubtree = (el: Element) => rootSet.has(el) || ancestorInSet(el, rootSet);
 
@@ -316,7 +356,6 @@ declare global {
     // net-compare: keep an attribute only if its current value differs from the
     // earliest observed oldValue (drops churn-to-original; skips our own stamp).
     // Attributes already churning in the pre-arm baseline are dropped as background.
-    let droppedBackground = 0;
     const attrChanged: Array<{ el: Element; attrs: string[] }> = [];
     for (const [el, perEl] of attrOld) {
       if (!el.isConnected || inAddedSubtree(el)) continue;
@@ -541,6 +580,8 @@ declare global {
     // sampleBaseline starts clean (no stale background exclusions).
     bgText = new Set();
     bgAttr = new Map();
+    bgInsert = new Set();
+    bgInsertCount = new Map();
 
     return { nodes, rawRecords, animationsAwaited, droppedBackground: net.droppedBackground };
   }
