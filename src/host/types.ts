@@ -74,11 +74,11 @@ export type Verdict = 'ACTIONABLE' | 'NOT-actionable' | 'n/a';
 /**
  * The reconciliation of geometry read vs. Playwright's authoritative judgment.
  *
- * NOTE (v0.1): the verdict is POINTER/CLICK actionability — it answers "can this be
- * clicked?" and is probed with Playwright's `click({ trial: true })`. This matches
- * the design doc's model (a covered control is NOT-actionable). Role-aware probes
- * (e.g. `fill` editability for text inputs, which does not hit-test) are a v0.5
- * refinement; see docs/decisions/design-watches.md (DW-02).
+ * The verdict is ROLE-AWARE (#17): it matches the action an agent would use on the
+ * node — `click` for buttons/links (pointer hit-test), `fill` for text inputs (no
+ * hit-test, so a covered input is fillable but a read-only one is not), and
+ * `selectOption` for selects. Playwright's judgment wins any disagreement with the
+ * geometry (pointer-model) read; see docs/decisions/design-watches.md (DW-02).
  */
 export interface Actionability {
   /** Final verdict — Playwright's judgment wins any disagreement. */

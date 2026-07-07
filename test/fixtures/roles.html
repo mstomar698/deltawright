@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright role-aware fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    input, select { display: block; margin: 8px 0; font-size: 14px; padding: 4px; width: 220px; }
+    .dw-overlay { position: fixed; background: rgba(0, 0, 0, 0.45); z-index: 10; }
+  </style>
+</head>
+<body>
+  <button id="open-form">Open form</button>
+  <script>
+    document.getElementById('open-form').addEventListener('click', () => {
+      const form = document.createElement('form');
+      form.innerHTML =
+        '<input class="normal" aria-label="Normal" type="text" />' +
+        '<input class="readonly" aria-label="Readonly" type="text" readonly value="x" />' +
+        '<input class="disabled" aria-label="Disabled" type="text" disabled />' +
+        '<input class="covered" aria-label="Covered" type="text" />' +
+        '<select class="sel-normal" aria-label="Pick"><option>a</option><option>b</option></select>' +
+        '<select class="sel-disabled" aria-label="Disabled select" disabled><option>a</option></select>';
+      document.body.appendChild(form);
+
+      // Cover the "Covered" input's hit-point (blocks a click, but not fill()).
+      const c = form.querySelector('.covered');
+      const r = c.getBoundingClientRect();
+      const ov = document.createElement('div');
+      ov.className = 'dw-overlay';
+      ov.setAttribute('data-role', 'blocker');
+      ov.style.left = r.left - 4 + 'px';
+      ov.style.top = r.top - 4 + 'px';
+      ov.style.width = r.width + 8 + 'px';
+      ov.style.height = r.height + 8 + 'px';
+      document.body.appendChild(ov);
+    });
+  </script>
+</body>
+</html>

@@ -25,6 +25,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Role-aware actionability probes** (#17): the verdict now matches the action an agent
+  would use on the node, not click-for-everything. Text inputs are probed with
+  `isVisible + isEditable` (fill has no pointer hit-test), selects with
+  `isVisible + isEnabled`, and buttons/links with the click trial. This fixes the cases
+  a click-only probe got wrong: a **covered text input is ACTIONABLE** (fill works
+  despite the cover), a **read-only input is NOT-actionable** (click-only wrongly said
+  yes), and disabled inputs report `disabled`. Verified against real `fill`/`select` in
+  `test/roles.spec.ts`. (DW-02 invariant strengthened, not retired.)
 - **Causal attribution / mutation-noise filtering** (#15, §6.2 "where the value is
   earned"). Attribution moves from time-window-scoped to causal: a short pre-arm
   **baseline** (default 150 ms, early-exits on a quiet page) learns which
