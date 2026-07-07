@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { ensureInjected } from './inject';
 import { annotateActionability } from './actionability';
+import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import type {
   BaselineOptions,
   CollectResult,
@@ -45,6 +46,14 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   baseline?: boolean;
   baselineMs?: number;
   baselineEarlyExitMs?: number;
+  /**
+   * DOM-less fallback (#20): when the DOM delta is empty (e.g. a `<canvas>`/WebGL draw
+   * that mutates no DOM), screenshot before/after and report the changed pixel region
+   * as a synthetic node. Off by default (adds a pre-action screenshot).
+   */
+  screenshotFallback?: boolean;
+  pixelThreshold?: number;
+  minPixels?: number;
 }
 
 export const DEFAULT_SETTLE: SettleOptions = {
@@ -76,6 +85,37 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** A synthetic delta node for a screenshot-diff region (no backing DOM element). */
+function pixelRegionNode(region: ChangedRegion): DeltaNode {
+  return {
+    ref: 'px1',
+    kind: 'added',
+    tag: 'canvas-region',
+    role: null,
+    name: `pixel region changed (${region.changedPixels}px)`,
+    interactive: false,
+    parentRef: null,
+    geometry: {
+      rect: region.rect,
+      inViewport: true,
+      display: '',
+      visibility: '',
+      opacity: '',
+      pointerEvents: '',
+      hitSelf: true,
+      coveredBy: null,
+      offscreen: false,
+    },
+    actionability: {
+      verdict: 'n/a',
+      reason: 'pixel-region (screenshot-diff; no DOM element)',
+      geometryVerdict: 'n/a',
+      playwright: null,
+      agreed: true,
+    },
+  };
+}
+
 export async function actAndObserve(
   page: Page,
   action: Action,
@@ -88,6 +128,10 @@ export async function actAndObserve(
   };
 
   await ensureInjected(page);
+
+  // DOM-less fallback (#20): capture the pre-action pixels so we can diff them if the
+  // DOM reports no change.
+  const beforeShot = opts.screenshotFallback ? await page.screenshot() : null;
 
   // Causal attribution (#15): learn the background footprint before arming (unless
   // disabled). sampleBaseline early-exits on a quiet page, so this is cheap there.
@@ -129,6 +173,16 @@ export async function actAndObserve(
         (actionability) => ({ ...raw, actionability }),
       ),
   );
+
+  // DOM-less fallback (#20): if nothing mutated the DOM but pixels may have changed
+  // (canvas/WebGL/cross-origin), diff the screenshots and report the changed region.
+  if (beforeShot && nodes.length === 0) {
+    const region = diffChangedRegion(beforeShot, await page.screenshot(), {
+      channelThreshold: opts.pixelThreshold,
+      minPixels: opts.minPixels,
+    });
+    if (region) nodes.push(pixelRegionNode(region));
+  }
 
   return {
     action: opts.label ?? 'action',

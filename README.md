@@ -190,7 +190,7 @@ verdict (#25).
 - **Mutation-noise filtering** on real React/Vue/Angular apps (a semantic-attribute whitelist; today attr changes on surviving elements are reported by name, though churn that nets to the original is already dropped).
 - **Role-aware actionability probes** (`fill`/`selectOption`/`hover` editability) so the verdict matches the *specific* action, not just click.
 - **Shadow DOM + same-origin iframe** traversal.
-- **Screenshot-diff fallback** for canvas/WebGL and cross-origin regions (no DOM to observe).
+- ~~**Screenshot-diff fallback** for canvas/WebGL and cross-origin regions~~ — shipped (#20, opt-in `screenshotFallback`).
 - ~~**MCP server** surface~~ — shipped (#22); a `describe_changes` tool and a distributable JS build remain.
 - **Test-gen opinion**: stable-selector candidates and assertion suggestions per changed node.
 - Cross-browser (Firefox/WebKit) and terminal observability (human, not agent, input).
