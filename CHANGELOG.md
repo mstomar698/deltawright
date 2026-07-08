@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Canonical closed root-cause taxonomy** (#46): `src/host/taxonomy.ts` defines the ONE
+  vocabulary every v0.6 diagnosis surface must speak — 18 codes across six categories
+  (actionability-blocking, verdict-disagreement, membership-attribution, capture-integrity,
+  fallback, and `unknown` as the first-class "unsure"), each grounded in ≥1 real
+  `PrimitiveSignal` (hitSelf/coveredBy, offscreen, Playwright verdict/error, hitMaxWait,
+  droppedBackground, getAnimations, screenshot-fallback, …). Exported from the package
+  (`ROOT_CAUSE_TAXONOMY`, `ROOT_CAUSE_CODES`, `PRIMITIVE_SIGNALS`, `RootCauseCode`); the
+  `satisfies` table is exhaustive at compile time. Governed by **DW-04**: adding/renaming a
+  code requires an ADR + a corpus relabel + an accuracy-harness re-run, mechanically gated
+  by a frozen SHA lock and a doc↔code sync check in `test/taxonomy.spec.ts`. Spec:
+  `docs/specs/v0.6-root-cause-taxonomy.md`. This is the contract the diagnosis engine (#48)
+  will fulfil; no diagnosis is emitted yet.
 - **Distributable build** (#45): `npm run build` now emits a real `dist/` — ESM +
   bundled `.d.ts` for the public entry points (via tsup), a pre-bundled injected-observer
   IIFE so the installed package is self-contained (no build step at runtime), and two

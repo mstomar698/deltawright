@@ -22,6 +22,14 @@ linter/CI cannot mechanically catch. Cap ~10–12 active. Every watch needs a
 - **Retire when:** Playwright exposes a first-class "explain actionability" API we can consume directly, removing the trial-probe reconciliation.
 - **Status:** active
 
+### DW-04 · The root-cause taxonomy is closed and versioned
+- **Rule:** Every diagnosis Deltawright emits is one of the codes in `src/host/taxonomy.ts` or `unknown`. Adding, removing, or renaming a code requires, IN ORDER: an ADR, a corpus relabel (`bench/flake-corpus/`, #51), and an accuracy-harness re-run (#52) — then, as the deliberate last step, updating the frozen SHA lock in `test/taxonomy.spec.ts`. Each code must stay grounded in ≥1 real `PrimitiveSignal`; `catch-all` is reserved for `unknown`.
+- **Applies when:** editing `src/host/taxonomy.ts`, `docs/specs/v0.6-root-cause-taxonomy.md`, or any code that maps signals to a diagnosis code (the #48 engine and every diagnosis surface).
+- **Why:** Six planned diagnosis surfaces must speak ONE vocabulary or the "single accurate place" drifts into dialects; an ungrounded or ad-hoc code is how a confidently-wrong label ships. (→ ADR 2026-07-08 root-cause taxonomy)
+- **Not mechanical because:** the SHA lock catches a *changed* set, but "is the new code grounded in a real signal and reflected in the corpus + harness" is a semantic judgement a hash cannot make.
+- **Retire when:** the taxonomy has been real-app-calibrated (#25/#41) and stable across a full release, and the corpus+harness gate subsumes the manual review.
+- **Status:** active
+
 ## Retired
 
 ### DW-01 · Settle detection is a heuristic (retired 2026-07-07)

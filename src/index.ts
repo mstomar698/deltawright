@@ -9,6 +9,19 @@ export { ensureInjected, injectedSource } from './host/inject';
 export { diffChangedRegion } from './host/screenshot-diff';
 export type { ChangedRegion, DiffOptions } from './host/screenshot-diff';
 export { checksum, normalizeDelta } from './host/checksum';
+export {
+  ROOT_CAUSE_TAXONOMY,
+  ROOT_CAUSE_CODES,
+  PRIMITIVE_SIGNALS,
+  rootCauseSpec,
+  toRootCauseCode,
+} from './host/taxonomy';
+export type {
+  RootCauseCode,
+  RootCauseCategory,
+  PrimitiveSignal,
+  RootCauseSpec,
+} from './host/taxonomy';
 export type {
   Delta,
   DeltaNode,
