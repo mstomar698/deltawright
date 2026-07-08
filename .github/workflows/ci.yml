@@ -1,5 +1,11 @@
 name: ci
 
+# Least privilege: CI only needs to read the repo. A fork PR already receives a
+# read-only token (this uses `pull_request`, never `pull_request_target`, so PR code
+# never sees repository secrets), but pin it explicitly so no step can gain write access.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
