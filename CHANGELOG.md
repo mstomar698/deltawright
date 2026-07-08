@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Shared Confidence primitive** (#47): `src/host/confidence.ts` gives every v0.6 diagnosis
+  ONE confidence type — `confirmed | suspected | unknown` — with `unknown`/unsure as a
+  first-class outcome ("unsure beats confidently wrong", DW-03). `assessConfidence(evidence)`
+  encodes the rules: `confirmed` only when an authoritative engine named the cause (a
+  Playwright error/verdict, or a geometry+Playwright agreement); a geometry-only or
+  timing-only read is at most `suspected`; no grounding signal is `unknown`; and conflicting
+  signals downgrade one notch (never upgrade). Exported (`assessConfidence`,
+  `atLeastAsConfident`, `CONFIDENCE_ORDER`, `Confidence`). Registers **DW-03** (a diagnosis
+  is a hypothesis and never contradicts Playwright's verdict). The engine (#48) consumes it;
+  the suspected band gets its own measured precision floor from the harness (#52).
 - **Canonical closed root-cause taxonomy** (#46): `src/host/taxonomy.ts` defines the ONE
   vocabulary every v0.6 diagnosis surface must speak — 18 codes across six categories
   (actionability-blocking, verdict-disagreement, membership-attribution, capture-integrity,
