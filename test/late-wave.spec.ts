@@ -29,6 +29,24 @@ test('should_flag_late_wave_suspected_when_a_structural_mutation_lands_after_set
   expect(names).not.toContain('Wave Two');
 });
 
+test('gap-E freezes the delta at settle: a replacing late wave neither erases wave 1 nor is captured', async ({
+  page,
+}) => {
+  // The delta is collected at the settle point (not after the late window), so a wave 2 that
+  // REMOVES wave 1 cannot erase it from the delta and cannot inject its replacement. Regression
+  // guard for the review's M1 (delayed collect leaking wave-2 DOM effects).
+  await page.goto(fixtureUrl('late-wave.html'));
+  const delta = await actAndObserve(page, (p) => p.click('#replace'), {
+    label: 'replace',
+    lateWatchMs: 1200,
+  });
+
+  expect(delta.stats.lateStructural).toBe(true);
+  const names = delta.nodes.map((n) => n.name);
+  expect(names, 'wave 1 stays in the delta despite the later removal').toContain('Wave One');
+  expect(names, 'the replacement wave is not captured').not.toContain('Wave Two Replaced');
+});
+
 test('should_keep_default_settle_path_byte_unchanged_when_lateWatchMs_is_zero', async ({
   page,
 }) => {

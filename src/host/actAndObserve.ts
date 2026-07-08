@@ -320,6 +320,17 @@ export async function actAndObserve(
     if (region) nodes.push(pixelRegionNode(region));
   }
 
+  // Gap-E (#49): the delta is already frozen at the settle point (collect ran there); now
+  // wait out any remaining late-watch window and read whether a late structural wave landed.
+  // The watch has overlapped collect + reconcile, so this is usually zero added latency.
+  let lateStructural: boolean | undefined;
+  if ((opts.lateWatchMs ?? 0) > 0) {
+    const late = await page.evaluate(() =>
+      (window as unknown as DwWindow).__deltawright!.lateResult(),
+    );
+    lateStructural = late.lateStructural;
+  }
+
   return {
     action: opts.label ?? 'action',
     nodes,
@@ -331,9 +342,7 @@ export async function actAndObserve(
       droppedBackground: collected.droppedBackground,
       // Only present when the gap-E watch ran (lateWatchMs > 0), so the default stats object
       // is byte-unchanged.
-      ...(settleResult.lateStructural !== undefined
-        ? { lateStructural: settleResult.lateStructural }
-        : {}),
+      ...(lateStructural !== undefined ? { lateStructural } : {}),
     },
   };
 }

@@ -153,6 +153,8 @@ export interface DeltawrightApi {
   sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
   waitForSettle(opts: SettleOptions): Promise<SettleResult>;
   collect(opts: SettleOptions): Promise<CollectResult>;
+  /** Gap-E (#49): wait out the late-watch window and report whether a late wave landed. */
+  lateResult(): Promise<{ lateStructural: boolean }>;
   reset(): void;
 }
 
@@ -175,8 +177,6 @@ export interface SettleOptions {
 export interface SettleResult {
   settleMs: number;
   hitMaxWait: boolean;
-  /** Gap-E (#49): a structural mutation landed after settle within `lateWatchMs`. */
-  lateStructural?: boolean;
 }
 
 export interface CollectResult {
