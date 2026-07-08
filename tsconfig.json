@@ -10,10 +10,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    // tsup's .d.ts bundler injects the (now-deprecated) baseUrl; silence the TS6→7
+    // deprecation error rather than fail the declaration build. No baseUrl is set here.
+    "ignoreDeprecations": "6.0",
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "demo", "bench"]
+  "include": ["src", "test", "demo", "bench"],
+  // The packaging consumer fixture resolves the package by name against the built
+  // dist/ types; it is typechecked separately (post-build) by test/packaging.spec.ts.
+  "exclude": ["node_modules", "dist", "test/fixtures/packaging"]
 }

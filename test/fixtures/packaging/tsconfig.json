@@ -1,0 +1,16 @@
+{
+  "//": "Typechecks the by-name consumer against the BUILT dist/ types the way a real",
+  "//2": "installed consumer would (nodenext honors package.json exports). Invoked by",
+  "//3": "test/packaging.spec.ts after the build; excluded from the source typecheck.",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["consumer.ts"]
+}

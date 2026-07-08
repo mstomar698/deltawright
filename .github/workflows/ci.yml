@@ -40,8 +40,11 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+      - name: Build distributable (dist/ + types + bins)
+        run: npm run build
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Test (coalescer units + north-star validation)
+      - name: Test (coalescer units + north-star validation + packaging)
         run: npm test

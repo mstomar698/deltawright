@@ -7,9 +7,17 @@ import type {
   CollectResult,
   Delta,
   DeltaNode,
+  DeltawrightApi,
   SettleOptions,
   SettleResult,
 } from './types';
+
+// The injected script installs its API on window.__deltawright. Inside evaluate
+// callbacks we reach it through this cast rather than a global Window augmentation,
+// so the host stays self-contained (its .d.ts needs no injected-module types) and the
+// published package never augments a consumer's global Window. (The alias is a type,
+// so it is legal to reference inside the serialized page callbacks below.)
+type DwWindow = Window & { __deltawright?: DeltawrightApi };
 
 /**
  * The v0.1 core primitive. Perform ONE action and return a compact structured
@@ -153,9 +161,15 @@ async function armChildFrames(
     try {
       await ensureInjected(frame);
       if (baseline) {
-        await frame.evaluate((o) => window.__deltawright!.sampleBaseline(o), baseline);
+        await frame.evaluate(
+          (o) => (window as unknown as DwWindow).__deltawright!.sampleBaseline(o),
+          baseline,
+        );
       }
-      await frame.evaluate((iwr) => window.__deltawright!.arm(iwr), inWindowRecurrence);
+      await frame.evaluate(
+        (iwr) => (window as unknown as DwWindow).__deltawright!.arm(iwr),
+        inWindowRecurrence,
+      );
       let offset = { x: 0, y: 0 };
       try {
         const box = await (await frame.frameElement()).boundingBox();
@@ -218,12 +232,15 @@ export async function actAndObserve(
         };
   if (baseline) {
     await page.evaluate<{ sampledMs: number; footprintSize: number }, BaselineOptions>(
-      (o) => window.__deltawright!.sampleBaseline(o),
+      (o) => (window as unknown as DwWindow).__deltawright!.sampleBaseline(o),
       baseline,
     );
   }
 
-  await page.evaluate((iwr) => window.__deltawright!.arm(iwr), opts.inWindowRecurrence === true);
+  await page.evaluate(
+    (iwr) => (window as unknown as DwWindow).__deltawright!.arm(iwr),
+    opts.inWindowRecurrence === true,
+  );
 
   // Same-origin iframe traversal (#34, opt-in): arm child frames too, before the action.
   const childFrames = await armChildFrames(
@@ -238,11 +255,11 @@ export async function actAndObserve(
   await action(page);
 
   const settleResult = await page.evaluate<SettleResult, SettleOptions>(
-    (o) => window.__deltawright!.waitForSettle(o),
+    (o) => (window as unknown as DwWindow).__deltawright!.waitForSettle(o),
     settle,
   );
   const collected = await page.evaluate<CollectResult, SettleOptions>(
-    (o) => window.__deltawright!.collect(o),
+    (o) => (window as unknown as DwWindow).__deltawright!.collect(o),
     settle,
   );
 
@@ -263,11 +280,11 @@ export async function actAndObserve(
   for (const c of childFrames) {
     try {
       await c.frame.evaluate<SettleResult, SettleOptions>(
-        (o) => window.__deltawright!.waitForSettle(o),
+        (o) => (window as unknown as DwWindow).__deltawright!.waitForSettle(o),
         settle,
       );
       const cc = await c.frame.evaluate<CollectResult, SettleOptions>(
-        (o) => window.__deltawright!.collect(o),
+        (o) => (window as unknown as DwWindow).__deltawright!.collect(o),
         settle,
       );
       const cn = await mapWithConcurrency(
