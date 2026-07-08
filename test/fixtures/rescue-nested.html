@@ -15,7 +15,9 @@
   <div id="open" role="button" tabindex="0"><div class="wrap">Save</div></div>
   <div id="toasts"></div>
   <script>
-    // Background toasts (same "div>div.toast" signature) => baseline background.
+    // Background toasts (same "div>div.toast" signature) => baseline background. Fast
+    // enough (20 ms) that the baseline window captures >=2 inserts even under CI load, so
+    // the signature is reliably learned and the flag-off root is reliably dropped.
     let n = 0;
     const toasts = document.getElementById('toasts');
     setInterval(() => {
@@ -23,7 +25,7 @@
       t.className = 'toast';
       t.textContent = 'bg ' + n++;
       toasts.appendChild(t);
-    }, 60);
+    }, 20);
 
     // The action's confirmation reuses the background signature AND contains a
     // non-interactive descendant (<span class="count">) whose TEXT mutates during the
