@@ -1,6 +1,6 @@
 import type { Frame, Page } from '@playwright/test';
 import { ensureInjected } from './inject';
-import { annotateActionability } from './actionability';
+import { annotateActionability, geometryVerdict } from './actionability';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import type {
   BaselineOptions,
@@ -71,6 +71,15 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
    * #30). Default 0 = off = the settle path and delta are byte-unchanged.
    */
   lateWatchMs?: number;
+  /**
+   * Gap-F stale-rect flag (#50, opt-in). AFTER Playwright's authoritative probe (so the
+   * verdict is fixed at the settle point and this delay cannot change it), re-read each node's
+   * rect this many ms later; if it MOVED (>2px, a post-settle JS reposition getAnimations
+   * can't see), adopt the later rect, set `geometry.stable=false` (grounding
+   * `stale-rect-suspected`), and re-derive the geometry annotation. Playwright's verdict is
+   * never touched. Default 0 = off = the annotated rect and stats are byte-unchanged.
+   */
+  rectRecheckMs?: number;
   /**
    * Same-origin iframe traversal (#34, opt-in): also observe child frames and merge
    * their changes into the delta, with geometry offset to page-global coordinates and
@@ -329,6 +338,33 @@ export async function actAndObserve(
       (window as unknown as DwWindow).__deltawright!.lateResult(),
     );
     lateStructural = late.lateStructural;
+  }
+
+  // Gap-F (#50): re-read geometry AFTER the authoritative probe above, so the verdict was
+  // decided at the settle point and this delay cannot change it. On a >2px move, adopt the
+  // later rect, flag `stable=false`, and re-derive the geometry annotation (geometryVerdict/
+  // agreed) — Playwright's verdict is left untouched (DW-02).
+  const rectRecheckMs = opts.rectRecheckMs ?? 0;
+  if (rectRecheckMs > 0) {
+    const later = await page.evaluate(
+      (ms) => (window as unknown as DwWindow).__deltawright!.recheckRects(ms),
+      rectRecheckMs,
+    );
+    const byRef = new Map(later.map((r) => [r.ref, r.geometry]));
+    for (const node of nodes) {
+      const g1 = byRef.get(node.ref);
+      const g0 = node.geometry;
+      if (!g1 || !g0) continue;
+      if (Math.abs(g1.rect.x - g0.rect.x) > 2 || Math.abs(g1.rect.y - g0.rect.y) > 2) {
+        node.geometry = { ...g1, stable: false };
+        const gv = geometryVerdict(node);
+        node.actionability = {
+          ...node.actionability,
+          geometryVerdict: gv,
+          agreed: gv === node.actionability.verdict,
+        };
+      }
+    }
   }
 
   return {

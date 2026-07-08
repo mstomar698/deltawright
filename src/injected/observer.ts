@@ -735,7 +735,34 @@ declare global {
     return { nodes, rawRecords, animationsAwaited, droppedBackground: net.droppedBackground };
   }
 
-  window.__deltawright = { arm, sampleBaseline, waitForSettle, collect, reset, lateResult };
+  // Gap-F (#50, opt-in): a JS-timer reposition AFTER settle leaves a STALE annotated rect —
+  // getAnimations() is empty for a plain style write, so settleAnimations never waited it out.
+  // Called by the host AFTER collect + the authoritative Playwright probe, so the VERDICT is
+  // decided at the settle point regardless of this delay (this cannot change it). Waits, then
+  // re-reads the current geometry of every stamped node; the host compares to the settle-time
+  // rect, adopts the later read on a move, and re-derives the geometry annotation. Light DOM
+  // only (querySelectorAll does not cross shadow boundaries).
+  async function recheckRects(
+    rectRecheckMs: number,
+  ): Promise<Array<{ ref: string; geometry: GeometryRead }>> {
+    await new Promise<void>((r) => setTimeout(r, rectRecheckMs));
+    const out: Array<{ ref: string; geometry: GeometryRead }> = [];
+    document.querySelectorAll('[data-dw-ref]').forEach((el) => {
+      const ref = el.getAttribute('data-dw-ref');
+      if (ref) out.push({ ref, geometry: readGeometry(el) });
+    });
+    return out;
+  }
+
+  window.__deltawright = {
+    arm,
+    sampleBaseline,
+    waitForSettle,
+    collect,
+    reset,
+    lateResult,
+    recheckRects,
+  };
 })();
 
 // Ensure this file is treated as a module (for `import type` above) without

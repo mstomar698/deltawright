@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright stale-rect (gap-F) fixture</title>
+    <style>
+      #mover {
+        position: absolute;
+        top: 100px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Post-settle reposition</h1>
+    <button id="open">Open</button>
+    <button id="offscreen">Offscreen</button>
+    <div id="host"></div>
+    <script>
+      const host = document.getElementById('host');
+
+      function insertMover(finalLeft, delay) {
+        const b = document.createElement('button');
+        b.id = 'mover';
+        b.textContent = 'Mover';
+        b.style.left = '100px';
+        host.appendChild(b);
+        // Plain style write (no CSS transition), so getAnimations() is empty and
+        // settleAnimations never waits it out — the rect read at settle is stale.
+        setTimeout(() => {
+          b.style.left = finalLeft;
+        }, delay);
+      }
+
+      // Moves far to the RIGHT but stays on-screen (verdict stays ACTIONABLE either way).
+      document.getElementById('open').addEventListener('click', () => insertMover('600px', 500));
+
+      // Moves OFF-SCREEN after settle. This flips the geometry annotation, but Playwright's
+      // verdict (probed at the settle point, before the move) must stay ACTIONABLE.
+      document
+        .getElementById('offscreen')
+        .addEventListener('click', () => insertMover('-9999px', 600));
+    </script>
+  </body>
+</html>

@@ -182,6 +182,18 @@ export function diagnose(delta: Delta): DiagnosedDelta {
   for (const node of delta.nodes) {
     const d = diagnoseNode(node);
     if (d) diagnoses.push(d);
+    if (node.geometry?.stable === false) {
+      // Gap-F (#50): a post-settle reposition moved the rect; the later rect was adopted.
+      // Orthogonal to the actionability diagnosis, so it is a separate per-node note.
+      diagnoses.push({
+        code: 'stale-rect-suspected',
+        confidence: assessConfidence({ source: 'geometry' }),
+        scope: 'node',
+        ref: node.ref,
+        detail:
+          'the annotated rect moved after settle (a post-settle reposition); later rect adopted',
+      });
+    }
   }
   diagnoses.push(...diagnoseDelta(delta));
   return { ...delta, diagnoses };

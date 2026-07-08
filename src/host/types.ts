@@ -34,6 +34,13 @@ export interface GeometryRead {
   coveredBy: string | null;
   /** True when the center point lies outside the viewport (elementFromPoint == null). */
   offscreen: boolean;
+  /**
+   * Gap-F flag (#50, opt-in via `rectRecheckMs`): present and `false` only when a post-settle
+   * re-read found the rect had MOVED (a JS-timer reposition `getAnimations` can't see), in
+   * which case the later rect was adopted here. Absent unless `rectRecheckMs > 0` and the rect
+   * moved, so the default annotation is byte-unchanged. Grounds `stale-rect-suspected`.
+   */
+  stable?: boolean;
 }
 
 /** One changed element node, as reported by the injected script. */
@@ -155,6 +162,8 @@ export interface DeltawrightApi {
   collect(opts: SettleOptions): Promise<CollectResult>;
   /** Gap-E (#49): wait out the late-watch window and report whether a late wave landed. */
   lateResult(): Promise<{ lateStructural: boolean }>;
+  /** Gap-F (#50): wait, then re-read every stamped node's current geometry (host compares). */
+  recheckRects(rectRecheckMs: number): Promise<Array<{ ref: string; geometry: GeometryRead }>>;
   reset(): void;
 }
 
