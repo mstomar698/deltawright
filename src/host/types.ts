@@ -3,6 +3,9 @@
 // host annotates each node with Playwright's authoritative actionability verdict
 // to produce a `Delta`, which the serializer renders to the compact text format.
 
+import type { RootCauseCode } from './taxonomy';
+import type { Confidence } from './confidence';
+
 export type ChangeKind = 'added' | 'removed' | 'attrChanged' | 'textChanged';
 
 export interface Rect {
@@ -107,6 +110,28 @@ export interface Delta {
   action: string;
   nodes: DeltaNode[];
   stats: DeltaStats;
+}
+
+/**
+ * One root-cause hypothesis about a delta (#48). A diagnosis EXPLAINS why a node or the
+ * whole action is in the state it's in; it never overrides Playwright's verdict (DW-03).
+ */
+export interface Diagnosis {
+  /** The taxonomy code (closed set, DW-04). */
+  code: RootCauseCode;
+  /** How sure we are (first-class `unknown`, DW-03). */
+  confidence: Confidence;
+  /** Whether this explains one changed node or the whole action. */
+  scope: 'node' | 'delta';
+  /** The node's ref when scope is 'node'. */
+  ref?: string;
+  /** Human explanation — for geom-disagreement it carries the direction. */
+  detail: string;
+}
+
+/** A `Delta` annotated with root-cause diagnoses (the output of `diagnose`). */
+export interface DiagnosedDelta extends Delta {
+  diagnoses: Diagnosis[];
 }
 
 // --- Injected-script <-> host interchange types --------------------------

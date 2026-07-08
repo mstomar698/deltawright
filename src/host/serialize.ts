@@ -3,7 +3,16 @@
 // OpenAI proxy — the deployment tokenizer (Claude) differs — so treat absolute
 // counts as approximate and RATIOS (delta vs snapshot/diff) as the robust signal.
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
-import type { Delta, DeltaNode } from './types';
+import type { Delta, DeltaNode, DiagnosedDelta } from './types';
+
+export interface SerializeOptions {
+  /**
+   * Append an opt-in root-cause diagnostics section (from `diagnose()`). Default off —
+   * with diagnostics off the output is BYTE-IDENTICAL to the pre-v0.6 serializer, so the
+   * default `@playwright/test` path is unchanged.
+   */
+  diagnostics?: boolean;
+}
 
 // Renders a Delta to the compact, LLM-friendly text format from §3 of the design
 // doc: added (+) / removed (-) / changed (~), each with position and an
@@ -68,7 +77,7 @@ function nodeLine(node: DeltaNode): string {
 }
 
 /** Render the delta as compact indented text. */
-export function serialize(delta: Delta): string {
+export function serialize(delta: Delta, opts: SerializeOptions = {}): string {
   const byRef = new Map(delta.nodes.map((n) => [n.ref, n] as const));
   const childrenOf = new Map<string | null, DeltaNode[]>();
   for (const n of delta.nodes) {
@@ -95,6 +104,18 @@ export function serialize(delta: Delta): string {
         : '  (no DOM changes detected)',
     );
   }
+
+  // Opt-in only: with diagnostics off the lines above are the entire (unchanged) output.
+  if (opts.diagnostics) {
+    const diagnoses = (delta as DiagnosedDelta).diagnoses;
+    if (diagnoses?.length) {
+      lines.push('diagnostics:');
+      for (const d of diagnoses) {
+        const who = d.scope === 'node' && d.ref ? `[${d.ref}]` : '[*]';
+        lines.push(`  ${who} ${d.code} (${d.confidence}) — ${d.detail}`);
+      }
+    }
+  }
   return lines.join('\n');
 }
 
@@ -104,7 +125,10 @@ export function tokenCount(text: string): number {
 }
 
 /** Serialize + measure in one call. */
-export function render(delta: Delta): { text: string; tokens: number } {
-  const text = serialize(delta);
+export function render(
+  delta: Delta,
+  opts: SerializeOptions = {},
+): { text: string; tokens: number } {
+  const text = serialize(delta, opts);
   return { text, tokens: tokenCount(text) };
 }

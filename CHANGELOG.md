@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Pure `diagnose(delta)` root-cause engine** (#48): `src/host/diagnose.ts` turns a `Delta`
+  into a `DiagnosedDelta` (the delta plus `Diagnosis[]`), reading ONLY the existing
+  delta/stats/actionability — no new capture, no membership filter, geometry never filters.
+  The rule is **agree-or-flag** (DW-02/DW-03): a NOT-actionable node earns a specific
+  blocking code (`covered-by-overlay` / `off-screen` / `not-visible` / `pointer-events-none`)
+  ONLY when the geometry read and Playwright agree it is blocked (`confirmed`); when they
+  disagree (`agreed===false`, e.g. a disabled control or a fillable covered input) it is
+  reported as `geom-disagreement` **with direction**, never a code that contradicts
+  Playwright's verdict. Delta-level flags: `settle-timeout`, `background-churn`, and
+  `suspected-miss-empty` (empty + cap → `unknown`, the honest unsure). Serializer gains an
+  **opt-in** `{ diagnostics: true }` flag on `serialize`/`render` that appends a diagnostics
+  section; **default output is byte-identical** (proven by a test). Exported: `diagnose`,
+  `DiagnosedDelta`, `Diagnosis`, `SerializeOptions`. No accuracy claim yet — the corpus (#51)
+  and harness (#52) measure it next.
 - **Shared Confidence primitive** (#47): `src/host/confidence.ts` gives every v0.6 diagnosis
   ONE confidence type — `confirmed | suspected | unknown` — with `unknown`/unsure as a
   first-class outcome ("unsure beats confidently wrong", DW-03). `assessConfidence(evidence)`

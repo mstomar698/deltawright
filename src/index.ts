@@ -4,6 +4,8 @@
 export { actAndObserve, DEFAULT_SETTLE, DEFAULT_BASELINE } from './host/actAndObserve';
 export type { Action, ActAndObserveOptions } from './host/actAndObserve';
 export { serialize, render, tokenCount } from './host/serialize';
+export type { SerializeOptions } from './host/serialize';
+export { diagnose } from './host/diagnose';
 export { annotateActionability, geometryVerdict } from './host/actionability';
 export { ensureInjected, injectedSource } from './host/inject';
 export { diffChangedRegion } from './host/screenshot-diff';
@@ -34,6 +36,8 @@ export type {
   Rect,
   Verdict,
   Actionability,
+  Diagnosis,
+  DiagnosedDelta,
   ChangeKind,
   SettleOptions,
   SettleResult,
