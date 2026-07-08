@@ -64,6 +64,14 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
    */
   inWindowRecurrence?: boolean;
   /**
+   * Gap-E late-wave flag (#49, opt-in). After settle resolves, watch this many ms for a
+   * late structural render wave (a two-wave render whose second wave lands after settle).
+   * FLAG-NOT-FIX: the late wave is DETECTED (a separate observer sets `stats.lateStructural`,
+   * grounding `late-wave-suspected`) but never captured into the delta (declined-as-unsafe in
+   * #30). Default 0 = off = the settle path and delta are byte-unchanged.
+   */
+  lateWatchMs?: number;
+  /**
    * Same-origin iframe traversal (#34, opt-in): also observe child frames and merge
    * their changes into the delta, with geometry offset to page-global coordinates and
    * refs prefixed (`f1e2`). Cross-origin/uninjectable frames are skipped. Off by default.
@@ -214,6 +222,7 @@ export async function actAndObserve(
     quietMs: opts.quietMs ?? DEFAULT_SETTLE.quietMs,
     maxWaitMs: opts.maxWaitMs ?? DEFAULT_SETTLE.maxWaitMs,
     animMaxMs: opts.animMaxMs ?? DEFAULT_SETTLE.animMaxMs,
+    lateWatchMs: opts.lateWatchMs ?? 0,
   };
 
   await ensureInjected(page);
@@ -320,6 +329,11 @@ export async function actAndObserve(
       hitMaxWait: settleResult.hitMaxWait,
       animationsAwaited: collected.animationsAwaited,
       droppedBackground: collected.droppedBackground,
+      // Only present when the gap-E watch ran (lateWatchMs > 0), so the default stats object
+      // is byte-unchanged.
+      ...(settleResult.lateStructural !== undefined
+        ? { lateStructural: settleResult.lateStructural }
+        : {}),
     },
   };
 }

@@ -150,6 +150,17 @@ function diagnoseDelta(delta: Delta): Diagnosis[] {
     });
   }
 
+  if (stats.lateStructural) {
+    // Gap-E (#49): a structural mutation landed after settle resolved. The late wave was
+    // observed but not captured, so the delta may be under-reporting a second render wave.
+    out.push({
+      code: 'late-wave-suspected',
+      confidence: assessConfidence({ source: 'timing' }),
+      scope: 'delta',
+      detail: 'a structural mutation landed after settle — a late render wave was not captured',
+    });
+  }
+
   if (stats.droppedBackground >= CHURN_MIN && stats.droppedBackground >= nodes.length) {
     out.push({
       code: 'background-churn',

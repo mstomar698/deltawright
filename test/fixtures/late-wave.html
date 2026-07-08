@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright late-wave (gap-E) fixture</title>
+  </head>
+  <body>
+    <h1>Two-wave render</h1>
+    <button id="open">Open</button>
+    <div id="host"></div>
+    <script>
+      // A two-wave render: wave 1 inserts immediately, wave 2 a beat later — AFTER settle
+      // has resolved on wave 1's quiescence. With the default settle this second wave is
+      // silently missed; the gap-E watch (lateWatchMs) flags it without capturing it.
+      document.getElementById('open').addEventListener('click', () => {
+        const host = document.getElementById('host');
+        const one = document.createElement('button');
+        one.id = 'wave1';
+        one.textContent = 'Wave One';
+        host.appendChild(one);
+
+        setTimeout(() => {
+          const two = document.createElement('button');
+          two.id = 'wave2';
+          two.textContent = 'Wave Two';
+          host.appendChild(two);
+        }, 400);
+      });
+    </script>
+  </body>
+</html>

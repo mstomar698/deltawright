@@ -32,6 +32,9 @@ declare global {
   if (window.__deltawright) return; // idempotent
 
   let observer: MutationObserver | null = null;
+  // A short-lived, separate observer for the gap-E late-wave watch (#49). It only sets a
+  // flag; it never appends to `records`, so a late wave is DETECTED, never CAPTURED.
+  let lateObserver: MutationObserver | null = null;
   let records: MutationRecord[] = [];
   let firstMutationAt: number | null = null;
   let lastMutationAt: number | null = null;
@@ -197,6 +200,10 @@ declare global {
       observer.disconnect();
       observer = null;
     }
+    if (lateObserver) {
+      lateObserver.disconnect();
+      lateObserver = null;
+    }
     removeAnchorCapture(); // #30: drop any capture listeners from a prior window
     records = [];
     firstMutationAt = null;
@@ -240,6 +247,7 @@ declare global {
   function waitForSettle(opts: SettleOptions): Promise<SettleResult> {
     const start = performance.now();
     const deadline = start + opts.maxWaitMs;
+    const lateWatchMs = opts.lateWatchMs ?? 0;
     return new Promise<SettleResult>((resolve) => {
       const check = () => {
         const now = performance.now();
@@ -248,10 +256,35 @@ declare global {
         const anyQuiet = lastMutationAt !== null && now - lastMutationAt >= opts.quietMs;
         const capped = now >= deadline;
         if (structuralQuiet || anyQuiet || capped) {
-          resolve({
-            settleMs: Math.round(now - armStart),
-            hitMaxWait: capped && !structuralQuiet && !anyQuiet,
+          const settleMs = Math.round(now - armStart);
+          const hitMaxWait = capped && !structuralQuiet && !anyQuiet;
+          if (lateWatchMs <= 0) {
+            resolve({ settleMs, hitMaxWait }); // default path: unchanged, byte-for-byte
+            return;
+          }
+          // Gap-E (#49): freeze the delta at the settle point by stopping the MAIN observer
+          // now (so a late wave is never merged into `records`/the delta — declined-as-unsafe
+          // in #30), then watch a SEPARATE observer for lateWatchMs. It only flips a flag.
+          stop();
+          let lateSeen = false;
+          lateObserver = new MutationObserver((muts) => {
+            for (const m of muts) {
+              if (
+                m.type === 'childList' &&
+                (listHasElement(m.addedNodes) || listHasElement(m.removedNodes))
+              ) {
+                lateSeen = true;
+              }
+            }
           });
+          lateObserver.observe(document.documentElement, { childList: true, subtree: true });
+          setTimeout(() => {
+            if (lateObserver) {
+              lateObserver.disconnect();
+              lateObserver = null;
+            }
+            resolve({ settleMs, hitMaxWait, lateStructural: lateSeen });
+          }, lateWatchMs);
           return;
         }
         setTimeout(check, Math.min(opts.quietMs, 25));
