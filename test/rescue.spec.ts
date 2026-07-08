@@ -13,6 +13,14 @@ import { fixtureUrl } from './helpers';
 
 const savedNode = (nodes: { name: string | null }[]) => nodes.some((n) => n.name === 'Saved');
 
+// A baseline window wide enough to always observe >=2 background inserts (the fixtures
+// insert every 20 ms), and one that never early-exits before the window closes, so the
+// insertion signature is reliably learned as background even under heavy CI load. Without
+// this, the default 150 ms / 60 ms-early-exit window can, under load, capture <2 inserts —
+// leaving the signature unlearned so the background is NOT dropped and the drop/rescue
+// assertions flip (#62). Hardens the test's determinism; it does not change what is asserted.
+const STABLE_BASELINE = { baselineMs: 300, baselineEarlyExitMs: 300 } as const;
+
 test('with the anchor on, the action-local instance of a background signature is rescued; far background is dropped', async ({
   page,
 }) => {
@@ -20,6 +28,7 @@ test('with the anchor on, the action-local instance of a background signature is
   const delta = await actAndObserve(page, (p) => p.click('#open'), {
     label: 'save',
     inWindowRecurrence: true,
+    ...STABLE_BASELINE,
   });
 
   // The confirmation (same "div>div.toast" signature as the background toasts, but
@@ -35,7 +44,10 @@ test('additivity: with the anchor OFF (default), the shipped slice drops the act
   page,
 }) => {
   await page.goto(fixtureUrl('rescue.html'));
-  const delta = await actAndObserve(page, (p) => p.click('#open'), { label: 'save' });
+  const delta = await actAndObserve(page, (p) => p.click('#open'), {
+    label: 'save',
+    ...STABLE_BASELINE,
+  });
 
   // Shipped behavior: the confirmation shares the background signature and there is no
   // anchor to spare it, so it is dropped along with the far toasts. This is the latent
@@ -53,7 +65,7 @@ test('parity: an untrusted (script-dispatched) action latches no anchor, so beha
   const delta = await actAndObserve(
     page,
     (p) => p.evaluate(() => (document.getElementById('open') as HTMLElement).click()),
-    { label: 'save', inWindowRecurrence: true },
+    { label: 'save', inWindowRecurrence: true, ...STABLE_BASELINE },
   );
 
   expect(savedNode(delta.nodes), 'no trusted anchor => no rescue (shipped parity)').toBe(false);
@@ -72,6 +84,7 @@ test('rescuing a root folds its mutating descendants into the added subtree (fix
   const on = await actAndObserve(page, (p) => p.click('#open'), {
     label: 'save',
     inWindowRecurrence: true,
+    ...STABLE_BASELINE,
   });
   expect(savedNode(on.nodes), 'confirmation root rescued').toBe(true);
   expect(
@@ -83,7 +96,10 @@ test('rescuing a root folds its mutating descendants into the added subtree (fix
   // its text change surfaces as a standalone textChanged with no reported parent root.
   // The rescue is therefore MORE correct, not merely additive at the node level.
   await page.goto(fixtureUrl('rescue-nested.html'));
-  const off = await actAndObserve(page, (p) => p.click('#open'), { label: 'save' });
+  const off = await actAndObserve(page, (p) => p.click('#open'), {
+    label: 'save',
+    ...STABLE_BASELINE,
+  });
   expect(savedNode(off.nodes), 'without rescue the root is dropped').toBe(false);
   expect(
     off.nodes.filter((n) => n.kind === 'textChanged').length,

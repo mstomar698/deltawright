@@ -18,8 +18,10 @@
   <div id="toasts"></div>
   <script>
     // Background element-adding churn FAR from the button: a <div class="toast"> into a
-    // <div id="toasts"> every 60 ms => insertSig "div>div.toast", recurring in the
-    // pre-arm baseline => classified as background.
+    // <div id="toasts"> every 20 ms => insertSig "div>div.toast", recurring in the
+    // pre-arm baseline => classified as background. The cadence is well under the baseline
+    // window so >=2 inserts are captured even under CI load (see the STABLE_BASELINE note
+    // in rescue.spec.ts); a slower rate can leave the signature unlearned and flake.
     let n = 0;
     const toasts = document.getElementById('toasts');
     setInterval(() => {
@@ -27,7 +29,7 @@
       t.className = 'toast';
       t.textContent = 'bg ' + n++;
       toasts.appendChild(t);
-    }, 60);
+    }, 20);
 
     // The action reuses the SAME signature (div.toast) for its OWN confirmation, rendered
     // INSIDE the clicked control (parent is the .wrap div => same "div>div.toast" sig).
