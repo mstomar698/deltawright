@@ -65,6 +65,12 @@ export interface DeltaStats {
   animationsAwaited: number;
   /** Changed nodes dropped as background churn by causal attribution (#15). */
   droppedBackground: number;
+  /**
+   * Gap-E flag (#49, opt-in via `lateWatchMs`): a structural mutation landed AFTER settle
+   * resolved (a late render wave), observed but deliberately NOT captured. Absent unless
+   * `lateWatchMs > 0`, so the default path is byte-unchanged. Grounds `late-wave-suspected`.
+   */
+  lateStructural?: boolean;
 }
 
 export interface RawDelta {
@@ -147,6 +153,8 @@ export interface DeltawrightApi {
   sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
   waitForSettle(opts: SettleOptions): Promise<SettleResult>;
   collect(opts: SettleOptions): Promise<CollectResult>;
+  /** Gap-E (#49): wait out the late-watch window and report whether a late wave landed. */
+  lateResult(): Promise<{ lateStructural: boolean }>;
   reset(): void;
 }
 
@@ -158,6 +166,12 @@ export interface SettleOptions {
   maxWaitMs: number;
   /** Budget for waiting out CSS animations/transitions before reading geometry. */
   animMaxMs: number;
+  /**
+   * Gap-E late-wave watch (#49, opt-in). After settle resolves, keep watching (with a
+   * SEPARATE observer, so nothing new is captured) for this long; a structural mutation in
+   * the window sets `SettleResult.lateStructural`. Default 0 = off = byte-unchanged.
+   */
+  lateWatchMs?: number;
 }
 
 export interface SettleResult {

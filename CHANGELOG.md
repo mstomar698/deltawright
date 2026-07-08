@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Gap-E late-wave flag** (#49, opt-in `lateWatchMs`): closes a silent gap — a two-wave
+  render whose second wave lands after settle was under-reported as a no-op with
+  `hitMaxWait=false`. With `lateWatchMs > 0`, `waitForSettle` still resolves at the settle point
+  (so the delta is **collected and frozen there, exactly as the default path**), and a
+  **separate** short-lived observer watches the window for a late structural wave; the host
+  reads it post-collect via `lateResult()`, setting `stats.lateStructural`, which `diagnose`
+  surfaces as `late-wave-suspected` (suspected). **Flag-not-fix**: the late wave is detected,
+  never merged into the delta — a *replacing* wave 2 (one that removes wave 1) cannot erase or
+  alter the frozen delta (capturing wave 2 was declined-as-unsafe in #30). Default
+  `lateWatchMs=0` → the settle path, the delta, and the stats object are **byte-unchanged** (the
+  field is absent, not false). `SettleOptions` gains `lateWatchMs`; `DeltaStats` gains optional
+  `lateStructural`.
 - **Pure `diagnose(delta)` root-cause engine** (#48): `src/host/diagnose.ts` turns a `Delta`
   into a `DiagnosedDelta` (the delta plus `Diagnosis[]`), reading ONLY the existing
   delta/stats/actionability — no new capture, no membership filter, geometry never filters.

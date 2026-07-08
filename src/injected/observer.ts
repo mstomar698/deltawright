@@ -32,6 +32,11 @@ declare global {
   if (window.__deltawright) return; // idempotent
 
   let observer: MutationObserver | null = null;
+  // A short-lived, separate observer for the gap-E late-wave watch (#49). It only sets a
+  // flag; it never appends to `records`, so a late wave is DETECTED, never CAPTURED.
+  let lateObserver: MutationObserver | null = null;
+  let lateSeen = false;
+  let lateWatchDeadline = 0;
   let records: MutationRecord[] = [];
   let firstMutationAt: number | null = null;
   let lastMutationAt: number | null = null;
@@ -197,6 +202,12 @@ declare global {
       observer.disconnect();
       observer = null;
     }
+    if (lateObserver) {
+      lateObserver.disconnect();
+      lateObserver = null;
+    }
+    lateSeen = false;
+    lateWatchDeadline = 0;
     removeAnchorCapture(); // #30: drop any capture listeners from a prior window
     records = [];
     firstMutationAt = null;
@@ -240,6 +251,7 @@ declare global {
   function waitForSettle(opts: SettleOptions): Promise<SettleResult> {
     const start = performance.now();
     const deadline = start + opts.maxWaitMs;
+    const lateWatchMs = opts.lateWatchMs ?? 0;
     return new Promise<SettleResult>((resolve) => {
       const check = () => {
         const now = performance.now();
@@ -248,6 +260,13 @@ declare global {
         const anyQuiet = lastMutationAt !== null && now - lastMutationAt >= opts.quietMs;
         const capped = now >= deadline;
         if (structuralQuiet || anyQuiet || capped) {
+          // Gap-E (#49): begin watching for a late structural wave FROM the settle point with a
+          // SEPARATE observer. It is read later via lateResult(); it never touches `records`.
+          // Crucially, waitForSettle still resolves NOW (not after the window), so the host's
+          // collect() runs at the settle point and the delta is frozen exactly as the default
+          // path — enabling this cannot alter, cover, or erase captured content. (Capturing
+          // the late wave itself was declined-as-unsafe in #30.)
+          if (lateWatchMs > 0) startLateWatch(now + lateWatchMs);
           resolve({
             settleMs: Math.round(now - armStart),
             hitMaxWait: capped && !structuralQuiet && !anyQuiet,
@@ -257,6 +276,51 @@ declare global {
         setTimeout(check, Math.min(opts.quietMs, 25));
       };
       check();
+    });
+  }
+
+  // Watch for a late structural wave until `deadline`, setting `lateSeen`. The callback
+  // ignores mutations after the deadline, so detection is bounded to the window regardless of
+  // when lateResult() reads it. Light DOM only: a late wave inside an existing open shadow
+  // root is not detected — an accepted false-negative for a SUSPECTED hint (not capture).
+  function startLateWatch(deadline: number): void {
+    lateSeen = false;
+    lateWatchDeadline = deadline;
+    lateObserver = new MutationObserver((muts) => {
+      if (performance.now() > lateWatchDeadline) return;
+      for (const m of muts) {
+        if (
+          m.type === 'childList' &&
+          (listHasElement(m.addedNodes) || listHasElement(m.removedNodes))
+        ) {
+          lateSeen = true;
+        }
+      }
+    });
+    lateObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  // Wait out the remainder of the late-watch window (if any), then report + tear down. Called
+  // by the host AFTER collect + reconcile, so the watch overlaps that work — usually zero
+  // added latency. No-ops safely when no late-watch was started (deadline 0).
+  function lateResult(): Promise<{ lateStructural: boolean }> {
+    return new Promise((resolve) => {
+      const done = () => {
+        if (lateObserver) {
+          lateObserver.disconnect();
+          lateObserver = null;
+        }
+        resolve({ lateStructural: lateSeen });
+      };
+      const poll = () => {
+        const remaining = lateWatchDeadline - performance.now();
+        if (remaining <= 0) {
+          done();
+          return;
+        }
+        setTimeout(poll, Math.min(remaining, 25));
+      };
+      poll();
     });
   }
 
@@ -671,7 +735,7 @@ declare global {
     return { nodes, rawRecords, animationsAwaited, droppedBackground: net.droppedBackground };
   }
 
-  window.__deltawright = { arm, sampleBaseline, waitForSettle, collect, reset };
+  window.__deltawright = { arm, sampleBaseline, waitForSettle, collect, reset, lateResult };
 })();
 
 // Ensure this file is treated as a module (for `import type` above) without
