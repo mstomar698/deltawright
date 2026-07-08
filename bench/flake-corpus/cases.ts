@@ -195,14 +195,14 @@ export const CORPUS: CorpusCase[] = [
   {
     id: 'pointer-events-none-pos',
     code: 'pointer-events-none',
-    confidence: 'confirmed',
+    confidence: 'suspected',
     confuser: false,
     kind: 'live',
     fixture: R,
     action: reveal('petnone'),
     verdict: 'NOT-actionable',
     truth: { reveal: 'petnone', intendedCause: 'pointer-events-none' },
-    note: 'KNOWN ENGINE GAP: geometry sees pointer-events:none but Playwright reports a generic "intercept", so the engine currently mislabels this covered-by-overlay. Corpus labels the TRUE cause; #52 quantifies the gap.',
+    note: 'Playwright reports a generic "intercept"; geometry sees pointer-events:none with NO covering element, so the engine prefers geometry\'s specific self-cause (#71 fix). Suspected — a geometry-only specific cause Playwright confirmed only as "blocked".',
   },
   {
     id: 'pointer-events-none-confuser',
@@ -523,7 +523,7 @@ export const CORPUS: CorpusCase[] = [
     fixture: '../../test/fixtures/canvas.html',
     action: click('#draw'),
     options: { screenshotFallback: true },
-    note: 'A canvas draw mutates no DOM; the screenshot-diff fallback reports a pixel region.',
+    note: 'A canvas draw mutates no DOM; the screenshot-diff fallback reports a pixel region, which the engine now maps to pixel-region-fallback (#71 fix).',
   },
   {
     id: 'pixel-region-fallback-confuser',

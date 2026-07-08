@@ -69,7 +69,19 @@ function blockingDiagnosis(node: DeltaNode): Diagnosis {
   let confidence: Confidence;
   let detail: string;
 
-  if (pwCode) {
+  // Playwright's "intercept" error is GENERIC: it fires for a real overlay AND when the target
+  // itself doesn't receive the hit (pointer-events:none — where elementFromPoint returns the
+  // element BEHIND, so `coveredBy` is set to an incidental node). When the target's own computed
+  // pointer-events is none, THAT is the true cause, not "covered-by-overlay" (#71).
+  const pwGenericIntercept =
+    pwCode === 'covered-by-overlay' && node.geometry?.pointerEvents === 'none';
+
+  if (pwGenericIntercept) {
+    code = 'pointer-events-none';
+    // A geometry-only specific cause Playwright confirmed only as "blocked" → suspected.
+    confidence = assessConfidence({ source: 'geometry' });
+    detail = `Playwright NOT-actionable${pwErr ? ` (${pwErr})` : ''}; geometry: the target's own pointer-events:none swallows the hit`;
+  } else if (pwCode) {
     // Playwright authoritatively named the cause → it wins. Confirmed either way; note
     // whether geometry independently agreed on the SAME cause.
     code = pwCode;
@@ -182,6 +194,17 @@ export function diagnose(delta: Delta): DiagnosedDelta {
   for (const node of delta.nodes) {
     const d = diagnoseNode(node);
     if (d) diagnoses.push(d);
+    if (node.tag === 'canvas-region') {
+      // The screenshot-diff fallback (#20) produced a synthetic pixel region — no DOM element,
+      // so it's a coarse where-did-pixels-change hint, not an actionability read (#71).
+      diagnoses.push({
+        code: 'pixel-region-fallback',
+        confidence: 'suspected',
+        scope: 'node',
+        ref: node.ref,
+        detail: 'no DOM delta; a screenshot-diff pixel region stood in',
+      });
+    }
     if (node.geometry?.stable === false) {
       // Gap-F (#50): a post-settle reposition moved the rect; the later rect was adopted.
       // Orthogonal to the actionability diagnosis, so it is a separate per-node note.
