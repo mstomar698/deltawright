@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Anchor-aware background rescue** (#30, opt-in `inWindowRecurrence: true`): a
+  trusted-event *anchor* captures the action's origin (target element + click point,
+  latched from the first `isTrusted` event) so the pre-arm baseline's background-insert
+  drop becomes **per-root** instead of all-or-nothing. When an app reuses a background
+  signature (e.g. a toast class) for the action's OWN confirmation rendered at the click,
+  that instance is now **KEPT** while the far background instances of the same signature
+  are still dropped. It is **KEEP-ONLY** at the added-root level — the anchor can only
+  rescue a root, never cause a drop and never promote a signature to background — so
+  enabling it *strictly reduces* false-drops and even fixes a latent false-drop in the
+  shipped slice (a rescued root also correctly re-scopes its descendants' attr/text into
+  the added subtree instead of orphaning them under a dropped parent). Default off and
+  byte-identical when off or when no trusted event fires (degrades to the shipped path).
+  Regression suite `test/rescue.spec.ts` (rescue, additivity, untrusted-parity, and a
+  streamed-payload no-drop case). This is the safe, adversarially-verified slice of the
+  #30 advanced-attribution work; a design panel proved that *independent* in-window
+  dropping (without pre-arm baseline corroboration) cannot be done without false-dropping
+  a real streamed/staggered payload, so it is deliberately **not** shipped (see the #30
+  decision memo in `docs/`).
 - **Same-origin iframe traversal** (#34, opt-in `frames: true`): also injects/arms/collects
   child frames and merges their changes into the delta, with geometry offset to page-global
   coordinates and refs namespaced (`f1e2`); reconciliation uses the frame's own locator.

@@ -47,6 +47,15 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   baselineMs?: number;
   baselineEarlyExitMs?: number;
   /**
+   * Anchor-aware background rescue (#30, opt-in): capture the action's trusted-event
+   * origin (target + click point) so the pre-arm baseline's background-insertion drop
+   * becomes per-root — the action's OWN instance of a background-looking signature (a
+   * confirmation reusing a toast class, rendered at the click) is KEPT instead of
+   * dropped. KEEP-ONLY: it can only rescue, never cause a drop, so enabling it strictly
+   * reduces false-drops. Off by default; harmless without `baseline`.
+   */
+  inWindowRecurrence?: boolean;
+  /**
    * Same-origin iframe traversal (#34, opt-in): also observe child frames and merge
    * their changes into the delta, with geometry offset to page-global coordinates and
    * refs prefixed (`f1e2`). Cross-origin/uninjectable frames are skipped. Off by default.
@@ -133,6 +142,7 @@ async function armChildFrames(
   page: Page,
   enabled: boolean,
   baseline: BaselineOptions | null,
+  inWindowRecurrence: boolean,
 ): Promise<ArmedFrame[]> {
   if (!enabled) return [];
   const mainFrame = page.mainFrame();
@@ -145,7 +155,7 @@ async function armChildFrames(
       if (baseline) {
         await frame.evaluate((o) => window.__deltawright!.sampleBaseline(o), baseline);
       }
-      await frame.evaluate(() => window.__deltawright!.arm());
+      await frame.evaluate((iwr) => window.__deltawright!.arm(iwr), inWindowRecurrence);
       let offset = { x: 0, y: 0 };
       try {
         const box = await (await frame.frameElement()).boundingBox();
@@ -213,10 +223,15 @@ export async function actAndObserve(
     );
   }
 
-  await page.evaluate(() => window.__deltawright!.arm());
+  await page.evaluate((iwr) => window.__deltawright!.arm(iwr), opts.inWindowRecurrence === true);
 
   // Same-origin iframe traversal (#34, opt-in): arm child frames too, before the action.
-  const childFrames = await armChildFrames(page, opts.frames === true, baseline);
+  const childFrames = await armChildFrames(
+    page,
+    opts.frames === true,
+    baseline,
+    opts.inWindowRecurrence === true,
+  );
 
   // Perform the action through Playwright so we inherit its auto-wait +
   // actionability on the action target itself.

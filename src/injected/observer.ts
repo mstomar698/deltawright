@@ -22,7 +22,7 @@ import type {
 } from '../host/types';
 
 interface DeltawrightApi {
-  arm(): void;
+  arm(inWindowRecurrence?: boolean): void;
   sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
   waitForSettle(opts: SettleOptions): Promise<SettleResult>;
   collect(opts: SettleOptions): Promise<CollectResult>;
@@ -60,6 +60,18 @@ declare global {
   // rows / virtualized lists), so background-added subtrees are excluded too (#30).
   let bgInsert = new Set<string>();
   let bgInsertCount = new Map<string, number>();
+
+  // Trusted-event anchor (#30, KEEP-ONLY): the action's origin element + click point
+  // inside the page, learned from the FIRST isTrusted event during the window. It can
+  // only RESCUE the action's own instance of a would-be background drop, never cause a
+  // drop and never promote a signature to background. Gated behind the opt-in
+  // inWindowRecurrence flag — when off, no listeners are installed, anchorLatched stays
+  // false, and the rescue branch in coalesce is unreachable (default path unchanged).
+  const ANCHOR_RADIUS = 64; // px: point-to-rect radius for the geometry fallback
+  const TRUSTED_EVENTS = ['pointerdown', 'mousedown', 'keydown', 'input', 'click', 'change'];
+  let anchorTarget: Element | null = null;
+  let anchorPoint: { x: number; y: number } | null = null;
+  let anchorLatched = false;
 
   // Open shadow roots the observer is attached to (web components), so shadow-DOM
   // changes appear in the delta. Reset per arm; observer.disconnect() clears them. (#19)
@@ -117,13 +129,71 @@ declare global {
     }
   }
 
-  function arm(): void {
+  // --- Trusted-event anchor (#30) -----------------------------------------
+  // Latch the FIRST trusted event of the window as the action's origin. Playwright's
+  // real actions dispatch isTrusted events; a script-dispatched .click() does not, so
+  // an untrusted action leaves the anchor null and behavior falls back to shipped.
+  function onTrusted(e: Event): void {
+    if (!e.isTrusted || anchorLatched) return; // latch once, on the first trusted event
+    anchorLatched = true;
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    anchorTarget =
+      path[0] instanceof Element ? path[0] : e.target instanceof Element ? e.target : null;
+    const me = e as MouseEvent;
+    if (typeof me.clientX === 'number' && (me.clientX || me.clientY)) {
+      anchorPoint = { x: me.clientX, y: me.clientY };
+    } else if (anchorTarget) {
+      // keyboard/input events carry no coordinates — use the target's center.
+      const r = anchorTarget.getBoundingClientRect();
+      anchorPoint = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+  }
+
+  function installAnchorCapture(): void {
+    for (const t of TRUSTED_EVENTS)
+      document.addEventListener(t, onTrusted, { capture: true, passive: true });
+  }
+  function removeAnchorCapture(): void {
+    for (const t of TRUSTED_EVENTS) document.removeEventListener(t, onTrusted, { capture: true });
+  }
+
+  // The KEEP-override predicate: is this added root the action's OWN output? True when
+  // it shares DOM lineage with the trusted target (primary) or sits within
+  // ANCHOR_RADIUS of the click point (geometry fallback, for an instance visually at the
+  // click but not in the target's subtree). The geometry fallback can over-KEEP a
+  // genuine background insert that merely renders near the click — a deliberate
+  // bias-to-KEEP (a leaked node is tolerable; dropping the action's output is not).
+  // Note `.contains` does not cross shadow boundaries, so a shadow-retargeted anchor
+  // relies on the geometry fallback for lineage-across-boundary cases.
+  function isActionLocal(r: Element): boolean {
+    if (
+      anchorTarget &&
+      (r === anchorTarget || r.contains(anchorTarget) || anchorTarget.contains(r))
+    )
+      return true;
+    if (anchorPoint) {
+      try {
+        const b = r.getBoundingClientRect();
+        if (b.width > 0 && b.height > 0) {
+          const dx = Math.max(b.left - anchorPoint.x, 0, anchorPoint.x - b.right);
+          const dy = Math.max(b.top - anchorPoint.y, 0, anchorPoint.y - b.bottom);
+          if (dx * dx + dy * dy <= ANCHOR_RADIUS * ANCHOR_RADIUS) return true;
+        }
+      } catch {
+        // a detached/throwing rect — fall through to not-local (never a NEW drop).
+      }
+    }
+    return false;
+  }
+
+  function arm(inWindowRecurrence?: boolean): void {
     reset();
     // Clear stale refs from a prior action so ids (e1, e2, ...) can't collide
     // across sequential actions on one page load. Done before observe(), so
     // these removals are not themselves recorded.
     document.querySelectorAll('[data-dw-ref]').forEach((el) => el.removeAttribute('data-dw-ref'));
     armStart = performance.now();
+    if (inWindowRecurrence === true) installAnchorCapture(); // #30 anchor (opt-in)
     observer = new MutationObserver(onMutations);
     observer.observe(document.documentElement, OBSERVE_OPTIONS);
     observeShadowRoots(document); // open shadow roots (web components)
@@ -134,11 +204,15 @@ declare global {
       observer.disconnect();
       observer = null;
     }
+    removeAnchorCapture(); // #30: drop any capture listeners from a prior window
     records = [];
     firstMutationAt = null;
     lastMutationAt = null;
     lastStructuralAt = null;
     sawStructural = false;
+    anchorTarget = null;
+    anchorPoint = null;
+    anchorLatched = false;
     observedRoots = new Set();
   }
 
@@ -149,6 +223,9 @@ declare global {
       observer.disconnect();
       observer = null;
     }
+    // The window is over; stop listening for trusted events (the latched anchor stays
+    // available for coalesce, and is cleared by the next arm()'s reset()).
+    removeAnchorCapture();
   }
 
   // --- Settle detection (v0.5) --------------------------------------------
@@ -336,6 +413,21 @@ declare global {
     for (const el of addedConnected) {
       if (ancestorInSet(el, addedSet)) continue; // a descendant of another added root
       if (bgInsert.size > 0 && bgInsert.has(insertSig(el))) {
+        // The pre-arm baseline says this signature is background (a toast / feed row).
+        // But if the action's OWN trusted target produced THIS instance (in the DOM
+        // lineage of the click, or at the click point), KEEP it — the anchor turns the
+        // all-or-nothing per-signature drop into a per-root one, sparing the action's
+        // own output (#30). anchorLatched is only ever true when the opt-in
+        // inWindowRecurrence flag armed the capture AND a trusted event fired, so the
+        // default path is byte-unchanged; the anchor can only rescue an added ROOT,
+        // never cause a drop. (Rescuing a root also re-scopes its descendants into the
+        // added subtree — as every added root does — which correctly subsumes a
+        // descendant's standalone attr/text node instead of orphaning it under a
+        // dropped parent. That is more correct, not a regression; see rescue.spec.ts.)
+        if (anchorLatched && isActionLocal(el)) {
+          addedRoots.push(el);
+          continue;
+        }
         droppedBackground++;
         continue;
       }
