@@ -44,22 +44,31 @@ test('should_leave_annotated_rect_and_stats_unchanged_when_rectRecheckMs_is_zero
 });
 
 test('should_never_let_the_re_read_change_the_verdict', async ({ page }) => {
+  // The hard case: the node moves OFF-SCREEN after settle, which flips the GEOMETRY annotation.
+  // Playwright's verdict must still be identical with and without the re-check, because the
+  // authoritative probe runs at the settle point BEFORE the rectRecheck delay. Regression guard
+  // for the review's probe-timing finding (delaying collect would have flipped the verdict).
   await page.goto(fixtureUrl('stale-rect.html'));
-  const off = await actAndObserve(page, (p) => p.click('#open'), { label: 'open' });
+  const off = await actAndObserve(page, (p) => p.click('#offscreen'), { label: 'off' });
 
   await page.goto(fixtureUrl('stale-rect.html'));
-  const on = await actAndObserve(page, (p) => p.click('#open'), {
-    label: 'open',
-    rectRecheckMs: 800,
+  const on = await actAndObserve(page, (p) => p.click('#offscreen'), {
+    label: 'off',
+    rectRecheckMs: 900,
   });
 
-  // The rect annotation differs (stale vs adopted-later), but Playwright's verdict for the
-  // moved node is identical — the re-read is annotation only.
-  const vOff = mover(off.nodes)?.actionability.verdict;
-  const vOn = mover(on.nodes)?.actionability.verdict;
-  expect(vOff).toBe('ACTIONABLE');
-  expect(vOn).toBe(vOff);
-  // And the moved-rect flag really did change the annotation between the two runs.
-  expect(mover(on.nodes)?.geometry?.stable).toBe(false);
-  expect(mover(off.nodes)?.geometry && 'stable' in mover(off.nodes)!.geometry!).toBe(false);
+  const nOff = mover(off.nodes);
+  const nOn = mover(on.nodes);
+  // Playwright's verdict is identical (probed at settle, before the move) — timing-invariant.
+  expect(nOff?.actionability.verdict).toBe('ACTIONABLE');
+  expect(nOn?.actionability.verdict).toBe('ACTIONABLE');
+  // The re-read updated the geometry ANNOTATION to the off-screen position and re-derived the
+  // (now legitimately disagreeing) geometry verdict — but Playwright's verdict is untouched.
+  expect(nOn?.geometry?.stable).toBe(false);
+  expect(nOn?.geometry?.offscreen).toBe(true);
+  expect(nOn?.actionability.geometryVerdict).toBe('NOT-actionable');
+  expect(nOn?.actionability.agreed).toBe(false);
+  // OFF path is unaffected: on-screen annotation, no stale flag.
+  expect(nOff?.geometry && 'stable' in nOff.geometry).toBe(false);
+  expect(nOff?.geometry?.offscreen).toBe(false);
 });

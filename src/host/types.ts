@@ -162,6 +162,8 @@ export interface DeltawrightApi {
   collect(opts: SettleOptions): Promise<CollectResult>;
   /** Gap-E (#49): wait out the late-watch window and report whether a late wave landed. */
   lateResult(): Promise<{ lateStructural: boolean }>;
+  /** Gap-F (#50): wait, then re-read every stamped node's current geometry (host compares). */
+  recheckRects(rectRecheckMs: number): Promise<Array<{ ref: string; geometry: GeometryRead }>>;
   reset(): void;
 }
 
@@ -179,13 +181,6 @@ export interface SettleOptions {
    * the window sets `SettleResult.lateStructural`. Default 0 = off = byte-unchanged.
    */
   lateWatchMs?: number;
-  /**
-   * Gap-F rect re-check (#50, opt-in). In `collect`, after the first geometry read, wait this
-   * long and re-read each reported node's geometry; if the rect MOVED (>2px), adopt the later
-   * rect and set `GeometryRead.stable=false`. Geometry is annotation, so this never touches
-   * the verdict. Default 0 = off = the annotated rect and stats are byte-unchanged.
-   */
-  rectRecheckMs?: number;
 }
 
 export interface SettleResult {

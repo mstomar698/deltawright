@@ -10,13 +10,15 @@ All notable changes to this project are documented here. The format is based on
 
 - **Gap-F stale-rect flag** (#50, opt-in `rectRecheckMs`): closes the second silent gap — a
   JS-timer reposition AFTER settle leaves a STALE annotated rect (`getAnimations()` is empty for
-  a plain style write, so `settleAnimations` never waits it out). With `rectRecheckMs > 0`,
-  `collect` re-reads each reported node's geometry after the window and, on a >2px move, **adopts
-  the later rect** and sets `geometry.stable=false`, which `diagnose` surfaces as
-  `stale-rect-suspected` (suspected). Because geometry is **annotation** and Playwright probes
-  the live element, the re-read **never changes the verdict** (proven by a test). Default
-  `rectRecheckMs=0` → the annotated rect, `stable` (absent), and stats are **byte-unchanged**.
-  `SettleOptions` gains `rectRecheckMs`; `GeometryRead` gains optional `stable`.
+  a plain style write, so `settleAnimations` never waits it out). With `rectRecheckMs > 0`, AFTER
+  Playwright's authoritative probe the host calls `recheckRects()` — which re-reads each stamped
+  node's geometry — and on a >2px move **adopts the later rect**, sets `geometry.stable=false`
+  (surfaced by `diagnose` as `stale-rect-suspected`, suspected), and re-derives the geometry
+  annotation. Running AFTER the probe means the **verdict is decided at the settle point and the
+  re-check delay cannot change it** (a strengthened off-screen-move test proves the verdict stays
+  `ACTIONABLE` while the geometry annotation flips). Default `rectRecheckMs=0` → the annotated
+  rect, `stable` (absent), the annotation, and stats are **byte-unchanged**. `GeometryRead` gains
+  optional `stable`.
 - **Gap-E late-wave flag** (#49, opt-in `lateWatchMs`): closes a silent gap — a two-wave
   render whose second wave lands after settle was under-reported as a no-op with
   `hitMaxWait=false`. With `lateWatchMs > 0`, `waitForSettle` still resolves at the settle point

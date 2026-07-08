@@ -13,21 +13,32 @@
   <body>
     <h1>Post-settle reposition</h1>
     <button id="open">Open</button>
+    <button id="offscreen">Offscreen</button>
     <div id="host"></div>
     <script>
-      // Insert a button, then JS-move it FAR to the right well after settle. It is a plain
-      // style write (no CSS transition), so getAnimations() is empty and settleAnimations
-      // never waits it out — the rect read at settle is stale. The gap-F re-check catches it.
-      document.getElementById('open').addEventListener('click', () => {
+      const host = document.getElementById('host');
+
+      function insertMover(finalLeft, delay) {
         const b = document.createElement('button');
         b.id = 'mover';
         b.textContent = 'Mover';
         b.style.left = '100px';
-        document.getElementById('host').appendChild(b);
+        host.appendChild(b);
+        // Plain style write (no CSS transition), so getAnimations() is empty and
+        // settleAnimations never waits it out — the rect read at settle is stale.
         setTimeout(() => {
-          b.style.left = '600px';
-        }, 500);
-      });
+          b.style.left = finalLeft;
+        }, delay);
+      }
+
+      // Moves far to the RIGHT but stays on-screen (verdict stays ACTIONABLE either way).
+      document.getElementById('open').addEventListener('click', () => insertMover('600px', 500));
+
+      // Moves OFF-SCREEN after settle. This flips the geometry annotation, but Playwright's
+      // verdict (probed at the settle point, before the move) must stay ACTIONABLE.
+      document
+        .getElementById('offscreen')
+        .addEventListener('click', () => insertMover('-9999px', 600));
     </script>
   </body>
 </html>
