@@ -63,6 +63,11 @@ list what shipped / did not ship, complete the reviewer checklist). Tag a mainta
 No merges without green CI and a review. Commit messages follow Conventional Commits
 (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), imperative mood.
 
+**Propose changes as diffs, never as attachments.** Do not attach executables, archives,
+or "patch"/"fix" zips to issues or PRs — maintainers will not download or run them, and a
+change that cannot be reviewed as a diff cannot be merged. See [SECURITY.md](SECURITY.md)
+for how we handle suspicious comments and unsolicited attachments.
+
 ## Developer Certificate of Origin (sign-off)
 
 By contributing you certify the [DCO](https://developercertificate.org/). Sign your
