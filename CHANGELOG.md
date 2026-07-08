@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Labeled flake corpus** (#51): `bench/flake-corpus/` — the non-circular ground truth for the
+  accuracy harness (#52). 36 cases (22 live real-DOM + 14 hand-built delta) covering **all 18**
+  taxonomy codes, each with a **positive AND a mandatory near-miss confuser** (a superficially-
+  similar DOM whose correct label differs), so precision can't be inflated by an author who picked
+  both the DOM and the label. Ground truth from **three independent oracles** — the real Playwright
+  verdict, a construction manifest (`code` + `confidence`), and `window.__truth` — and **never** a
+  stored Deltawright output (`load.ts` enforces it). `test/corpus.spec.ts` pins per-code coverage,
+  the confuser requirement, and the independent-oracle rule. A live probe recorded the engine's
+  **current behavior per code** in `CORPUS.md`, honestly surfacing that `diagnose()` emits ~9 of 18
+  codes well today and documenting the rest as gaps (e.g. `pointer-events-none` mislabeled
+  `covered-by-overlay`; `disabled`/`read-only` surface as `geom-disagreement`) — the corpus exists
+  to make those measurable. All numbers are **corpus-relative**; real-production precision stays
+  blocked on #25/#41. Scoring is #52.
 - **Gap-F stale-rect flag** (#50, opt-in `rectRecheckMs`): closes the second silent gap — a
   JS-timer reposition AFTER settle leaves a STALE annotated rect (`getAnimations()` is empty for
   a plain style write, so `settleAnimations` never waits it out). With `rectRecheckMs > 0`, AFTER

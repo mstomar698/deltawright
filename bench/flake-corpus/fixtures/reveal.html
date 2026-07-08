@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright flake-corpus · actionability reveals</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 24px;
+      }
+      #stage {
+        position: relative;
+        min-height: 240px;
+      }
+      .overlay {
+        position: absolute;
+        background: rgba(0, 0, 0, 0.4);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Actionability reveals (corpus)</h1>
+    <!-- Each trigger appends ONE target with a specific, deterministic block, so the delta
+         from clicking it contains exactly that condition. window.__truth records the intended
+         cause (oracle 3) so the harness can confirm the fixture produced what it claims. -->
+    <div id="triggers">
+      <button data-reveal="covered">covered</button>
+      <button data-reveal="covered-near">covered-near</button>
+      <button data-reveal="offscreen">offscreen</button>
+      <button data-reveal="edge">edge</button>
+      <button data-reveal="hidden">hidden</button>
+      <button data-reveal="faint">faint</button>
+      <button data-reveal="petnone">petnone</button>
+      <button data-reveal="petauto">petauto</button>
+      <button data-reveal="disabled">disabled</button>
+      <button data-reveal="readonly">readonly</button>
+      <button data-reveal="ok">ok</button>
+      <button data-reveal="detached">detached</button>
+    </div>
+    <div id="stage"></div>
+    <script>
+      const stage = document.getElementById('stage');
+      window.__truth = null;
+
+      function box(el, x, y, w, h) {
+        el.style.position = 'absolute';
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.style.width = w + 'px';
+        el.style.height = h + 'px';
+      }
+
+      const reveals = {
+        // A button fully covered by a later, higher overlay → covered-by-overlay.
+        covered() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          stage.appendChild(b);
+          const ov = document.createElement('div');
+          ov.className = 'overlay';
+          box(ov, 10, 10, 160, 60);
+          stage.appendChild(ov);
+          return 'covered-by-overlay';
+        },
+        // CONFUSER for covered-by-overlay: an overlay NEAR the button but not over it →
+        // the button is actionable, so NO covered-by-overlay.
+        'covered-near'() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          stage.appendChild(b);
+          const ov = document.createElement('div');
+          ov.className = 'overlay';
+          box(ov, 200, 20, 120, 36);
+          stage.appendChild(ov);
+          return 'actionable';
+        },
+        // A fixed-position button clipped ABOVE the viewport. Playwright cannot scroll a
+        // fixed element into view, so it too reports off-screen → off-screen (agreed).
+        offscreen() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          b.style.position = 'fixed';
+          b.style.left = '20px';
+          b.style.top = '-200px';
+          b.style.width = '120px';
+          b.style.height = '36px';
+          stage.appendChild(b);
+          return 'off-screen';
+        },
+        // CONFUSER for off-screen: fixed and clearly WITHIN the viewport → actionable.
+        edge() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          b.style.position = 'fixed';
+          b.style.left = '20px';
+          b.style.top = '120px';
+          b.style.width = '120px';
+          b.style.height = '36px';
+          stage.appendChild(b);
+          return 'actionable';
+        },
+        // visibility:hidden → Playwright treats it as not visible (unlike opacity:0) →
+        // not-visible (agreed).
+        hidden() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          b.style.visibility = 'hidden';
+          stage.appendChild(b);
+          return 'not-visible';
+        },
+        // CONFUSER for not-visible: opacity:0.05 is barely visible but Playwright clicks it
+        // (opacity is not a visibility gate) → actionable.
+        faint() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          b.style.opacity = '0.05';
+          stage.appendChild(b);
+          return 'actionable';
+        },
+        // pointer-events:none → pointer-events-none (geometry sees it; PW hit-test misses).
+        petnone() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          b.style.pointerEvents = 'none';
+          stage.appendChild(b);
+          return 'pointer-events-none';
+        },
+        // CONFUSER for pointer-events-none: pointer-events:auto → actionable.
+        petauto() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          b.style.pointerEvents = 'auto';
+          stage.appendChild(b);
+          return 'actionable';
+        },
+        // A visible, enabled-looking but DISABLED button. Geometry reads it actionable,
+        // Playwright says not-enabled → the true cause is `disabled` (geometry disagrees).
+        disabled() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          b.disabled = true;
+          stage.appendChild(b);
+          return 'disabled';
+        },
+        // A visible read-only text input. Geometry reads it actionable, Playwright says not
+        // editable → the true cause is `read-only`.
+        readonly() {
+          const inp = document.createElement('input');
+          inp.id = 'target';
+          inp.type = 'text';
+          inp.readOnly = true;
+          box(inp, 20, 20, 160, 28);
+          stage.appendChild(inp);
+          return 'read-only';
+        },
+        // A plain actionable button (the clean control / confuser for the blocking codes).
+        ok() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          stage.appendChild(b);
+          return 'actionable';
+        },
+        // Target inserted then removed in a microtask → a re-render detaches it (detached-re-render).
+        detached() {
+          const b = document.createElement('button');
+          b.id = 'target';
+          b.textContent = 'Confirm';
+          box(b, 20, 20, 120, 36);
+          stage.appendChild(b);
+          queueMicrotask(() => {
+            b.remove();
+            const b2 = document.createElement('button');
+            b2.id = 'target2';
+            b2.textContent = 'Confirm (re-rendered)';
+            box(b2, 20, 20, 160, 36);
+            stage.appendChild(b2);
+          });
+          return 'detached-re-render';
+        },
+      };
+
+      document.getElementById('triggers').addEventListener('click', (e) => {
+        const kind = e.target && e.target.getAttribute && e.target.getAttribute('data-reveal');
+        if (!kind || !reveals[kind]) return;
+        stage.replaceChildren();
+        const intended = reveals[kind]();
+        window.__truth = { reveal: kind, intendedCause: intended };
+      });
+    </script>
+  </body>
+</html>
