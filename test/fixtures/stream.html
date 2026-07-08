@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright stream fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #list .row { padding: 2px 6px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Stream</h1>
+  <button id="load">Load results</button>
+  <ul id="list"></ul>
+  <script>
+    // NO background churn before the action, so the pre-arm baseline is empty. The
+    // action itself streams same-signature siblings (a real causal payload) into a
+    // pre-existing list, one every 90 ms. With an empty baseline nothing is ever
+    // dropped — this is the invariant the #30 anchor feature must not break.
+    document.getElementById('load').addEventListener('click', () => {
+      let i = 0;
+      const iv = setInterval(() => {
+        const li = document.createElement('li');
+        li.className = 'row';
+        li.textContent = 'row ' + i++;
+        document.getElementById('list').appendChild(li);
+        if (i >= 10) clearInterval(iv);
+      }, 90);
+    });
+  </script>
+</body>
+</html>

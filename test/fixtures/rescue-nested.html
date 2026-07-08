@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright nested-rescue fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #open { display: inline-block; padding: 10px 16px; border: 1px solid #333; cursor: pointer; }
+    #toasts { position: fixed; right: 12px; bottom: 12px; }
+    .toast { padding: 4px 8px; background: #eee; margin: 2px 0; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Nested rescue</h1>
+  <div id="open" role="button" tabindex="0"><div class="wrap">Save</div></div>
+  <div id="toasts"></div>
+  <script>
+    // Background toasts (same "div>div.toast" signature) => baseline background.
+    let n = 0;
+    const toasts = document.getElementById('toasts');
+    setInterval(() => {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = 'bg ' + n++;
+      toasts.appendChild(t);
+    }, 60);
+
+    // The action's confirmation reuses the background signature AND contains a
+    // non-interactive descendant (<span class="count">) whose TEXT mutates during the
+    // settle window. When the confirmation root is rescued, that descendant text change
+    // is correctly folded into the added subtree (not double-reported as a standalone
+    // textChanged). When the root is dropped (flag off), the descendant is orphaned and
+    // surfaces as a standalone textChanged — the quirk the rescue fixes.
+    document.getElementById('open').addEventListener('click', () => {
+      const c = document.createElement('div');
+      c.className = 'toast';
+      c.setAttribute('role', 'status');
+      c.setAttribute('aria-label', 'Saved');
+      const span = document.createElement('span');
+      span.className = 'count';
+      span.textContent = '3';
+      c.appendChild(span);
+      document.querySelector('#open .wrap').appendChild(c);
+      let k = 3;
+      const iv = setInterval(() => {
+        span.textContent = String(--k);
+        if (k <= 0) clearInterval(iv);
+      }, 80);
+    });
+  </script>
+</body>
+</html>

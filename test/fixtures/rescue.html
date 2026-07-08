@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright rescue fixture</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #open { display: inline-block; padding: 10px 16px; border: 1px solid #333; cursor: pointer; }
+    #toasts { position: fixed; right: 12px; bottom: 12px; }
+    #toasts .toast, .wrap .toast { padding: 4px 8px; background: #eee; margin: 2px 0; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Rescue</h1>
+  <!-- The click target is a single content <div class="wrap">, so whichever element the
+       trusted click lands on is in the DOM lineage of the confirmation appended below. -->
+  <div id="open" role="button" tabindex="0"><div class="wrap">Save</div></div>
+  <div id="toasts"></div>
+  <script>
+    // Background element-adding churn FAR from the button: a <div class="toast"> into a
+    // <div id="toasts"> every 60 ms => insertSig "div>div.toast", recurring in the
+    // pre-arm baseline => classified as background.
+    let n = 0;
+    const toasts = document.getElementById('toasts');
+    setInterval(() => {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = 'bg ' + n++;
+      toasts.appendChild(t);
+    }, 60);
+
+    // The action reuses the SAME signature (div.toast) for its OWN confirmation, rendered
+    // INSIDE the clicked control (parent is the .wrap div => same "div>div.toast" sig).
+    // It is action-local, so the anchor must RESCUE it while the far toasts are dropped.
+    document.getElementById('open').addEventListener('click', () => {
+      const c = document.createElement('div');
+      c.className = 'toast';
+      c.setAttribute('role', 'status');
+      c.setAttribute('aria-label', 'Saved');
+      c.textContent = 'Saved';
+      document.querySelector('#open .wrap').appendChild(c);
+    });
+  </script>
+</body>
+</html>
