@@ -119,6 +119,40 @@ const pointerEventsNone = node({
   },
 });
 
+// A pointer-events:none target as it really reads live: elementFromPoint returns the element
+// BEHIND, so coveredBy is set AND Playwright reports the generic "intercept". The engine must
+// still name pointer-events-none (the true self-cause), NOT covered-by-overlay (#71).
+const pointerEventsIntercept = node({
+  ref: 'pei',
+  geometry: geom({ pointerEvents: 'none', hitSelf: false, coveredBy: 'div.behind' }),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'covered-by div.behind',
+    geometryVerdict: 'NOT-actionable',
+    playwright: { actionable: false, error: 'covered (intercepted)' },
+    agreed: true,
+  },
+});
+
+// A screenshot-diff pixel region (#20 fallback): no DOM element, verdict n/a.
+const pixelRegion: DeltaNode = {
+  ref: 'px1',
+  kind: 'added',
+  tag: 'canvas-region',
+  role: null,
+  name: 'pixel region changed (500px)',
+  interactive: false,
+  parentRef: null,
+  geometry: geom({ hitSelf: true }),
+  actionability: {
+    verdict: 'n/a',
+    reason: 'pixel-region (screenshot-diff; no DOM element)',
+    geometryVerdict: 'n/a',
+    playwright: null,
+    agreed: true,
+  },
+};
+
 test('should_classify_covered_target_as_covered_by_overlay_only_when_geometry_and_playwright_agree', () => {
   const agree = diagnose(delta([coveredAgreed])).diagnoses;
   const covDiag = agree.find((d) => d.ref === 'cov');
@@ -192,6 +226,22 @@ test('should_prefer_the_playwright_named_cause_over_a_geometry_only_pick', () =>
   const pe = diagnose(delta([pointerEventsNone])).diagnoses.find((d) => d.ref === 'pe');
   expect(pe?.code).toBe('pointer-events-none');
   expect(pe?.confidence).toBe('suspected');
+});
+
+test('should_name_pointer_events_none_not_covered_when_the_target_swallows_the_hit', () => {
+  // #71: Playwright's generic "intercept" must not become covered-by-overlay when the target's
+  // own pointer-events:none is why the hit misses (even though elementFromPoint set coveredBy).
+  const d = diagnose(delta([pointerEventsIntercept])).diagnoses.find((x) => x.ref === 'pei');
+  expect(d?.code).toBe('pointer-events-none');
+  expect(d?.confidence).toBe('suspected');
+});
+
+test('should_map_a_pixel_region_node_to_pixel_region_fallback', () => {
+  // #71: the screenshot-diff fallback node is surfaced as pixel-region-fallback (suspected).
+  const diagnoses = diagnose(delta([pixelRegion])).diagnoses;
+  const d = diagnoses.find((x) => x.code === 'pixel-region-fallback');
+  expect(d?.confidence).toBe('suspected');
+  expect(d?.ref).toBe('px1');
 });
 
 test('should_flag_delta_level_settle_timeout_and_background_churn', () => {

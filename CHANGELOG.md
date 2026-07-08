@@ -225,6 +225,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Two corpus-surfaced diagnosis gaps** (#71, partial): (1) `pointer-events-none` was
+  mislabeled `covered-by-overlay` — Playwright's error for a `pointer-events:none` target is a
+  generic "intercept" and `elementFromPoint` returns the element behind, so the engine now
+  recognises the target's own computed `pointer-events:none` as the true self-cause (suspected)
+  instead of a wrong `confirmed` cover; (2) `diagnose()` now maps the screenshot-diff
+  pixel-region node to `pixel-region-fallback`. The engine now emits ~11 of the 18 codes well;
+  remaining gaps (disabled/read-only recall, detached/injection/cross-boundary signals) stay
+  open in #71. `bench/flake-corpus/CORPUS.md` updated.
 - Pin the token encoding to `cl100k_base`: the `gpt-tokenizer` 3.x bump had silently
   switched the default `encode` to o200k, invalidating every "cl100k" label. Counts
   are an OpenAI proxy; ratios are the tokenizer-robust signal.

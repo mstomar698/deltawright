@@ -41,7 +41,7 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `covered-by-overlay` | live (overlay over button) | ✅ `covered-by-overlay` / confirmed |
 | `off-screen` | live (fixed, clipped above viewport) | ✅ `off-screen` / confirmed |
 | `not-visible` | live (`visibility:hidden`) | ✅ `not-visible` / confirmed |
-| `pointer-events-none` | live (`pointer-events:none`) | ⚠️ **mislabeled `covered-by-overlay`** — Playwright reports a generic "intercept"; geometry has the true reason. Precision gap. |
+| `pointer-events-none` | live (`pointer-events:none`) | ✅ `pointer-events-none` / suspected (#71 fix — geometry's self-cause preferred over Playwright's generic "intercept") |
 | `disabled` | live (disabled button) | ⚠️ **`geom-disagreement`** — geometry can't see `disabled`, so `agreed=false`; a flag, not a wrong confirmed. Recall gap. |
 | `read-only` | live (readonly input) | ⚠️ **`geom-disagreement`** — same class as `disabled`. Recall gap. |
 | `unstable-animating` | delta | (delta) — live CSS-animation reproduction is future work |
@@ -54,32 +54,34 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `stale-rect-suspected` | live (`rectRecheckMs`) | ✅ `stale-rect-suspected` / suspected |
 | `injection-blocked` | delta | ⚠️ **not emitted** — CSP injection failure isn't surfaced as a code yet |
 | `cross-boundary-partial` | delta | ⚠️ **not emitted** — skipped cross-origin frame / closed shadow root isn't surfaced yet |
-| `pixel-region-fallback` | live (canvas + `screenshotFallback`) | ⚠️ **not emitted** — the pixel-region node is in the delta but `diagnose()` doesn't map it to the code yet |
+| `pixel-region-fallback` | live (canvas + `screenshotFallback`) | ✅ `pixel-region-fallback` / suspected (#71 fix — the pixel-region node is now mapped) |
 | `unknown` | delta (agreed, unattributable) | ✅ first-class unsure |
 
 ## Known engine gaps this corpus surfaces (for #52 and follow-ups)
 
-The probe found four honest gaps between the taxonomy and what the engine emits from real pages:
+The probe found gaps between the taxonomy and what the engine emits from real pages. **Two were
+already fixed** (tracked in #71):
 
-1. **`pointer-events-none` → `covered-by-overlay` (precision).** Playwright's error for a
-   `pointer-events:none` target is a generic "intercepts pointer events", so PW-cause-wins picks
-   `covered-by-overlay` even though geometry has the specific cause and nothing covers it. Fix:
-   prefer geometry's specific self-cause when Playwright's "intercept" has no corroborating cover.
-2. **`disabled` / `read-only` / `unstable-animating` → `geom-disagreement` (recall).** These are
+- ✅ **`pointer-events-none` (was mislabeled `covered-by-overlay`).** When the target's own
+  `pointer-events:none` is why the hit misses (Playwright reports a generic "intercept" and
+  `elementFromPoint` returns the element behind), the engine now names `pointer-events-none`.
+- ✅ **`pixel-region-fallback` (was unmapped).** `diagnose()` now maps the screenshot-diff
+  pixel-region node to the code.
+
+Remaining gaps (open in #71):
+
+1. **`disabled` / `read-only` / `unstable-animating` → `geom-disagreement` (recall).** These are
    Playwright-only causes geometry can't see, so `agreed=false` routes them to `geom-disagreement`.
    Fix: emit the Playwright-named cause from the disagreed branch too (it doesn't contradict the
-   verdict — it *is* the verdict's reason). Both are `feat/diagnose` follow-ups, not corpus fixes.
-3. **`detached-re-render` (silent).** Needs a `ref-staleified` signal added to the Delta.
-4. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
+   verdict — it *is* the verdict's reason). Needs an ADR (extends agree-or-flag) + a review.
+2. **`detached-re-render` (silent).** Needs a `ref-staleified` signal added to the Delta.
+3. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
    plumbed from `inject.ts` / frame+shadow traversal into the Delta.
-5. **`pixel-region-fallback` (unmapped).** The screenshot-diff already produces a pixel-region
-   node; `diagnose()` just needs to map that node to the code (a small, safe addition).
 
-**Net: the engine emits ~9 of the 18 codes well today** (`covered-by-overlay`, `off-screen`,
-`not-visible`, `geom-disagreement`, `settle-timeout`, `suspected-miss-empty`, `background-churn`,
-`late-wave-suspected`, `stale-rect-suspected`), with the rest documented above. That is exactly
-why diagnosis capabilities are **gated** behind the harness floor (#52): the corpus makes the
-gaps measurable before any capability ships on top of them.
+**Net: the engine now emits ~11 of the 18 codes well** (the three actionability-blocking codes,
+`pointer-events-none`, `pixel-region-fallback`, `geom-disagreement`, and the five delta/stats-level
+codes), with the rest documented above. That is exactly why diagnosis capabilities are **gated**
+behind the harness floor (#52): the corpus makes the gaps measurable before any capability ships.
 
 ## Running
 
