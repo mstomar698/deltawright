@@ -1,13 +1,18 @@
-#!/usr/bin/env -S npx tsx
 // Deltawright MCP server (stdio). Exposes the delta primitive to agents (Claude Code,
 // Cursor, …) so they consume "what changed + is it actionable" natively instead of
 // re-dumping accessibility snapshots. Complements Playwright MCP; does not replace it.
 //
-//   Run:  npx tsx src/mcp/server.ts   (or the `deltawright-mcp` bin)
+//   Run:  npx tsx src/mcp/server.ts   (dev)  ·  deltawright-mcp  (installed bin)
+//   Embed: import { startServer, DeltawrightSession } from 'deltawright/mcp'
+import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { DeltawrightSession, type McpAction } from './session';
+
+// Re-exported so `deltawright/mcp` is a real importable module (embedders can drive a
+// session directly), not just a runnable bin.
+export { DeltawrightSession };
 
 const session = new DeltawrightSession();
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
@@ -73,4 +78,18 @@ server.registerTool(
   async () => text(await session.snapshot()),
 );
 
-await server.connect(new StdioServerTransport());
+/**
+ * Start the stdio MCP server. Invoked automatically when this file is run directly
+ * (the `deltawright-mcp` bin, `deltawright mcp`, or `tsx src/mcp/server.ts`); exported
+ * so embedders can start it themselves.
+ */
+export async function startServer(): Promise<void> {
+  await server.connect(new StdioServerTransport());
+}
+
+// Self-run ONLY when executed as the entry point, not when imported (deltawright/mcp),
+// so the module stays importable for embedders without spawning a server on import.
+const invokedPath = process.argv[1];
+if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
+  await startServer();
+}

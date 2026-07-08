@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format is based on
   IIFE so the installed package is self-contained (no build step at runtime), and two
   executable bins (`deltawright`, `deltawright-mcp`) built from JS. `package.json` gains a
   proper `exports`/`main`/`types` map (`.` and `./mcp`), `files: [dist]`, and `prepack`
-  so `npm publish` always ships a fresh build. **The package is now actually installable:**
+  so `npm publish` always ships a fresh build. `deltawright/mcp` is a real importable
+  module (`startServer`, `DeltawrightSession`) that self-runs only as the bin, so
+  embedders can drive a session without spawning a server on import. **The package is now actually installable:**
   `import { actAndObserve } from 'deltawright'` resolves compiled JS + types, not raw
   TypeScript. Packaging correctness is locked by `test/packaging.spec.ts` (import from the
   built package under plain node, run the MCP bin from `dist/`, typecheck a by-name

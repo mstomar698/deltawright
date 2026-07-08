@@ -24,11 +24,13 @@ async function version(): Promise<string> {
 async function main(argv: string[]): Promise<number> {
   const cmd = argv[0];
   switch (cmd) {
-    case 'mcp':
-      // Delegate to the same stdio server as the `deltawright-mcp` bin. Importing it
-      // starts the server (top-level connect) and runs until the transport closes.
-      await import(new URL('./mcp/server.js', import.meta.url).href);
+    case 'mcp': {
+      // Delegate to the same stdio server as the `deltawright-mcp` bin. The module only
+      // self-runs when it IS the entry point, so start it explicitly here.
+      const { startServer } = await import(new URL('./mcp/server.js', import.meta.url).href);
+      await startServer();
       return 0;
+    }
     case '-v':
     case '--version':
       console.log(await version());

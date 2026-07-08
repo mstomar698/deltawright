@@ -11,8 +11,11 @@ import {
   type DeltaNode,
   type ActAndObserveOptions,
 } from 'deltawright';
+// The second declared entry point must resolve to a real module with usable types too.
+import { DeltawrightSession, startServer } from 'deltawright/mcp';
 
 export const primitive = actAndObserve;
+export const mcp = { DeltawrightSession, startServer };
 export const opts: ActAndObserveOptions = { label: 'demo' };
 
 export function summarize(delta: Delta): { line: string; tokens: number; sum: string } {
