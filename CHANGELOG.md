@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Legacy-GWT actionability investigation + faithful fixture** (#41): a GWT-faithful
+  synthetic fixture (`test/fixtures/gwt.html`) reproducing GWT's deferred-command cascade,
+  `gwt-PopupPanelGlass` overlay, self-repositioning dialog, and delegated role-less DOM;
+  a demo (`npm run demo:gwt`) and regression suite (`test/gwt.spec.ts`) that state
+  Deltawright's honest, scoped value: a **locator-free settle** that catches a deferred
+  render when observing consequences (a genuine win); a compact **coverage** and
+  **disagreement** second-opinion (diagnostic — Playwright is already correct); and its
+  own **silent gaps** (a two-wave under-report, a JS-recenter stale rect) asserted, not
+  buried. Every naive baseline is paired with the idiomatic web-first steel-man — the
+  finding is **GO** as "a better moment + stable handle + second-opinion", **NO-GO** as
+  "Deltawright fixes Playwright's GWT actionability" (idiomatic Playwright already handles
+  most of it). New `checksum`/`normalizeDelta` (`src/host/checksum.ts`) — a
+  geometry-tolerant delta fingerprint, framed strictly as a regression guard, not proof of
+  framework correctness. Findings: `docs/summaries/v0.5-gwt-legacy-findings.md`. The
+  fixture is synthetic (not compiled GWT); calibration to a real portal trace is the
+  follow-up, pairing with #25.
 - **Anchor-aware background rescue** (#30, opt-in `inWindowRecurrence: true`): a
   trusted-event *anchor* captures the action's origin (target element + click point,
   latched from the first `isTrusted` event) so the pre-arm baseline's background-insert

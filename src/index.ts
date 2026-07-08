@@ -8,6 +8,7 @@ export { annotateActionability, geometryVerdict } from './host/actionability';
 export { ensureInjected, injectedSource } from './host/inject';
 export { diffChangedRegion } from './host/screenshot-diff';
 export type { ChangedRegion, DiffOptions } from './host/screenshot-diff';
+export { checksum, normalizeDelta } from './host/checksum';
 export type {
   Delta,
   DeltaNode,

@@ -10,3 +10,6 @@ export const FIXTURE_URL = fixtureUrl('northstar.html');
 
 /** file:// URL of the live-ticking-page settle fixture. */
 export const LIVE_FIXTURE_URL = fixtureUrl('livepage.html');
+
+/** file:// URL of the GWT-faithful legacy fixture (deferred commands, glass, reposition). */
+export const GWT_FIXTURE_URL = fixtureUrl('gwt.html');
