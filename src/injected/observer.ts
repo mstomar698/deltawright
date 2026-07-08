@@ -19,15 +19,8 @@ import type {
   SettleResult,
   CollectResult,
   BaselineOptions,
+  DeltawrightApi,
 } from '../host/types';
-
-interface DeltawrightApi {
-  arm(inWindowRecurrence?: boolean): void;
-  sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
-  waitForSettle(opts: SettleOptions): Promise<SettleResult>;
-  collect(opts: SettleOptions): Promise<CollectResult>;
-  reset(): void;
-}
 
 declare global {
   interface Window {

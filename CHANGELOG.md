@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Distributable build** (#45): `npm run build` now emits a real `dist/` — ESM +
+  bundled `.d.ts` for the public entry points (via tsup), a pre-bundled injected-observer
+  IIFE so the installed package is self-contained (no build step at runtime), and two
+  executable bins (`deltawright`, `deltawright-mcp`) built from JS. `package.json` gains a
+  proper `exports`/`main`/`types` map (`.` and `./mcp`), `files: [dist]`, and `prepack`
+  so `npm publish` always ships a fresh build. **The package is now actually installable:**
+  `import { actAndObserve } from 'deltawright'` resolves compiled JS + types, not raw
+  TypeScript. Packaging correctness is locked by `test/packaging.spec.ts` (import from the
+  built package under plain node, run the MCP bin from `dist/`, typecheck a by-name
+  consumer against the published types under nodenext, and a byte-for-byte default
+  serializer check across source vs. build). The dev/test path still runs TypeScript
+  directly via tsx — unchanged.
 - **Legacy-GWT actionability investigation + faithful fixture** (#41): a GWT-faithful
   synthetic fixture (`test/fixtures/gwt.html`) reproducing GWT's deferred-command cascade,
   `gwt-PopupPanelGlass` overlay, self-repositioning dialog, and delegated role-less DOM;
@@ -83,6 +95,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Dependency classification for the distributable** (#45): `@playwright/test` is now a
+  **peerDependency** (consumers bring their own Playwright — the core only uses type-only
+  imports; the MCP server uses `chromium`), and `gpt-tokenizer` moved to a runtime
+  **dependency** (the serializer imports it). `esbuild` stays a devDependency: the injected
+  observer is pre-bundled at build time, and the dev-tree bundling fallback imports esbuild
+  lazily, so the published package never pulls it in at runtime. The `DeltawrightApi`
+  interchange type moved to `src/host/types.ts` and the host reads `window.__deltawright`
+  through a local cast, so the shipped `.d.ts` no longer depends on the injected module and
+  never augments a consumer's global `Window`.
 - **Element-adding background-churn filter** (#30, extends #15): the pre-arm baseline now
   also learns recurring element-**insertion** signatures (`parent > tag . class`), so a
   background pattern that inserts elements every tick (toasts, live-feed rows, virtualized

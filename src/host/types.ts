@@ -111,6 +111,20 @@ export interface Delta {
 
 // --- Injected-script <-> host interchange types --------------------------
 
+/**
+ * The surface the injected page script installs on `window.__deltawright`. The host
+ * calls these across the Playwright evaluate boundary; keeping the contract here (not
+ * in the injected file) lets the host type its evaluate returns without importing the
+ * injected module or leaking a global `Window` augmentation to package consumers.
+ */
+export interface DeltawrightApi {
+  arm(inWindowRecurrence?: boolean): void;
+  sampleBaseline(opts: BaselineOptions): Promise<{ sampledMs: number; footprintSize: number }>;
+  waitForSettle(opts: SettleOptions): Promise<SettleResult>;
+  collect(opts: SettleOptions): Promise<CollectResult>;
+  reset(): void;
+}
+
 /** Tunable v0.1 settle heuristic knobs (all ms). */
 export interface SettleOptions {
   /** Declare settled after the DOM is quiet for this long (after >=1 mutation). */

@@ -27,18 +27,31 @@
     "node": ">=20"
   },
   "files": [
-    "src",
+    "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./mcp": "./src/mcp/server.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
-    "deltawright-mcp": "./src/mcp/server.ts"
+    "deltawright": "./dist/cli.js",
+    "deltawright-mcp": "./dist/mcp/server.js"
   },
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "playwright test",
     "demo": "tsx demo/run-demo.ts",
     "demo:gwt": "tsx demo/run-gwt-demo.ts",
@@ -51,6 +64,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "prepack": "npm run build",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
@@ -64,16 +78,20 @@
     "eslint": "^10.6.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.7.0",
-    "gpt-tokenizer": "^3.4.0",
     "prettier": "^3.9.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tsup": "^8.5.1",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0"
   },
+  "peerDependencies": {
+    "@playwright/test": ">=1.49.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "gpt-tokenizer": "^3.4.0",
     "pngjs": "^7.0.0",
     "zod": "^4.4.3"
   }

@@ -65,10 +65,18 @@ Run it yourself:
 npm install
 npx playwright install chromium   # if not already cached
 npm run demo                      # the three cases above
-npm test                          # 8 tests: coalescer units + north-star validation
+npm test                          # the full suite: units + live-page validation + packaging
+npm run build                     # emit the distributable to dist/ (ESM + types + bins)
 ```
 
 ## Use it
+
+Install it alongside Playwright, which is a **peer** dependency (bring your own):
+
+```bash
+npm install deltawright
+npm install -D @playwright/test   # if you don't already have it
+```
 
 ```ts
 import { chromium } from '@playwright/test';
@@ -117,13 +125,15 @@ tells the agent what's on the page; Deltawright tells it what just changed and w
 can act on it.*
 
 ```bash
-npm run mcp            # or the `deltawright-mcp` bin
+deltawright mcp        # the installed bin (alias: deltawright-mcp)
+npm run mcp            # from a source checkout (tsx), equivalent
 ```
 
 Tools: **`navigate`** (open a URL → its a11y snapshot), **`act_and_observe`** (perform one
 `click`/`fill`/`select`/`check`/`press` on a selector → the compact delta, *instead of*
 re-snapshotting), and **`snapshot`** (full-tree fallback). Point Claude Code / Cursor at it
-via their MCP config (`command: "npx"`, `args: ["tsx", "src/mcp/server.ts"]`, or the bin).
+via their MCP config — installed: `command: "npx"`, `args: ["deltawright-mcp"]`; or from a
+source checkout: `command: "npx"`, `args: ["tsx", "src/mcp/server.ts"]`.
 
 ## How it works
 
@@ -191,7 +201,7 @@ verdict (#25).
 - **Role-aware actionability probes** (`fill`/`selectOption`/`hover` editability) so the verdict matches the *specific* action, not just click.
 - **Shadow DOM + same-origin iframe** traversal.
 - ~~**Screenshot-diff fallback** for canvas/WebGL and cross-origin regions~~ — shipped (#20, opt-in `screenshotFallback`).
-- ~~**MCP server** surface~~ — shipped (#22); a `describe_changes` tool and a distributable JS build remain.
+- ~~**MCP server** surface~~ — shipped (#22). ~~**Distributable JS build**~~ — shipped (#45): `npm install deltawright` resolves a real `dist/` (ESM + types + `deltawright`/`deltawright-mcp` bins).
 - **Test-gen opinion**: stable-selector candidates and assertion suggestions per changed node.
 - Cross-browser (Firefox/WebKit) and terminal observability (human, not agent, input).
 
