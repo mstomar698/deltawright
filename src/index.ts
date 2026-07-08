@@ -22,6 +22,8 @@ export type {
   PrimitiveSignal,
   RootCauseSpec,
 } from './host/taxonomy';
+export { assessConfidence, atLeastAsConfident, CONFIDENCE_ORDER } from './host/confidence';
+export type { Confidence, EvidenceSource, Evidence } from './host/confidence';
 export type {
   Delta,
   DeltaNode,
