@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright GWT-faithful fixture</title>
+  <!--
+    A FAITHFUL REPRODUCTION of GWT's DOM + timing patterns — NOT compiled GWT and NOT a
+    real-portal trace. It reproduces the specific behaviours that matter for actionability:
+      - CENTRAL delegated dispatch: one click listener on #app, no inline handlers, target
+        resolved via closest('[data-cmd]'); app widgets carry hashed CssResource-style
+        classes (letter + >=5 alnum, no hyphen) and NO ARIA — like production GWT output.
+      - Scheduler-style DEFERRED commands (queueMicrotask -> setTimeout(0) -> rAF, no
+        network) so DOM lands AFTER the click promise resolves.
+      - PopupPanel GLASS overlay using the STABLE framework class gwt-PopupPanelGlass
+        (GWT does not obfuscate theme classes), which intercepts pointer events.
+      - DialogBox self-reposition (JS-timer vs CSS-transition variants).
+    Honest caveat: calibrate timings/class names to a real portal trace before treating
+    any golden checksum as evidence about a specific GWT app. See docs findings.
+  -->
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    #app { position: relative; min-height: 480px; }
+    .trigger { display: inline-block; margin: 4px 8px 4px 0; padding: 8px 12px;
+      border: 1px solid #333; cursor: pointer; }
+    .gwt-PopupPanelGlass { position: fixed; inset: 0; background: #000; opacity: .3; z-index: 1000; }
+    .gwt-PopupPanel.gwt-DialogBox { position: absolute; z-index: 1001; left: 340px; top: 180px;
+      width: 260px; padding: 14px; background: #fff; border: 1px solid #333; }
+    .gwt-Button { margin-right: 8px; padding: 6px 12px; }
+    .panel { position: absolute; left: 360px; top: 200px; width: 260px; padding: 12px;
+      background: #fff; border: 1px solid #333; }
+    .inert { opacity: .5; }
+    .recenter { position: absolute; left: 0; top: 0; width: 240px; padding: 12px;
+      background: #fff; border: 1px solid #333; }
+    .recenter.css { transition: left .2s ease, top .2s ease; }
+    .gwt-FlexTable { border-collapse: collapse; margin-top: 8px; }
+    .gwt-FlexTable td { border: 1px solid #ccc; padding: 6px 10px; }
+  </style>
+</head>
+<body>
+  <!-- GWT keeps a hidden history iframe; must never leak into the delta or hang injection. -->
+  <iframe id="__gwt_historyFrame" style="position:absolute;width:0;height:0;border:0" title="history"></iframe>
+
+  <div id="app">
+    <h1>GWT app</h1>
+    <!-- app widgets: hashed CssResource-style classes, delegated dispatch, no ARIA -->
+    <div class="trigger G7Q2XM" data-cmd="approve" tabindex="0">Approve payment</div>
+    <div class="trigger G7Q2XM" data-cmd="open" tabindex="0">Open dialog (glass)</div>
+    <div class="trigger G7Q2XM" data-cmd="refresh" tabindex="0">Refresh balance</div>
+    <div class="trigger G7Q2XM" data-cmd="twowave" tabindex="0">Two-wave load</div>
+    <div class="trigger G7Q2XM" data-cmd="recenter-js" tabindex="0">Dialog (JS recenter)</div>
+    <div class="trigger G7Q2XM" data-cmd="recenter-css" tabindex="0">Dialog (CSS recenter)</div>
+
+    <table class="gwt-FlexTable">
+      <tbody>
+        <tr><td class="G7Q2XM" data-cmd="expand">Order 1001</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // --- GWT Scheduler-style deferral (no network) ------------------------------------
+    // scheduleFinally (stack unwind) -> scheduleDeferred (~setTimeout 0) -> layout frame.
+    // `extraMs` models RPC-response processing so the node lands tens of ms after click.
+    function scheduleDeferred(fn, extraMs) {
+      queueMicrotask(() => setTimeout(() => requestAnimationFrame(() => {
+        if (extraMs) setTimeout(fn, extraMs); else fn();
+      }), 0));
+    }
+    const app = document.getElementById('app');
+    const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+
+    const handlers = {
+      // A) Deferred-observe: the appeared node is NOT synchronously present (deferred +
+      //    RPC-processing), role-less, hashed class — the observe-consequences niche.
+      approve() {
+        scheduleDeferred(() => {
+          const p = el('div', 'panel G7Q2XM');
+          p.textContent = 'Payment approved — reference 84120';
+          app.appendChild(p);
+        }, 40);
+      },
+
+      // B+C) Glass modal: glass (intercepts) covers the page + Refresh trigger (which goes
+      //      inert => a changed node whose geometry.coveredBy is the glass). Dialog above
+      //      the glass holds a DISABLED Confirm (geometry says reachable, Playwright says
+      //      disabled => [geom] disagreement) and an enabled Cancel.
+      open() {
+        setTimeout(() => {
+          const glass = el('div', 'gwt-PopupPanelGlass');
+          const dlg = el('div', 'gwt-PopupPanel gwt-DialogBox');
+          const confirm = el('button', 'gwt-Button GX91KD');
+          confirm.textContent = 'Confirm';
+          confirm.setAttribute('disabled', ''); // models FocusWidget.setEnabled(false)
+          const cancel = el('button', 'gwt-Button GX91KD');
+          cancel.textContent = 'Cancel';
+          dlg.appendChild(confirm);
+          dlg.appendChild(cancel);
+          app.appendChild(glass);
+          app.appendChild(dlg);
+          document.querySelector('[data-cmd=refresh]').classList.add('inert'); // background inert
+        }, 20);
+      },
+
+      refresh() { /* covered by glass once open; used as the covered target */ },
+
+      // E) Two-wave: wave1 at ~30ms, a 370ms gap (> quietMs 120), wave2 at ~400ms. Settle
+      //    resolves on wave1's structural quiet and SILENTLY misses wave2 (honest gap).
+      twowave() {
+        setTimeout(() => {
+          const w1 = el('div', 'panel G7Q2XM'); w1.textContent = 'Batch 1 of 2'; app.appendChild(w1);
+        }, 30);
+        setTimeout(() => {
+          const w2 = el('div', 'G7Q2XM'); w2.textContent = 'Batch 2 of 2';
+          w2.style.cssText = 'position:absolute;left:360px;top:320px'; app.appendChild(w2);
+        }, 400);
+      },
+
+      // F1) JS-timer recenter beyond quietMs: getAnimations() is empty for JS style writes,
+      //     so settleAnimations is a no-op and the annotated rect is the STALE pre-center one.
+      'recenter-js'() {
+        const dlg = el('div', 'recenter G7Q2XM'); dlg.textContent = 'JS-recenter dialog';
+        app.appendChild(dlg);
+        setTimeout(() => { dlg.style.left = '520px'; dlg.style.top = '260px'; }, 220);
+      },
+
+      // F2) CSS-transition recenter: settleAnimations awaits getAnimations().finished, so the
+      //     annotated rect is the CORRECT centered one (the northstar case-1 mechanism).
+      'recenter-css'() {
+        const dlg = el('div', 'recenter css G7Q2XM'); dlg.textContent = 'CSS-recenter dialog';
+        app.appendChild(dlg);
+        requestAnimationFrame(() => { dlg.style.left = '520px'; dlg.style.top = '260px'; });
+      },
+
+      // D) FlexTable: delegated expand appends a role-less detail row (deferred). Deltawright
+      //    reports "structure changed here" with ref+rect but role:null/name:null — honest
+      //    identification limit (no semantics to invent).
+      expand() {
+        scheduleDeferred(() => {
+          const tr = el('tr', 'G7Q2XM'); const td = el('td'); td.setAttribute('colspan', '1');
+          td.textContent = 'Order 1001 — 3 items, $412.00';
+          tr.appendChild(td);
+          document.querySelector('.gwt-FlexTable tbody').appendChild(tr);
+        }, 0);
+      },
+    };
+
+    // CENTRAL delegated dispatch — one listener, target via closest (production GWT pattern).
+    app.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-cmd]');
+      if (t && handlers[t.getAttribute('data-cmd')]) handlers[t.getAttribute('data-cmd')](t);
+    });
+  </script>
+</body>
+</html>

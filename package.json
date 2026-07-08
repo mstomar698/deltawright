@@ -41,6 +41,7 @@
   "scripts": {
     "test": "playwright test",
     "demo": "tsx demo/run-demo.ts",
+    "demo:gwt": "tsx demo/run-gwt-demo.ts",
     "mcp": "tsx src/mcp/server.ts",
     "bench": "tsx bench/run-bench.ts",
     "bench:admissible": "tsx bench/run-admissible.ts",
