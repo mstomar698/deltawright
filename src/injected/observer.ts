@@ -725,6 +725,27 @@ declare global {
       return node;
     });
 
+    // Gap-F (#50, opt-in): a JS-timer reposition AFTER settle leaves a STALE annotated rect —
+    // getAnimations() is empty for a plain style write, so settleAnimations never waited it
+    // out. Re-read each reported node's geometry after a short window and, if the rect MOVED
+    // (>2px), adopt the strictly-later read and flag `stable=false`. Geometry is ANNOTATION,
+    // so improving it never touches Playwright's verdict (the host probes the live element).
+    const rectRecheckMs = opts.rectRecheckMs ?? 0;
+    if (rectRecheckMs > 0) {
+      await new Promise<void>((r) => setTimeout(r, rectRecheckMs));
+      reported.forEach((item, i) => {
+        const before = nodes[i]!.geometry;
+        if (!item.el.isConnected || !before) return;
+        const after = readGeometry(item.el);
+        if (
+          Math.abs(after.rect.x - before.rect.x) > 2 ||
+          Math.abs(after.rect.y - before.rect.y) > 2
+        ) {
+          nodes[i]!.geometry = { ...after, stable: false };
+        }
+      });
+    }
+
     // Consume the baseline footprint so a subsequent action without a fresh
     // sampleBaseline starts clean (no stale background exclusions).
     bgText = new Set();

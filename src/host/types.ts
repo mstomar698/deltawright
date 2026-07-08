@@ -34,6 +34,13 @@ export interface GeometryRead {
   coveredBy: string | null;
   /** True when the center point lies outside the viewport (elementFromPoint == null). */
   offscreen: boolean;
+  /**
+   * Gap-F flag (#50, opt-in via `rectRecheckMs`): present and `false` only when a post-settle
+   * re-read found the rect had MOVED (a JS-timer reposition `getAnimations` can't see), in
+   * which case the later rect was adopted here. Absent unless `rectRecheckMs > 0` and the rect
+   * moved, so the default annotation is byte-unchanged. Grounds `stale-rect-suspected`.
+   */
+  stable?: boolean;
 }
 
 /** One changed element node, as reported by the injected script. */
@@ -172,6 +179,13 @@ export interface SettleOptions {
    * the window sets `SettleResult.lateStructural`. Default 0 = off = byte-unchanged.
    */
   lateWatchMs?: number;
+  /**
+   * Gap-F rect re-check (#50, opt-in). In `collect`, after the first geometry read, wait this
+   * long and re-read each reported node's geometry; if the rect MOVED (>2px), adopt the later
+   * rect and set `GeometryRead.stable=false`. Geometry is annotation, so this never touches
+   * the verdict. Default 0 = off = the annotated rect and stats are byte-unchanged.
+   */
+  rectRecheckMs?: number;
 }
 
 export interface SettleResult {

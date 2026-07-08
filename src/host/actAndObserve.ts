@@ -72,6 +72,14 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
    */
   lateWatchMs?: number;
   /**
+   * Gap-F stale-rect flag (#50, opt-in). After the first geometry read, re-read each node's
+   * rect this many ms later; if it MOVED (>2px, a post-settle JS reposition getAnimations
+   * can't see), adopt the later rect and set `geometry.stable=false`, grounding
+   * `stale-rect-suspected`. Geometry is annotation, so the re-read NEVER changes the verdict.
+   * Default 0 = off = the annotated rect and stats are byte-unchanged.
+   */
+  rectRecheckMs?: number;
+  /**
    * Same-origin iframe traversal (#34, opt-in): also observe child frames and merge
    * their changes into the delta, with geometry offset to page-global coordinates and
    * refs prefixed (`f1e2`). Cross-origin/uninjectable frames are skipped. Off by default.
@@ -223,6 +231,7 @@ export async function actAndObserve(
     maxWaitMs: opts.maxWaitMs ?? DEFAULT_SETTLE.maxWaitMs,
     animMaxMs: opts.animMaxMs ?? DEFAULT_SETTLE.animMaxMs,
     lateWatchMs: opts.lateWatchMs ?? 0,
+    rectRecheckMs: opts.rectRecheckMs ?? 0,
   };
 
   await ensureInjected(page);
