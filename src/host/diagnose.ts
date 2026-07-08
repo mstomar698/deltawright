@@ -3,34 +3,94 @@
 // ONLY the existing Delta / stats / actionability — it adds no new membership filter and
 // geometry never filters (DW-02: Playwright's verdict is authoritative and untouched here).
 //
-// The core rule is AGREE-OR-FLAG (DW-03): a NOT-actionable node earns a specific blocking
-// code ONLY when the geometry read and Playwright AGREE it is blocked (so the code names a
-// cause both engines see). When they disagree (`agreed===false`) the node is reported as
-// `geom-disagreement` WITH DIRECTION — never a code that contradicts Playwright's verdict.
-// Disabled / read-only / animating causes are Playwright-only (geometry reads them as
-// actionable), so they surface as geom-disagreement carrying Playwright's reason.
+// The core rule is AGREE-OR-FLAG (DW-03): a NOT-actionable node earns a specific cause code
+// only from the branch where the two engines already agree it is blocked (`agreed===true`).
+// When they disagree (`agreed===false`) the node is `geom-disagreement` WITH DIRECTION —
+// never a code that contradicts Playwright's verdict.
+//
+// Within the agreed branch, PLAYWRIGHT'S NAMED CAUSE WINS: verdict-agreement is not
+// cause-agreement (a disabled AND covered button has both engines saying NOT-actionable, but
+// Playwright's authoritative cause is `disabled`, not `covered`). So we prefer the cause
+// Playwright named (→ confirmed), fall back to the geometry-visible cause only as a
+// `suspected` hypothesis when Playwright did not name a specific one.
 
 import type { DeltaNode, Delta, DiagnosedDelta, Diagnosis } from './types';
-import { assessConfidence } from './confidence';
+import { assessConfidence, type Confidence } from './confidence';
 import type { RootCauseCode } from './taxonomy';
 
 // A background-churn flag fires only when dropped churn is both substantial and dominant,
 // so a couple of incidental drops next to a real change do not cry wolf.
 const CHURN_MIN = 3;
 
-/** Map an agreed NOT-actionable node to its geometry-visible blocking code. */
-function classifyBlocking(node: DeltaNode): RootCauseCode {
+/** The cause Playwright's authoritative error string names, or null if it is not specific. */
+function codeFromPlaywrightError(error: string | undefined): RootCauseCode | null {
+  if (!error) return null;
+  const e = error.toLowerCase();
+  if (e.includes('disabled') || e.includes('not enabled')) return 'disabled';
+  if (e.includes('read-only') || e.includes('readonly') || e.includes('not editable'))
+    return 'read-only';
+  if (e.includes('unstable') || e.includes('not stable') || e.includes('animat'))
+    return 'unstable-animating';
+  if (e.includes('intercept') || e.includes('cover')) return 'covered-by-overlay';
+  if (e.includes('off-screen') || e.includes('viewport') || e.includes('outside'))
+    return 'off-screen';
+  if (e.includes('not-visible') || e.includes('not visible') || e.includes('hidden'))
+    return 'not-visible';
+  if (e.includes('pointer-events') || e.includes('pointer events')) return 'pointer-events-none';
+  return null;
+}
+
+/**
+ * The geometry-visible cause for an agreed NOT-actionable node. The check ORDER mirrors
+ * `geometryVerdict` (offscreen → covered → not-visible → pointer-events) so the emitted code
+ * matches the geometry reason, and the covered check uses `coveredBy` alone (as the verdict
+ * does) rather than also requiring `!hitSelf`.
+ */
+function codeFromGeometry(node: DeltaNode): RootCauseCode {
   const g = node.geometry;
-  // agreed + NOT-actionable means geometryVerdict is NOT-actionable, so exactly one of
-  // these geometry causes fired (see geometryVerdict). `unknown` is a defensive fallback.
   if (!g) return 'unknown';
   if (g.offscreen || !g.inViewport) return 'off-screen';
+  if (g.coveredBy) return 'covered-by-overlay';
   if (g.display === 'none' || g.visibility === 'hidden' || g.visibility === 'collapse')
     return 'not-visible';
   if (parseFloat(g.opacity) === 0) return 'not-visible';
   if (g.pointerEvents === 'none') return 'pointer-events-none';
-  if (g.coveredBy && !g.hitSelf) return 'covered-by-overlay';
   return 'unknown';
+}
+
+/** Diagnose an agreed NOT-actionable node — Playwright's named cause wins over geometry's. */
+function blockingDiagnosis(node: DeltaNode): Diagnosis {
+  const a = node.actionability;
+  const pwErr = a.playwright?.error;
+  const pwCode = codeFromPlaywrightError(pwErr);
+  const geomCode = codeFromGeometry(node);
+
+  let code: RootCauseCode;
+  let confidence: Confidence;
+  let detail: string;
+
+  if (pwCode) {
+    // Playwright authoritatively named the cause → it wins. Confirmed either way; note
+    // whether geometry independently agreed on the SAME cause.
+    code = pwCode;
+    const sameCause = geomCode === pwCode;
+    confidence = assessConfidence({ source: sameCause ? 'geometry+playwright' : 'playwright' });
+    detail = `Playwright NOT-actionable${pwErr ? ` (${pwErr})` : ''}; ${
+      sameCause ? 'geometry agrees' : `geometry read ${geomCode}`
+    }`;
+  } else if (geomCode !== 'unknown') {
+    // Only the geometry read named a specific cause; Playwright agrees it is blocked but did
+    // not corroborate WHICH — a hypothesis, not confirmed.
+    code = geomCode;
+    confidence = assessConfidence({ source: 'geometry' });
+    detail = `Playwright NOT-actionable${a.reason ? ` (${a.reason})` : ''}; geometry read ${geomCode} (suspected)`;
+  } else {
+    code = 'unknown';
+    confidence = 'unknown';
+    detail = `Playwright NOT-actionable${a.reason ? ` (${a.reason})` : ''}; cause not attributable`;
+  }
+
+  return { code, confidence, scope: 'node', ref: node.ref, detail };
 }
 
 /** A geometry↔Playwright disagreement, carrying the direction both ways. */
@@ -52,24 +112,9 @@ function diagnoseNode(node: DeltaNode): Diagnosis | null {
   const a = node.actionability;
 
   if (a.verdict === 'NOT-actionable') {
-    if (a.agreed) {
-      const code = classifyBlocking(node);
-      return {
-        code,
-        // Both engines agree it is blocked → confirmed; only the un-mappable fallback is unsure.
-        confidence:
-          code === 'unknown' ? 'unknown' : assessConfidence({ source: 'geometry+playwright' }),
-        scope: 'node',
-        ref: node.ref,
-        detail:
-          code === 'unknown'
-            ? `Playwright NOT-actionable${a.reason ? ` (${a.reason})` : ''}; cause not attributable`
-            : `Playwright NOT-actionable${a.reason ? ` (${a.reason})` : ''}; geometry agrees`,
-      };
-    }
-    // NOT-actionable but geometry disagreed (e.g. a covered input Playwright can still fill,
-    // or a disabled control geometry reads as actionable) → flag the disagreement, no code.
-    return geomDisagreement(node);
+    // Both engines agree it is blocked → attribute the cause (Playwright's wins). Otherwise
+    // geometry dissented (e.g. a covered input Playwright can still fill) → flag it, no code.
+    return a.agreed ? blockingDiagnosis(node) : geomDisagreement(node);
   }
 
   if (a.verdict === 'ACTIONABLE' && !a.agreed) {

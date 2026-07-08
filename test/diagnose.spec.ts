@@ -90,6 +90,35 @@ const disabledButton = node({
   },
 });
 
+// Disabled AND covered: BOTH engines say NOT-actionable (agreed), but Playwright's
+// authoritative cause is `disabled` while geometry only sees the cover. Playwright wins.
+const disabledAndCovered = node({
+  ref: 'dc',
+  name: 'Submit',
+  geometry: geom({ hitSelf: false, coveredBy: 'div.overlay' }),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'covered-by div.overlay', // geometry-first for clicks
+    geometryVerdict: 'NOT-actionable',
+    playwright: { actionable: false, error: 'disabled' },
+    agreed: true,
+  },
+});
+
+// A pointer-events:none node where Playwright's error is not specific → only geometry named
+// the cause → suspected, not confirmed.
+const pointerEventsNone = node({
+  ref: 'pe',
+  geometry: geom({ pointerEvents: 'none' }),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'pointer-events:none',
+    geometryVerdict: 'NOT-actionable',
+    playwright: { actionable: false, error: 'not-actionable' }, // generic, unrecognised
+    agreed: true,
+  },
+});
+
 test('should_classify_covered_target_as_covered_by_overlay_only_when_geometry_and_playwright_agree', () => {
   const agree = diagnose(delta([coveredAgreed])).diagnoses;
   const covDiag = agree.find((d) => d.ref === 'cov');
@@ -146,6 +175,67 @@ test('should_never_contradict_the_playwright_verdict', () => {
   const inp = out.diagnoses.find((d) => d.ref === 'inp');
   expect(inp?.code).toBe('geom-disagreement');
   expect(inp?.detail).toContain('Playwright ACTIONABLE');
+});
+
+test('should_prefer_the_playwright_named_cause_over_a_geometry_only_pick', () => {
+  // Verdict-agreement is not cause-agreement: Playwright authoritatively named `disabled`,
+  // so the diagnosis is `disabled` (confirmed), NOT `covered-by-overlay`, even though
+  // geometry saw the cover. Regression guard for the confidence over-claim (#48 review).
+  const dc = diagnose(delta([disabledAndCovered])).diagnoses.find((d) => d.ref === 'dc');
+  expect(dc?.code).toBe('disabled');
+  expect(dc?.confidence).toBe('confirmed');
+  expect(dc?.detail).toContain('disabled');
+  expect(dc?.detail).toContain('geometry read covered-by-overlay');
+
+  // When only geometry names a specific cause (Playwright agrees it is blocked but its error
+  // is not specific), the code is geometry's but the confidence is SUSPECTED, never confirmed.
+  const pe = diagnose(delta([pointerEventsNone])).diagnoses.find((d) => d.ref === 'pe');
+  expect(pe?.code).toBe('pointer-events-none');
+  expect(pe?.confidence).toBe('suspected');
+});
+
+test('should_flag_delta_level_settle_timeout_and_background_churn', () => {
+  // Non-empty delta that hit the cap → settle-timeout (suspected), not suspected-miss-empty.
+  const timeout = diagnose(delta([coveredAgreed], { hitMaxWait: true })).diagnoses;
+  const st = timeout.find((d) => d.code === 'settle-timeout');
+  expect(st?.scope).toBe('delta');
+  expect(st?.confidence).toBe('suspected');
+  expect(timeout.some((d) => d.code === 'suspected-miss-empty')).toBe(false);
+
+  // Dominant dropped churn → background-churn (suspected). One kept node, many dropped.
+  const churn = diagnose(delta([coveredAgreed], { droppedBackground: 12 })).diagnoses;
+  const bc = churn.find((d) => d.code === 'background-churn');
+  expect(bc?.confidence).toBe('suspected');
+  // A couple of incidental drops next to a real change must NOT trip it.
+  const quiet = diagnose(delta([coveredAgreed], { droppedBackground: 1 })).diagnoses;
+  expect(quiet.some((d) => d.code === 'background-churn')).toBe(false);
+});
+
+test('should_not_diagnose_a_removed_or_clean_node', () => {
+  const removed = node({
+    ref: 'rm',
+    kind: 'removed',
+    geometry: null,
+    actionability: {
+      verdict: 'n/a',
+      reason: 'removed',
+      geometryVerdict: 'n/a',
+      playwright: null,
+      agreed: true,
+    },
+  });
+  const clean = node({
+    ref: 'ok',
+    actionability: {
+      verdict: 'ACTIONABLE',
+      reason: null,
+      geometryVerdict: 'ACTIONABLE',
+      playwright: { actionable: true },
+      agreed: true,
+    },
+  });
+  const diagnoses = diagnose(delta([removed, clean])).diagnoses.filter((d) => d.scope === 'node');
+  expect(diagnoses).toHaveLength(0);
 });
 
 test('should_return_unknown_low_confidence_on_ambiguous_delta', () => {
