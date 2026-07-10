@@ -7,9 +7,11 @@ import {
   serialize,
   render,
   checksum,
+  suggest,
   type Delta,
   type DeltaNode,
   type ActAndObserveOptions,
+  type SuggestResult,
 } from 'deltawright';
 // The second declared entry point must resolve to a real module with usable types too.
 import { DeltawrightSession, startServer } from 'deltawright/mcp';
@@ -38,6 +40,8 @@ export const matchers = { preflight, matchDeltaChecksum, dwMatchers };
 export const reporter = { DeltawrightReporter, triageFailure, DELTA_ATTACHMENT_NAME };
 export type Triage = { input: TriageInput; sidecar: Sidecar };
 export const opts: ActAndObserveOptions = { label: 'demo' };
+export const suggestFn = suggest;
+export type Suggestions = SuggestResult;
 export const preflightOpts: PreflightOptions = { trialTimeoutMs: 800 };
 export type Preflight = PreflightResult;
 export type Checksum = ChecksumMatchResult;

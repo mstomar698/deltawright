@@ -37,7 +37,7 @@ test('should_import_from_built_package_without_tsx', () => {
     `import * as dw from ${JSON.stringify(url)};`,
     `const need = ['actAndObserve','serialize','render','tokenCount','checksum',`,
     `  'normalizeDelta','annotateActionability','geometryVerdict','ensureInjected',`,
-    `  'injectedSource','diffChangedRegion'];`,
+    `  'injectedSource','diffChangedRegion','suggest'];`,
     `const missing = need.filter((k) => typeof dw[k] !== 'function');`,
     `if (missing.length) { console.error('MISSING:' + missing.join(',')); process.exit(2); }`,
     `console.log('OK:' + need.length);`,
@@ -46,7 +46,7 @@ test('should_import_from_built_package_without_tsx', () => {
     cwd: root,
     encoding: 'utf8',
   });
-  expect(out.trim()).toBe('OK:11');
+  expect(out.trim()).toBe('OK:12');
 });
 
 test('should_import_matchers_subpath_from_dist', () => {
