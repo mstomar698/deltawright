@@ -54,8 +54,10 @@ test('should_import_matchers_subpath_from_dist', () => {
   const url = pathToFileURL(distMatchers).href;
   const script = [
     `import * as m from ${JSON.stringify(url)};`,
-    `const okFns = ['preflight','toBeActionable'].every((k) => typeof m[k] === 'function');`,
-    `const okBag = m.dwMatchers && typeof m.dwMatchers.toBeActionable === 'function';`,
+    `const fns = ['preflight','toBeActionable','toMatchDeltaChecksum','toMatchDeltaSnapshot','matchDeltaChecksum'];`,
+    `const okFns = fns.every((k) => typeof m[k] === 'function');`,
+    `const okBag = m.dwMatchers && ['toBeActionable','toMatchDeltaChecksum','toMatchDeltaSnapshot']`,
+    `  .every((k) => typeof m.dwMatchers[k] === 'function');`,
     `if (!okFns || !okBag) { console.error('BAD'); process.exit(2); }`,
     `console.log('OK');`,
   ].join('\n');

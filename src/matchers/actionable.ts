@@ -149,6 +149,3 @@ export async function toBeActionable(
       : `expected locator to be actionable, but Playwright found it NOT-actionable (${r.reason ?? 'unknown'})${geomHint}`;
   return { pass, message };
 }
-
-/** The matcher bag for `expect.extend(dwMatchers)`. */
-export const dwMatchers = { toBeActionable };

@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Delta checksum regression matcher** (#54, `deltawright/matchers`): `expect(delta).toMatchDeltaChecksum(id)`
+  + `expect(delta).toMatchDeltaSnapshot()` over the existing geometry/timing-tolerant `checksum` /
+  `normalizeDelta` primitive. It **matches across pixel and timing jitter** (raw rects, computed
+  styles, reason text, timing stats and record order are all normalized out) but **fails on a verdict
+  or tree change**. Baselines live in `__dw_checksums__/` next to the spec, written on first run and
+  refreshed with `DW_UPDATE_CHECKSUMS=1`, Playwright's `--update-snapshots`, or the new
+  `deltawright checksum --update -- <cmd>` CLI; a mismatch renders a **structural** (not pixel) diff.
+  Honesty is baked into every message: a green checksum is **regression-only** — it proves the
+  normalized structure/semantics is unchanged, NOT that the delta is correct or models a real app
+  faithfully. Pure, browser-free core (`matchDeltaChecksum`) is unit-tested. ADR 2026-07-10.
 - **Preflight actionability matcher** (#53, `deltawright/matchers`): `expect(locator).toBeActionable()`
   + `preflight(locator) → { verdict, reason, geometryVerdict, agreed }` — a **ground-truth** wrapper
   on Playwright's own role-aware verdict, usable **standalone** (no prior `actAndObserve`). It reuses
