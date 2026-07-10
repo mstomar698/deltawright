@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`suggest(delta)` new-test authoring aid** (#57): a **pure** function → `{ assertions, selectors,
+  warnings }` that proposes candidate Playwright locators for a delta's changed nodes, ranked
+  **getByRole > getByText > testid > css**, and a `toBeActionable()` assertion **only** for nodes
+  Playwright confirmed ACTIONABLE. It reuses the delta's existing verdict (no second role/name
+  mapping), never writes or modifies a test file, and is honest by construction: it **never fabricates
+  a `getByTestId`** (a test-id attribute isn't captured), **never offers the ephemeral `data-dw-ref`**
+  as a selector, and warns that every suggestion is a candidate to verify — role/name are heuristic
+  reads (not Playwright's a11y algorithm), a `name` may be an aria-label, and uniqueness/durability
+  are not checked (the durable-selector problem is a separate investigation). Exported from the main
+  entry; browser-free, unit-tested. First of the gated Wave-2 capabilities. ADR 2026-07-10.
+
 ## [0.6.0] - 2026-07-10
 
 The **root-cause explainer** milestone — a single consolidated release of everything since 0.1.0:

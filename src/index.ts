@@ -6,6 +6,13 @@ export type { Action, ActAndObserveOptions } from './host/actAndObserve';
 export { serialize, render, tokenCount } from './host/serialize';
 export type { SerializeOptions } from './host/serialize';
 export { diagnose } from './host/diagnose';
+export { suggest } from './host/suggest';
+export type {
+  SuggestResult,
+  SelectorSuggestion,
+  AssertionSuggestion,
+  SelectorTier,
+} from './host/suggest';
 export { annotateActionability, geometryVerdict } from './host/actionability';
 export { ensureInjected, injectedSource } from './host/inject';
 export { diffChangedRegion } from './host/screenshot-diff';
