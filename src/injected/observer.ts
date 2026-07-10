@@ -410,6 +410,14 @@ declare global {
     attrChanged: Array<{ el: Element; attrs: string[] }>;
     textChanged: Element[];
     droppedBackground: number;
+    /**
+     * Freshly-added subtree roots that were DETACHED again before collect (#71 fix #3): the
+     * action's own output was inserted and then torn down within the settle window (a React
+     * re-render / list virtualization swap). Such a node nets out of the reported delta entirely
+     * (added-then-removed => neither net-added, still connected, nor net-removed, pre-existing),
+     * so its transience is otherwise invisible. Counted here to ground `detached-re-render`.
+     */
+    detachedInWindow: number;
   }
 
   function ancestorInSet(el: Element, set: Set<Element>): boolean {
@@ -430,6 +438,13 @@ declare global {
     // add-then-remove transient from a real net-removal of a pre-existing element
     // that was also moved (moved => removedNodes fires first, then addedNodes).
     const firstTouch = new Map<Element, 'add' | 'remove'>();
+    // Insertion signature captured AT ADD TIME (#71 fix #3). An added element that is later
+    // detached has a null parentElement by collect, so insertSig() (which reads parentElement)
+    // would degrade to `>tag.cls` and never match a baseline `parentTag>tag.cls`. The record's
+    // target IS the parent the node was inserted into (valid even after detach), so we snapshot
+    // the signature here to let the detach counter honor the same bgInsert background exclusion
+    // the connected added-root path applies.
+    const addSig = new Map<Element, string>();
     // Earliest observed oldValue per (element, attribute), for a net-compare
     // against the current value (drops churn that reverts to the original).
     const attrOld = new Map<Element, Map<string, string | null>>();
@@ -440,7 +455,12 @@ declare global {
         rec.addedNodes.forEach((n) => {
           if (isElement(n)) {
             addedCand.add(n);
-            if (!firstTouch.has(n)) firstTouch.set(n, 'add');
+            if (!firstTouch.has(n)) {
+              firstTouch.set(n, 'add');
+              const parentTag = isElement(rec.target) ? rec.target.tagName.toLowerCase() : '';
+              const cls = n.classList[0] ?? n.getAttribute('role') ?? '';
+              addSig.set(n, `${parentTag}>${n.tagName.toLowerCase()}.${cls}`);
+            }
           } else if (isText(n) && n.parentElement) textCand.add(n.parentElement);
         });
         rec.removedNodes.forEach((n) => {
@@ -534,7 +554,26 @@ declare global {
       textChanged.push(el);
     }
 
-    return { addedRoots, removed, attrChanged, textChanged, droppedBackground };
+    // Detached-re-render signal (#71 fix #3): elements first touched as an ADD that are now
+    // disconnected were inserted and then torn down within the window. They net out of the
+    // reported delta above (excluded from addedRoots by `isConnected`, and from `removed` by
+    // firstTouch !== 'remove'), so counting them here is the ONLY place their transience
+    // surfaces. A recurring BACKGROUND insertion learned in the baseline (a toast / spinner /
+    // virtualized row that appears-then-vanishes) is excluded HERE too — using the add-time
+    // signature, since the detached node's parentElement is gone — so the detach counter honors
+    // the same background quarantine as addedRoots (line ~490) and never re-asserts churn the
+    // delta already dropped. Reduced to subtree roots (parentElement still links a detached tree)
+    // so a detached subtree counts once. Zero added latency — coalesce already walks addedCand.
+    const detachedAdded = [...addedCand].filter(
+      (el) =>
+        firstTouch.get(el) === 'add' &&
+        !el.isConnected &&
+        !(bgInsert.size > 0 && bgInsert.has(addSig.get(el) ?? '')),
+    );
+    const detachedSet = new Set(detachedAdded);
+    const detachedInWindow = detachedAdded.filter((el) => !ancestorInSet(el, detachedSet)).length;
+
+    return { addedRoots, removed, attrChanged, textChanged, droppedBackground, detachedInWindow };
   }
 
   // --- Node classification & labeling -------------------------------------
@@ -732,7 +771,13 @@ declare global {
     bgInsert = new Set();
     bgInsertCount = new Map();
 
-    return { nodes, rawRecords, animationsAwaited, droppedBackground: net.droppedBackground };
+    return {
+      nodes,
+      rawRecords,
+      animationsAwaited,
+      droppedBackground: net.droppedBackground,
+      detachedInWindow: net.detachedInWindow,
+    };
   }
 
   // Gap-F (#50, opt-in): a JS-timer reposition AFTER settle leaves a STALE annotated rect —

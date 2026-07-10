@@ -217,6 +217,23 @@ function diagnoseDelta(delta: Delta): Diagnosis[] {
     });
   }
 
+  if (stats.detachedReRender) {
+    // #71 fix #3: a freshly-added subtree was inserted and detached again within the window (a
+    // re-render / list-virtualization swap). The reported delta shows only the replacement, so a
+    // handle to the original is stale. SUSPECTED, not confirmed: an add-then-detach can also be a
+    // benign transient (a spinner), and the observer read alone cannot tell them apart. Scope:
+    // this catches the IN-WINDOW add-then-detach sub-case only (recurring BACKGROUND churn is
+    // already excluded via bgInsert in coalesce); a keyed-list reorder, a detach inside a shadow
+    // root / child frame, or a re-render AFTER collect are out of scope for this signal.
+    out.push({
+      code: 'detached-re-render',
+      confidence: assessConfidence({ source: 'timing' }),
+      scope: 'delta',
+      detail:
+        'a freshly-added node was detached within the settle window — a re-render/reconciliation swap; the reported delta shows the replacement and a handle to the original would be stale',
+    });
+  }
+
   if (stats.droppedBackground >= CHURN_MIN && stats.droppedBackground >= nodes.length) {
     out.push({
       code: 'background-churn',

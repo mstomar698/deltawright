@@ -78,6 +78,14 @@ export interface DeltaStats {
    * `lateWatchMs > 0`, so the default path is byte-unchanged. Grounds `late-wave-suspected`.
    */
   lateStructural?: boolean;
+  /**
+   * Detached-re-render flag (#71 fix #3): a freshly-added subtree was inserted and then
+   * DETACHED again within the settle window (a re-render / list-virtualization swap), so the
+   * reported delta shows only the replacement and a handle to the original is stale. Always
+   * computed (zero added latency), but PRESENT ONLY when it happened, so a delta with no
+   * in-window detach has a byte-unchanged stats object. Grounds `detached-re-render`.
+   */
+  detachedReRender?: boolean;
 }
 
 export interface RawDelta {
@@ -193,6 +201,9 @@ export interface CollectResult {
   rawRecords: number;
   animationsAwaited: number;
   droppedBackground: number;
+  /** Freshly-added subtree roots detached again before collect (#71 fix #3). Host maps >0 → the
+   * default-absent `DeltaStats.detachedReRender` flag. Always present here (internal interchange). */
+  detachedInWindow: number;
 }
 
 /**

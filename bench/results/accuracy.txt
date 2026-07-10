@@ -7,8 +7,8 @@ HEADLINE
   verdict-vs-reality LIVE (DW-02 gate):     100.0%  (16/16)  PASS
   verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
   confirmed-band precision (target ≥95%):  100.0%  (7 correct / 0 wrong)  [reported]
-  recall (labeled cause emitted):          83.3%  (15/18)
-  silent-miss rate (target ≤5%):           16.7%  (3/18)  [reported]
+  recall (labeled cause emitted):          88.9%  (16/18)
+  silent-miss rate (target ≤5%):           11.1%  (2/18)  [reported]
   confidence-band accuracy (on hits):      100.0%
 
 OUTCOMES BY CASE
@@ -34,7 +34,7 @@ OUTCOMES BY CASE
   ✓ unsure     suspected-miss-empty-confuser [unknown]
   ✓ hit        background-churn-pos         [background-churn] → background-churn suspected
   ✓ unsure     background-churn-confuser    [unknown]
-  ✗ SILENT     detached-re-render-pos       [detached-re-render]
+  ✓ hit        detached-re-render-pos       [detached-re-render] → detached-re-render suspected
   ✓ unsure     detached-re-render-confuser  [unknown]
   ✓ hit        late-wave-suspected-pos      [late-wave-suspected] → late-wave-suspected suspected
   ✓ unsure     late-wave-suspected-confuser [unknown]
@@ -55,5 +55,5 @@ HONESTY STAMP
   self-consistency, reported separately, never gated (F1).
   Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);
   recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).
-  Known silent misses (open in #71): detached-re-render, injection-blocked,
-  cross-boundary-partial — visible above as ✗ SILENT, by design (the corpus reveals them).
+  Known silent misses (open in #71): injection-blocked, cross-boundary-partial —
+  visible above as ✗ SILENT, by design (the corpus reveals them).

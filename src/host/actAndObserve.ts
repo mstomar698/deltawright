@@ -379,6 +379,9 @@ export async function actAndObserve(
       // Only present when the gap-E watch ran (lateWatchMs > 0), so the default stats object
       // is byte-unchanged.
       ...(lateStructural !== undefined ? { lateStructural } : {}),
+      // #71 fix #3: present ONLY when a freshly-added subtree was detached in-window (a re-render
+      // swap), so a delta with no in-window detach keeps a byte-unchanged stats object.
+      ...(collected.detachedInWindow > 0 ? { detachedReRender: true } : {}),
     },
   };
 }

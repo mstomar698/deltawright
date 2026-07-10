@@ -220,3 +220,65 @@ test('integration (live): a covered fillable input is a genuine geom-disagreemen
   expect(s.emittedCode).toBe('geom-disagreement');
   expect(s.verdictMatch).toBe(true); // DW-02: ACTIONABLE (fill has no hit-test)
 });
+
+test('integration (live): an in-window detach + replace is diagnosed detached-re-render (#71 fix #3)', async ({
+  page,
+}) => {
+  await page.goto(pathToFileURL(resolve(FLAKE_DIR, 'fixtures/reveal.html')).href);
+  const delta = await actAndObserve(page, (p) => p.click('[data-reveal="detached"]'), {
+    label: 'detached',
+  });
+  // The original is removed + replaced in a microtask: it nets out of the reported delta, but the
+  // observer counts the in-window detach → the default-absent flag is set and diagnose emits it.
+  expect(delta.stats.detachedReRender).toBe(true);
+  const c = CORPUS.find((x) => x.id === 'detached-re-render-pos')!;
+  const s = scoreCase(c, diagnose(delta));
+  expect(s.outcome).toBe('hit');
+  expect(s.emittedCode).toBe('detached-re-render');
+  expect(s.emittedConfidence).toBe('suspected');
+  // Only the replacement shows in the delta, and it is cleanly actionable — the flag is delta-level.
+  expect(delta.nodes.every((n) => n.actionability.verdict !== 'NOT-actionable')).toBe(true);
+});
+
+test('detached-re-render honors the background-insert quarantine (a recurring toast must not trip it)', async ({
+  page,
+}) => {
+  // Regression guard (#71 fix #3 review): a recurring BACKGROUND toast that inserts-then-removes
+  // in-window is the exact churn bgInsert suppresses from the delta — it must NOT ground
+  // detached-re-render. The action itself (opening a persistent modal) adds no in-window detach.
+  await page.setContent(`
+    <div id="toasts"></div>
+    <button id="open">open</button>
+    <div id="stage"></div>
+    <script>
+      setInterval(() => {
+        const t = document.createElement('div');
+        t.className = 'bg-toast';
+        document.getElementById('toasts').appendChild(t);
+        setTimeout(() => t.remove(), 8);
+      }, 16);
+      document.getElementById('open').addEventListener('click', () => {
+        const m = document.createElement('div');
+        m.id = 'modal';
+        m.textContent = 'Modal';
+        document.getElementById('stage').appendChild(m);
+      });
+    </script>
+  `);
+  const act = (p: typeof page) => p.click('#open');
+
+  // baseline OFF → bgInsert is empty, so nothing is quarantined and the in-window toast detach IS
+  // counted: this proves the signal really fires on this pattern (the guard is not vacuous).
+  const noBaseline = await actAndObserve(page, act, {
+    label: 'open',
+    baseline: false,
+    maxWaitMs: 400,
+  });
+  expect(noBaseline.stats.detachedReRender).toBe(true);
+
+  // baseline ON (default) → the recurring toast signature is learned and quarantined, so the
+  // detach counter excludes it: detached-re-render must be ABSENT even though toasts churned.
+  const withBaseline = await actAndObserve(page, act, { label: 'open', maxWaitMs: 400 });
+  expect(withBaseline.stats.detachedReRender).toBeUndefined();
+  expect(diagnose(withBaseline).diagnoses.some((d) => d.code === 'detached-re-render')).toBe(false);
+});

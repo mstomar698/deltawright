@@ -13,8 +13,8 @@
 // Verdict-vs-reality is SPLIT by case kind (only live cases exercise Playwright's real verdict;
 // delta verdicts are authored self-consistency, reported not gated). Confirmed-precision (target
 // ≥0.95) and silent-miss (target ≤0.05) are REPORTED, then ratcheted into hard floors as #71 lands
-// its detached-re-render / injection-blocked / cross-boundary-partial signals. See score.ts for
-// the scoring rules and the known seed-corpus scoping limits (F3/F4).
+// its remaining injection-blocked / cross-boundary-partial signals. See score.ts for the scoring
+// rules and the known seed-corpus scoping limits (F3/F4).
 
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -142,10 +142,8 @@ function report(scores: CaseScore[], m: Metrics): string {
   L.push(
     '  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).',
   );
-  L.push('  Known silent misses (open in #71): detached-re-render, injection-blocked,');
-  L.push(
-    '  cross-boundary-partial — visible above as ✗ SILENT, by design (the corpus reveals them).',
-  );
+  L.push('  Known silent misses (open in #71): injection-blocked, cross-boundary-partial —');
+  L.push('  visible above as ✗ SILENT, by design (the corpus reveals them).');
   return L.join('\n');
 }
 

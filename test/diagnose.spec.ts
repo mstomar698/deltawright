@@ -342,6 +342,35 @@ test('should_flag_delta_level_settle_timeout_and_background_churn', () => {
   expect(quiet.some((d) => d.code === 'background-churn')).toBe(false);
 });
 
+test('should_flag_detached_re_render_from_the_in_window_detach_signal', () => {
+  // #71 fix #3: the observer set stats.detachedReRender because a freshly-added subtree was
+  // detached again within the window (a re-render swap). diagnose emits detached-re-render as a
+  // delta-level SUSPECTED note — an add-then-detach can also be a benign transient, so never
+  // confirmed; it never touches the verdict of the surviving (replacement) node.
+  const clean = node({
+    ref: 'r2',
+    name: 'Confirm (re-rendered)',
+    actionability: {
+      verdict: 'ACTIONABLE',
+      reason: null,
+      geometryVerdict: 'ACTIONABLE',
+      playwright: { actionable: true },
+      agreed: true,
+    },
+  });
+  const flagged = diagnose(delta([clean], { detachedReRender: true })).diagnoses;
+  const d = flagged.find((x) => x.code === 'detached-re-render');
+  expect(d?.scope).toBe('delta');
+  expect(d?.confidence).toBe('suspected');
+  expect(d?.detail).toContain('detached');
+  // The surviving replacement node is still cleanly actionable — the flag is delta-level only.
+  expect(flagged.some((x) => x.scope === 'node')).toBe(false);
+
+  // No in-window detach (field absent) → no detached-re-render.
+  const quiet = diagnose(delta([clean])).diagnoses;
+  expect(quiet.some((x) => x.code === 'detached-re-render')).toBe(false);
+});
+
 test('should_not_diagnose_a_removed_or_clean_node', () => {
   const removed = node({
     ref: 'rm',

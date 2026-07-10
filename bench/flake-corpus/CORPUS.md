@@ -47,7 +47,7 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `unstable-animating` | delta | ✅ `unstable-animating` / confirmed (#71 recovery; delta — live CSS-animation reproduction is future work) |
 | `geom-disagreement` | live (covered fillable input) | ✅ `geom-disagreement` / suspected (a GENUINE disagreement on a geometry-VISIBLE cause: Playwright can `fill` a covered input, geometry sees the cover — NOT recovered, unlike the geometry-blind class) |
 | `background-churn` | delta (dominant `droppedBackground`) | ✅ `background-churn` / suspected |
-| `detached-re-render` | live (target removed + replaced) | ⚠️ **not emitted** — no `ref-staleified` signal in the Delta yet. Silent miss. |
+| `detached-re-render` | live (target removed + replaced) | ✅ `detached-re-render` / suspected (#71 fix #3 — the observer counts a freshly-added subtree detached in-window; the original nets out but the transience is surfaced as a delta-level note) |
 | `settle-timeout` | live (churning page, low `maxWaitMs`) | ✅ `settle-timeout` / suspected |
 | `suspected-miss-empty` | delta (empty + cap) | ✅ `suspected-miss-empty` / unknown |
 | `late-wave-suspected` | live (`lateWatchMs`) | ✅ `late-wave-suspected` / suspected |
@@ -59,7 +59,7 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 
 ## Known engine gaps this corpus surfaces (for #52 and follow-ups)
 
-The probe found gaps between the taxonomy and what the engine emits from real pages. **Three
+The probe found gaps between the taxonomy and what the engine emits from real pages. **Four
 fixes have shipped** (tracked in #71):
 
 - ✅ **`pointer-events-none` (was mislabeled `covered-by-overlay`).** When the target's own
@@ -73,18 +73,26 @@ fixes have shipped** (tracked in #71):
   the disagreed branch (geometry's dissent is blindness, not counter-evidence — it doesn't
   contradict the verdict, it *is* the verdict's reason). Limited to the geometry-blind set: a
   dissent on a geometry-VISIBLE cause stays `geom-disagreement`. ADR 2026-07-10.
+- ✅ **`detached-re-render` (was silent).** A freshly-added subtree that is inserted and then
+  DETACHED again within the settle window (a re-render / list-virtualization swap) nets out of the
+  reported delta entirely (added-then-removed), so its transience was invisible. `coalesce` now
+  COUNTS those in-window detaches (zero added latency — it already walks the added set) into a
+  default-absent `stats.detachedReRender`, which `diagnose()` maps to `detached-re-render`
+  (suspected — an add-then-detach can also be a benign transient). The count honors the same
+  `bgInsert` background quarantine as the delta itself (a recurring background toast does NOT trip
+  it). **Scope:** the in-window add-then-detach sub-case only — a keyed-list reorder, a detach
+  inside a shadow root / child frame, and a re-render AFTER collect are out of scope. ADR 2026-07-10.
 
 Remaining gaps (open in #71):
 
-1. **`detached-re-render` (silent).** Needs a `ref-staleified` signal added to the Delta.
-2. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
+1. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
    plumbed from `inject.ts` / frame+shadow traversal into the Delta.
 
-**Net: the engine now emits ~14 of the 18 codes well** (the four geometry-visible blocking codes,
-the three geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, and the
-five delta/stats-level codes), with the three silent-miss codes above remaining. That is exactly
-why diagnosis capabilities are **gated** behind the harness floor (#52): the corpus makes the gaps
-measurable before any capability ships.
+**Net: the engine now emits ~15 of the 18 codes well** (the four geometry-visible blocking codes,
+the three geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`,
+`detached-re-render`, and the five delta/stats-level codes), with the two capture-integrity
+silent-miss codes above remaining. That is exactly why diagnosis capabilities are **gated** behind
+the harness floor (#52): the corpus makes the gaps measurable before any capability ships.
 
 ## Running
 
@@ -102,10 +110,11 @@ Verdict-vs-reality is split by case kind: only the live cases exercise Playwrigh
 verdict-vs-reality LIVE (DW-02 gate):  100.0%  (16/16)  PASS
 verdict self-consistency (delta):      100.0%  (10/10)  [authored, not reality]
 confirmed-band precision:              100.0%  (7 correct / 0 wrong)   [reported]
-recall:                                 83.3%  (15/18)
-silent-miss rate:                       16.7%  (3/18)                  [reported]
+recall:                                 88.9%  (16/18)
+silent-miss rate:                       11.1%  (2/18)                  [reported]
 ```
 
-The three silent misses are exactly the open #71 gaps (detached-re-render, injection-blocked,
+The two remaining silent misses are the open #71 capture-integrity gaps (injection-blocked,
 cross-boundary-partial) — surfaced as `✗ SILENT`, by design. `test/accuracy.spec.ts` guards the
-scorer contract + the DW-02 floor (browser-free delta integration + a live smoke).
+scorer contract + the DW-02 floor (browser-free delta integration + live smokes, including the
+detached-re-render fix).
