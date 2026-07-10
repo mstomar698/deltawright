@@ -89,5 +89,20 @@ measurable before any capability ships.
 ## Running
 
 `bench/flake-corpus/load.ts` exposes the corpus + invariant checks; `test/corpus.spec.ts`
-enforces per-code coverage, the confuser requirement, and the independent-oracle rule. The
-harness that scores `diagnose()` against these labels is **#52** (`npm run bench:accuracy`).
+enforces per-code coverage, the confuser requirement, and the independent-oracle rule.
+
+The accuracy harness (**#52**) that scores `diagnose()` against these labels is live:
+**`npm run bench:accuracy`** (`bench/run-accuracy.ts`; pure scorer in `score.ts`). It is
+**reporting-first** — only verdict-vs-reality < 100% (a DW-02 regression) fails the run; precision
+and silent-miss are reported while #71's remaining signals land (ADR 2026-07-10). Latest run:
+
+```
+verdict-vs-reality (DW-02):  100.0%  (26/26)  PASS
+confirmed-band precision:    100.0%  (7 correct / 0 wrong)   [reported]
+recall:                       83.3%  (15/18)
+silent-miss rate:             16.7%  (3/18)                  [reported]
+```
+
+The three silent misses are exactly the open #71 gaps (detached-re-render, injection-blocked,
+cross-boundary-partial) — surfaced as `✗ SILENT`, by design. `test/accuracy.spec.ts` guards the
+scorer contract + the DW-02 floor (browser-free delta integration + a live smoke).
