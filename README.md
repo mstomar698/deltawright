@@ -283,6 +283,9 @@ verdict (#25).
 
 ## Project docs
 
+- **[`docs/cookbook.md`](docs/cookbook.md)** — problem → capability → one-line wiring, plus the
+  honest-limits matrix (Chromium-only, CSP skip-with-reason, overhead, ephemeral refs, corpus-relative
+  accuracy).
 - `docs/specs/ideation-agent-delta-layer.md` — the binding design doc.
 - `docs/plans/`, `docs/specs/`, `docs/decisions/`, `docs/contexts/`, `docs/summaries/` — the SDLC trail.
 - `CONTRIBUTING.md` — how to build, test, and open a PR.

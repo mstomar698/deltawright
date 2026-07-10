@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **v0.6 integration cookbook** (#56, `docs/cookbook.md`): a problem → capability → one-line-wiring
+  table for every shipped surface (delta, diagnosis, the preflight + checksum matchers, the triage
+  reporter, MCP, and the opt-in gap flags), plus a single **honest-limits matrix** — Chromium-only,
+  strict-CSP skip-with-reason (`injection-blocked` / Playwright-only degrade), cross-boundary partial
+  capture, ~150 ms + O(nodes) overhead, ephemeral `data-dw-ref`, and the **corpus-relative** accuracy
+  + regression-only-checksum stamps in one place. Linked from the README.
 - **Flake-triage side-car reporter** (#55, `deltawright/reporter`): a **zero-edit** Playwright Reporter —
   one line in `playwright.config.ts` (`reporter: [['deltawright/reporter']]`) writes a taxonomy-labeled
   triage side-car (`*.deltawright-sidecar.json` + `*.triage.txt`) for every **failed / timed-out** test,
