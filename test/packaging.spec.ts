@@ -18,6 +18,7 @@ import { GOLDEN_DELTA, GOLDEN_TEXT } from './fixtures/packaging-golden';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distIndex = resolve(root, 'dist/index.js');
 const distMcp = resolve(root, 'dist/mcp/server.js');
+const distMatchers = resolve(root, 'dist/matchers/index.js');
 
 // Build once if dist/ is missing so the suite is runnable standalone. CI builds
 // explicitly before the tests, so this is a no-op there.
@@ -45,6 +46,24 @@ test('should_import_from_built_package_without_tsx', () => {
     encoding: 'utf8',
   });
   expect(out.trim()).toBe('OK:11');
+});
+
+test('should_import_matchers_subpath_from_dist', () => {
+  // The `deltawright/matchers` subpath (#53) resolves from dist under plain node and exports the
+  // preflight fn + matcher bag as functions/objects.
+  const url = pathToFileURL(distMatchers).href;
+  const script = [
+    `import * as m from ${JSON.stringify(url)};`,
+    `const okFns = ['preflight','toBeActionable'].every((k) => typeof m[k] === 'function');`,
+    `const okBag = m.dwMatchers && typeof m.dwMatchers.toBeActionable === 'function';`,
+    `if (!okFns || !okBag) { console.error('BAD'); process.exit(2); }`,
+    `console.log('OK');`,
+  ].join('\n');
+  const out = execFileSync('node', ['--input-type=module', '-e', script], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  expect(out.trim()).toBe('OK');
 });
 
 test('should_run_mcp_bin_from_dist', async () => {

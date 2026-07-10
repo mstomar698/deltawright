@@ -807,6 +807,10 @@ declare global {
     reset,
     lateResult,
     recheckRects,
+    // Preflight (#53): stateless on-demand geometry read for the actionability matcher's [geom:]
+    // annotation. Reuses the SAME readGeometry as collect (one source of truth for geometry); it
+    // never touches observer/arm/collect state, so it is safe to call standalone.
+    probeGeometry: readGeometry,
   };
 })();
 

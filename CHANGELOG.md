@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Preflight actionability matcher** (#53, `deltawright/matchers`): `expect(locator).toBeActionable()`
+  + `preflight(locator) → { verdict, reason, geometryVerdict, agreed }` — a **ground-truth** wrapper
+  on Playwright's own role-aware verdict, usable **standalone** (no prior `actAndObserve`). It reuses
+  the exact same authoritative probe the delta uses (`click` trial for buttons/links, `fill`-editable
+  for text inputs, `selectOption`-enabled for selects), so the boolean can never diverge between the
+  two surfaces. Geometry is read best-effort via an additive injected `probeGeometry` entry purely for
+  the `[geom:]` disagreement hint and **never flips the verdict** (DW-02); under a strict CSP /
+  non-Chromium page (where the observer can't be injected) it degrades to a Playwright-only verdict
+  (`geometryVerdict: 'n/a'`). Register with `expect.extend(dwMatchers)`. ADR 2026-07-10.
+
 ### Changed
 
 - **Accuracy floors ratcheted from reported to gated** (#52/#71): now that `diagnose()` closed every

@@ -13,10 +13,20 @@ import {
 } from 'deltawright';
 // The second declared entry point must resolve to a real module with usable types too.
 import { DeltawrightSession, startServer } from 'deltawright/mcp';
+// …as must the matchers subpath (#53): the preflight fn + matcher bag + its option/result types.
+import {
+  preflight,
+  dwMatchers,
+  type PreflightOptions,
+  type PreflightResult,
+} from 'deltawright/matchers';
 
 export const primitive = actAndObserve;
 export const mcp = { DeltawrightSession, startServer };
+export const matchers = { preflight, dwMatchers };
 export const opts: ActAndObserveOptions = { label: 'demo' };
+export const preflightOpts: PreflightOptions = { trialTimeoutMs: 800 };
+export type Preflight = PreflightResult;
 
 export function summarize(delta: Delta): { line: string; tokens: number; sum: string } {
   const first: DeltaNode | undefined = delta.nodes[0];
