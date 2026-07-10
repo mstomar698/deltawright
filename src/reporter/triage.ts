@@ -1,5 +1,6 @@
 import { diagnose } from '../host/diagnose';
-import { atLeastAsConfident, type Confidence } from '../host/confidence';
+import { type Confidence } from '../host/confidence';
+import { summarizeDiagnoses, DEFAULT_MIN_CONFIDENCE } from '../host/summarize';
 import type { Delta, DeltaNode, Diagnosis } from '../host/types';
 import type { RootCauseCode } from '../host/taxonomy';
 
@@ -14,9 +15,6 @@ import type { RootCauseCode } from '../host/taxonomy';
 
 /** The attachment name a test (or the opt-in fixture) uses to hand a real Delta to the reporter. */
 export const DELTA_ATTACHMENT_NAME = 'deltawright-delta';
-
-/** Emit a specific cause only at or above this confidence; below it the side-car says `unsure`. */
-const DEFAULT_MIN_CONFIDENCE: Confidence = 'suspected';
 
 export interface TriageInput {
   /** Playwright test result status; only 'failed' / 'timedOut' yield a side-car. */
@@ -141,19 +139,6 @@ function deltaFromAttachments(atts: TriageInput['attachments']): Delta | null {
   return null;
 }
 
-/** Pick the strongest specific (node/delta) diagnosis as the primary cause. */
-function primaryDiagnosis(diagnoses: Diagnosis[]): Diagnosis | null {
-  const specific = diagnoses.filter((d) => d.code !== 'unknown');
-  if (specific.length === 0) return null;
-  // Prefer the highest confidence; on a TIE keep the earlier one — blocking node causes are pushed
-  // before the delta-level notes, so a confirmed node cause wins over a suspected late-wave/stale-rect
-  // flag, and a suspected node cause wins a tie against a suspected delta note. `d` is taken only when
-  // it is STRICTLY stronger than the incumbent.
-  return specific.reduce((best, d) =>
-    atLeastAsConfident(best.confidence, d.confidence) ? best : d,
-  );
-}
-
 /** Assemble a side-car from a (possibly empty) diagnosis set + flags. Applies the confidence gate. */
 function assemble(
   input: TriageInput,
@@ -164,14 +149,16 @@ function assemble(
 ): Sidecar {
   const lateWave = diagnoses.some((d) => d.code === 'late-wave-suspected');
   const staleRect = diagnoses.some((d) => d.code === 'stale-rect-suspected');
-  const primary = flags.detached ? null : primaryDiagnosis(diagnoses);
-  const crosses = primary != null && atLeastAsConfident(primary.confidence, minConfidence);
-  const cause: Sidecar['cause'] = crosses ? primary!.code : 'unsure';
-  const confidence: Confidence = crosses ? primary!.confidence : 'unknown';
+  // The confidence gate is the shared reducer (#60) — the side-car and the MCP `diagnose` tool can't
+  // drift on which cause crosses the bar. `unsure` cause ⇒ confidence `unknown` (its own contract).
+  const summary = summarizeDiagnoses(diagnoses, { minConfidence, detached: flags.detached });
+  const crosses = summary.cause !== 'unsure';
+  const cause: Sidecar['cause'] = summary.cause;
+  const confidence: Confidence = summary.confidence;
   const detail = flags.detached
     ? 'the failing locator did not resolve to an actionable element (detached / not rendered) — no cause fabricated'
     : crosses
-      ? primary!.detail
+      ? summary.primary!.detail
       : (flags.reason ?? 'no cause crossed the confidence threshold');
   return {
     test: input.title,

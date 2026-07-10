@@ -135,7 +135,15 @@ test('should_run_mcp_bin_from_dist', async () => {
   await client.connect(transport);
   try {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['act_and_observe', 'navigate', 'snapshot']);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'act_and_observe',
+      'diagnose',
+      'explain_delta',
+      'navigate',
+      'observe_settle',
+      'preflight',
+      'snapshot',
+    ]);
   } finally {
     await client.close();
   }

@@ -29,6 +29,7 @@ below is a separate import you add only when you want it.
 | **Rank flaky tests** across runs from the triage side-cars | `deltawright/aggregate` (#59) | `deltawright aggregate --report ./run-1 ./run-2` (or `aggregate(readSidecars(dirs))`) |
 | …with a **geometry-grounded** cause on a specific action | `attachDelta` (rich mode, a test edit) | `await attachDelta(testInfo, await actAndObserve(page, act));` |
 | Drive Deltawright from an **agent** (MCP) | `deltawright mcp` | MCP config: `command: "npx", args: ["deltawright-mcp"]` |
+| Let an **agent live-reproduce + diagnose** a failure (in the MCP browser) | MCP debug tools (#60) | `diagnose` / `preflight` / `observe_settle` / `explain_delta` tools — over the MCP session's own page |
 | Observe a **canvas / WebGL** draw (no DOM mutation) | screenshot fallback (#20) | `actAndObserve(page, act, { screenshotFallback: true })` |
 | Include **same-origin child frames** | frames (#34) | `actAndObserve(page, act, { frames: true })` |
 | Flag a **late render wave** after settle | `lateWatchMs` (#49) | `actAndObserve(page, act, { lateWatchMs: 1200 })` |
@@ -36,7 +37,8 @@ below is a separate import you add only when you want it.
 | Fingerprint a delta directly | `checksum` (#41) | `const fp = checksum(delta);` |
 
 Subpaths: `deltawright` (core), `deltawright/matchers` (#53/#54), `deltawright/reporter` (#55),
-`deltawright/mcp`. Playwright is a **peer** dependency.
+`deltawright/wait` (#58), `deltawright/aggregate` (#59), `deltawright/mcp` (incl. the #60 debug tools).
+Playwright is a **peer** dependency.
 
 ## Honest-limits matrix
 
@@ -53,6 +55,7 @@ Subpaths: `deltawright` (core), `deltawright/matchers` (#53/#54), `deltawright/r
 | **Settle-as-a-wait** | `observeConsequences` is a **signal, not a guarantee**. | It reports when the DOM went structurally quiet (`settleMs`), whether that was inconclusive (`hitMaxWait`), and whether a late wave landed (`suspectedEarly`) — it is NOT a completion guarantee, retry, or flake suppressant, and exposes no `ready` boolean. It saves the **O(nodes) reconcile** (its cost win) but is not unconditionally faster wall-clock — the default late-watch adds a fixed window (`lateWatchMs`, set 0 to skip). `suspectedEarly` is coarse: light-DOM only (misses open-shadow-root late waves) and can trip on background churn. |
 | **Suggested selectors** | Every `suggest()` selector is a **candidate to verify**. | role/name are heuristic reads (not Playwright's a11y algorithm), a `name` may be an aria-label, and uniqueness/durability are not checked; `getByTestId` and the ephemeral `data-dw-ref` are never suggested. |
 | **Triage cause** | A reporter cause is a **hypothesis**. | It is derived from Playwright's own failure signal (passive) or an attached delta (rich); a low-confidence cause is `unsure` and a gone locator is `detached` — it never fabricates. |
+| **MCP debug tools** | `diagnose`/`preflight`/`observe_settle`/`explain_delta` are **live-reproduce**. | They drive the MCP server's OWN browser and diagnose what happens there (Playwright-authoritative verdict; below the gate → `unsure`). They do **NOT** read your live Playwright test run (the session has no handle on it — every result says so), and **none mutates a test or fixes a flake**. A real past-run/trace reader is cut this cycle. |
 
 ## Notes
 
