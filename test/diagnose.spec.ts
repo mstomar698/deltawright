@@ -371,6 +371,31 @@ test('should_flag_detached_re_render_from_the_in_window_detach_signal', () => {
   expect(quiet.some((x) => x.code === 'detached-re-render')).toBe(false);
 });
 
+test('should_flag_capture_integrity_codes_from_their_stats_signals', () => {
+  // #71 fix #4b: injection blocked → an empty delta carrying injectionBlocked → injection-blocked,
+  // CONFIRMED (the injection failure was authoritatively observed, not inferred).
+  const blocked = diagnose(delta([], { injectionBlocked: true })).diagnoses;
+  const ib = blocked.find((d) => d.code === 'injection-blocked');
+  expect(ib?.scope).toBe('delta');
+  expect(ib?.confidence).toBe('confirmed');
+  // An empty delta with injection blocked must NOT be read as a confident no-op / suspected-miss.
+  expect(blocked.some((d) => d.code === 'suspected-miss-empty')).toBe(false);
+
+  // #71 fix #4a: a skipped child frame → cross-boundary-partial, SUSPECTED (a boundary was skipped,
+  // but we can't know whether the action changed anything behind it).
+  const partial = diagnose(delta([coveredAgreed], { crossBoundarySkipped: 2 })).diagnoses;
+  const cb = partial.find((d) => d.code === 'cross-boundary-partial');
+  expect(cb?.scope).toBe('delta');
+  expect(cb?.confidence).toBe('suspected');
+  expect(cb?.detail).toContain('2 child frame');
+
+  // Neither field set → neither code.
+  const clean = diagnose(delta([coveredAgreed])).diagnoses;
+  expect(
+    clean.some((d) => d.code === 'injection-blocked' || d.code === 'cross-boundary-partial'),
+  ).toBe(false);
+});
+
 test('should_not_diagnose_a_removed_or_clean_node', () => {
   const removed = node({
     ref: 'rm',

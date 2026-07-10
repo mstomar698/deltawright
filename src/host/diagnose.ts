@@ -243,6 +243,31 @@ function diagnoseDelta(delta: Delta): Diagnosis[] {
     });
   }
 
+  if (stats.injectionBlocked) {
+    // #71 fix #4b: the observer could not be injected (addScriptTag threw, typically a strict CSP),
+    // so the delta is empty NOT because nothing changed but because nothing could be observed.
+    // CONFIRMED: the injection failure was authoritatively observed (the throw), not inferred.
+    out.push({
+      code: 'injection-blocked',
+      confidence: assessConfidence({ source: 'playwright' }),
+      scope: 'delta',
+      detail:
+        'the observer could not be injected (addScriptTag failed — typically a strict CSP); the action ran but its effect could not be observed',
+    });
+  }
+
+  if (stats.crossBoundarySkipped && stats.crossBoundarySkipped > 0) {
+    // #71 fix #4a: one or more child frames could not be observed (cross-origin / uninjectable),
+    // so the delta is PARTIAL — a change inside a skipped frame is invisible. SUSPECTED: we know a
+    // boundary was skipped, but not whether the action actually changed anything behind it.
+    out.push({
+      code: 'cross-boundary-partial',
+      confidence: assessConfidence({ source: 'timing' }),
+      scope: 'delta',
+      detail: `${stats.crossBoundarySkipped} child frame(s) could not be observed (cross-origin / uninjectable) — the delta may be missing changes inside them`,
+    });
+  }
+
   return out;
 }
 

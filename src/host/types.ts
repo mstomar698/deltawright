@@ -86,6 +86,23 @@ export interface DeltaStats {
    * in-window detach has a byte-unchanged stats object. Grounds `detached-re-render`.
    */
   detachedReRender?: boolean;
+  /**
+   * Capture-integrity flag (#71 fix #4a): how many child frames could NOT be observed during
+   * `frames:true` traversal (cross-origin / uninjectable / detached mid-action), so the delta is
+   * PARTIAL — a change inside one of them is invisible. Absent unless `frames:true` AND at least
+   * one frame was skipped, so the default path is byte-unchanged. Grounds `cross-boundary-partial`.
+   * (Closed shadow roots are structurally undetectable — `el.shadowRoot` is null — so they are not
+   * counted here; the honest, countable signal is skipped frames.)
+   */
+  crossBoundarySkipped?: number;
+  /**
+   * Capture-integrity flag (#71 fix #4b): the observer could not be injected into the page
+   * (`addScriptTag` threw — typically a strict CSP), so NOTHING could be observed. The primitive
+   * degrades: it still performs the action, but returns an empty delta carrying this flag. Absent
+   * on every normally-injected page, so the default path is byte-unchanged. Grounds
+   * `injection-blocked` (confirmed — the injection failure was authoritatively observed).
+   */
+  injectionBlocked?: boolean;
 }
 
 export interface RawDelta {

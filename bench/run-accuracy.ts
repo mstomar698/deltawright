@@ -8,13 +8,14 @@
 // precision, which stays blocked on #25/#41 (the owner's real apps).
 //
 // HEADLINE metrics: verdict-vs-reality (DW-02), confirmed-band precision, recall, silent-miss.
-// GATING is deliberately reporting-first while #71's remaining recall/signal gaps close: ONLY a
-// real DW-02 regression fails the run — the LIVE verdict subset < 100% (or zero live oracles).
+// GATING is (still) reporting-first: ONLY a real DW-02 regression fails the run — the LIVE verdict
+// subset < 100% (or zero live oracles). #71's signals have now all landed, so the precision/
+// silent-miss floors are ready to move from reported to gated (a follow-up ratchet).
 // Verdict-vs-reality is SPLIT by case kind (only live cases exercise Playwright's real verdict;
 // delta verdicts are authored self-consistency, reported not gated). Confirmed-precision (target
-// ≥0.95) and silent-miss (target ≤0.05) are REPORTED, then ratcheted into hard floors as #71 lands
-// its remaining injection-blocked / cross-boundary-partial signals. See score.ts for the scoring
-// rules and the known seed-corpus scoping limits (F3/F4).
+// ≥0.95) and silent-miss (target ≤0.05) are REPORTED; with #71's signals now all landed (recall
+// 100% / silent-miss 0% on this seed) they are ready to ratchet into hard floors next. See score.ts
+// for the scoring rules and the known seed-corpus scoping limits (F3/F4).
 
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -142,8 +143,13 @@ function report(scores: CaseScore[], m: Metrics): string {
   L.push(
     '  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).',
   );
-  L.push('  Known silent misses (open in #71): injection-blocked, cross-boundary-partial —');
-  L.push('  visible above as ✗ SILENT, by design (the corpus reveals them).');
+  L.push(
+    '  All 18 taxonomy codes now emit (recall 100% / silent-miss 0% on this seed); #71 closed',
+  );
+  L.push('  its detached-re-render + capture-integrity signals. Precision/silent-miss are still');
+  L.push(
+    '  REPORTED (not gated) — the floors ratchet to hard gates next; only DW-02 hard-fails today.',
+  );
   return L.join('\n');
 }
 

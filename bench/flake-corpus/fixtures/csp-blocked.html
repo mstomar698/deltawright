@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- script-src 'none' blocks Playwright's addScriptTag, so the observer cannot be injected.
+         actAndObserve degrades: it still performs the action, then returns an empty delta flagged
+         stats.injectionBlocked → diagnose() emits injection-blocked (confirmed). (#71 fix #4b) -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'none'" />
+    <title>Deltawright flake-corpus · injection blocked (strict CSP)</title>
+  </head>
+  <body>
+    <h1>Injection blocked (strict CSP)</h1>
+    <button id="go">go</button>
+  </body>
+</html>

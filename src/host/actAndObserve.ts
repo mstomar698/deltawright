@@ -1,5 +1,5 @@
 import type { Frame, Page } from '@playwright/test';
-import { ensureInjected } from './inject';
+import { ensureInjected, InjectionBlockedError } from './inject';
 import { annotateActionability, geometryVerdict } from './actionability';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import type {
@@ -162,17 +162,23 @@ interface ArmedFrame {
   offset: { x: number; y: number };
 }
 
-/** Inject + baseline + arm each same-origin child frame before the action (#34). */
+/**
+ * Inject + baseline + arm each same-origin child frame before the action (#34). Returns the armed
+ * frames AND how many child frames had to be SKIPPED (cross-origin / uninjectable), which grounds
+ * the `cross-boundary-partial` capture-integrity signal (#71 fix #4a): a skipped frame means a
+ * change inside it is invisible to the delta.
+ */
 async function armChildFrames(
   page: Page,
   enabled: boolean,
   baseline: BaselineOptions | null,
   inWindowRecurrence: boolean,
-): Promise<ArmedFrame[]> {
-  if (!enabled) return [];
+): Promise<{ armed: ArmedFrame[]; skipped: number }> {
+  if (!enabled) return { armed: [], skipped: 0 };
   const mainFrame = page.mainFrame();
   const children = page.frames().filter((f) => f !== mainFrame);
   const armed: ArmedFrame[] = [];
+  let skipped = 0;
   for (let i = 0; i < children.length; i++) {
     const frame = children[i]!;
     try {
@@ -196,10 +202,12 @@ async function armChildFrames(
       }
       armed.push({ frame, tag: `f${i + 1}`, offset });
     } catch {
-      // can't inject (cross-origin CSP / detached) — skip this frame.
+      // can't inject (cross-origin CSP / detached) — skip this frame, and record that the
+      // capture is now partial (a change inside this frame won't appear in the delta).
+      skipped++;
     }
   }
-  return armed;
+  return { armed, skipped };
 }
 
 /** Offset a child-frame node to page-global coordinates and namespace its refs. */
@@ -234,7 +242,32 @@ export async function actAndObserve(
     lateWatchMs: opts.lateWatchMs ?? 0,
   };
 
-  await ensureInjected(page);
+  // Capture-integrity degraded path (#71 fix #4b): if the observer can't be injected — a strict
+  // CSP blocks addScriptTag — we cannot observe anything. Rather than throw out of the primitive,
+  // degrade honestly: still perform the action (act-and-observe must ACT), then return an empty
+  // delta carrying `injectionBlocked` so `diagnose()` can surface `injection-blocked` (confirmed —
+  // the injection failure was authoritatively observed) instead of the caller seeing a silent no-op.
+  // ONLY an `InjectionBlockedError` (addScriptTag rejected) degrades: a presence-probe or bundle
+  // failure, or a transient navigation-race throw, is a DIFFERENT fault and re-throws as before, so
+  // it stays loud and retryable rather than being mislabeled as a confirmed CSP block (DW-03).
+  try {
+    await ensureInjected(page);
+  } catch (err) {
+    if (!(err instanceof InjectionBlockedError)) throw err;
+    await action(page);
+    return {
+      action: opts.label ?? 'action',
+      nodes: [],
+      stats: {
+        rawRecords: 0,
+        settleMs: 0,
+        hitMaxWait: false,
+        animationsAwaited: 0,
+        droppedBackground: 0,
+        injectionBlocked: true,
+      },
+    };
+  }
 
   // DOM-less fallback (#20): capture the pre-action pixels so we can diff them if the
   // DOM reports no change.
@@ -261,12 +294,15 @@ export async function actAndObserve(
   );
 
   // Same-origin iframe traversal (#34, opt-in): arm child frames too, before the action.
-  const childFrames = await armChildFrames(
+  // `framesSkipped` counts the ones we could NOT observe (cross-origin/uninjectable) → grounds
+  // `cross-boundary-partial` (#71 fix #4a). More can accrue in the collect loop below.
+  const { armed: childFrames, skipped: framesSkippedAtArm } = await armChildFrames(
     page,
     opts.frames === true,
     baseline,
     opts.inWindowRecurrence === true,
   );
+  let crossBoundarySkipped = framesSkippedAtArm;
 
   // Perform the action through Playwright so we inherit its auto-wait +
   // actionability on the action target itself.
@@ -315,7 +351,8 @@ export async function actAndObserve(
       );
       nodes.push(...cn);
     } catch {
-      // a frame that navigated/detached mid-action — skip it.
+      // a frame that navigated/detached mid-action — skip it, and record the partial capture.
+      crossBoundarySkipped++;
     }
   }
 
@@ -382,6 +419,9 @@ export async function actAndObserve(
       // #71 fix #3: present ONLY when a freshly-added subtree was detached in-window (a re-render
       // swap), so a delta with no in-window detach keeps a byte-unchanged stats object.
       ...(collected.detachedInWindow > 0 ? { detachedReRender: true } : {}),
+      // #71 fix #4a: present ONLY when a child frame was skipped during frames:true traversal, so
+      // the default (no-frames) path keeps a byte-unchanged stats object.
+      ...(crossBoundarySkipped > 0 ? { crossBoundarySkipped } : {}),
     },
   };
 }
