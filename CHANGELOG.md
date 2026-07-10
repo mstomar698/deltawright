@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`detached-re-render` diagnosis** (#71 fix #3): `diagnose()` now emits `detached-re-render`
+  (suspected) when a freshly-added subtree was inserted and then DETACHED again within the settle
+  window — a React re-render / list-virtualization swap. Such a node nets OUT of the reported delta
+  (added-then-removed → neither net-added nor net-removed), so the delta shows only the replacement
+  and the transience was previously a silent miss; a handle to the original would be stale.
+  `coalesce` counts the in-window detaches (zero added latency — it already walks the added set) into
+  a **default-absent** `stats.detachedReRender`, so a delta with no detach keeps a byte-unchanged
+  stats object. Suspected, not confirmed: an add-then-detach can also be a benign transient (a
+  spinner). ADR 2026-07-10. Harness: recall **83.3% → 88.9%** (16/18), silent-miss **16.7% → 11.1%**
+  (2/18); the two remaining misses are the #71 capture-integrity codes (injection-blocked,
+  cross-boundary-partial).
 - **Accuracy harness** (#52, `npm run bench:accuracy`): scores the pure `diagnose()` engine against
   the #51 corpus and reports headline metrics — verdict-vs-reality (DW-02), confirmed-band
   precision, recall, silent-miss rate — all **corpus-relative** (NOT real-production precision;

@@ -410,7 +410,7 @@ export const CORPUS: CorpusCase[] = [
     fixture: R,
     action: reveal('detached'),
     truth: { reveal: 'detached', intendedCause: 'detached-re-render' },
-    note: 'KNOWN ENGINE GAP: the target is removed + replaced in a microtask, but the Delta has no ref-staleified signal yet, so the engine does not emit detached-re-render (silent). #52 shows the miss; closing it is future work.',
+    note: 'The target is inserted then removed + replaced in a microtask (a re-render swap). The original nets out of the reported delta, but the observer counts it as a freshly-added subtree detached in-window (#71 fix #3) → the engine emits detached-re-render (suspected). Only the replacement shows in the delta; a handle to the original would be stale.',
   },
   {
     id: 'detached-re-render-confuser',
