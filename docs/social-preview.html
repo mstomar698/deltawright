@@ -1,0 +1,169 @@
+<!doctype html>
+<!--
+  Social-preview card source for GitHub (Settings → General → Social preview).
+  Rendered to docs/social-preview.png at 1280×640. To regenerate, screenshot this
+  file at a 1280×640 viewport (e.g. Playwright: page.setViewportSize({width:1280,height:640})
+  then page.screenshot()). Self-contained: system fonts only, no external assets.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1280px;
+        height: 640px;
+      }
+      .card {
+        width: 1280px;
+        height: 640px;
+        padding: 64px 68px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background:
+          radial-gradient(1100px 600px at 82% -10%, #17324a 0%, rgba(23, 50, 74, 0) 60%),
+          radial-gradient(900px 500px at 0% 120%, #12233a 0%, rgba(18, 35, 58, 0) 55%), #0b0f16;
+        color: #e6edf3;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        position: relative;
+        overflow: hidden;
+      }
+      .accent-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 8px;
+        background: linear-gradient(90deg, #58a6ff 0%, #3fb950 55%, #58a6ff 100%);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .mark {
+        width: 52px;
+        height: 52px;
+        border-radius: 13px;
+        background: linear-gradient(135deg, #58a6ff, #3fb950);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+        font-weight: 800;
+        color: #0b0f16;
+        box-shadow: 0 6px 26px rgba(88, 166, 255, 0.35);
+      }
+      .name {
+        font-size: 62px;
+        font-weight: 800;
+        letter-spacing: -1.5px;
+      }
+      .tagline {
+        margin-top: 22px;
+        font-size: 31px;
+        line-height: 1.32;
+        font-weight: 600;
+        color: #cdd9e5;
+        max-width: 1040px;
+      }
+      .tagline b {
+        color: #7ee2a8;
+        font-weight: 700;
+      }
+      .snippet {
+        margin-top: 30px;
+        background: rgba(1, 4, 9, 0.66);
+        border: 1px solid #223041;
+        border-radius: 14px;
+        padding: 22px 26px;
+        font-family: ui-monospace, 'SF Mono', 'Menlo', 'Consolas', monospace;
+        font-size: 20px;
+        line-height: 1.62;
+        color: #adbac7;
+        max-width: 1000px;
+      }
+      .snippet .k {
+        color: #6e7681;
+      }
+      .snippet .ok {
+        color: #3fb950;
+        font-weight: 600;
+      }
+      .snippet .no {
+        color: #f0883e;
+        font-weight: 600;
+      }
+      .snippet .g {
+        color: #58a6ff;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .chips {
+        display: flex;
+        gap: 12px;
+      }
+      .chip {
+        font-size: 19px;
+        font-weight: 600;
+        color: #adbac7;
+        background: rgba(88, 166, 255, 0.1);
+        border: 1px solid #223041;
+        border-radius: 999px;
+        padding: 8px 18px;
+      }
+      .repo {
+        font-size: 21px;
+        font-weight: 600;
+        color: #768390;
+        font-family: ui-monospace, 'SF Mono', 'Menlo', monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="accent-bar"></div>
+      <div>
+        <div class="brand">
+          <div class="mark">Δ</div>
+          <div class="name">Deltawright</div>
+        </div>
+        <div class="tagline">
+          A delta&nbsp;+&nbsp;actionability layer for Playwright agents — after one action, it
+          reports <b>what changed</b> and <b>whether the agent can act on it</b>.
+        </div>
+      </div>
+
+      <div class="snippet">
+        <span class="k">after click "Open popup":</span><br />
+        &nbsp;&nbsp;+ dialog "Session expired"&nbsp;&nbsp;<span class="ok">ACTIONABLE</span><br />
+        &nbsp;&nbsp;&nbsp;&nbsp;+ button "Renew"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="ok"
+          >ACTIONABLE</span
+        ><br />
+        &nbsp;&nbsp;~ button "Submit"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="no"
+          >NOT-actionable (disabled)</span
+        >
+        <span class="g">[geom:ACTIONABLE]</span>
+      </div>
+
+      <div class="footer">
+        <div class="chips">
+          <div class="chip">Playwright + headless Chromium</div>
+          <div class="chip">TypeScript</div>
+          <div class="chip">MIT</div>
+        </div>
+        <div class="repo">github.com/mstomar698/deltawright</div>
+      </div>
+    </div>
+  </body>
+</html>
