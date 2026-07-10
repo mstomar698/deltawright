@@ -55,6 +55,10 @@
       "types": "./dist/wait/index.d.ts",
       "import": "./dist/wait/index.js"
     },
+    "./aggregate": {
+      "types": "./dist/aggregate/index.d.ts",
+      "import": "./dist/aggregate/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

@@ -21,6 +21,7 @@ const distMcp = resolve(root, 'dist/mcp/server.js');
 const distMatchers = resolve(root, 'dist/matchers/index.js');
 const distReporter = resolve(root, 'dist/reporter/index.js');
 const distWait = resolve(root, 'dist/wait/index.js');
+const distAggregate = resolve(root, 'dist/aggregate/index.js');
 
 // Build once if dist/ is missing so the suite is runnable standalone. CI builds
 // explicitly before the tests, so this is a no-op there.
@@ -96,6 +97,23 @@ test('should_import_wait_subpath_from_dist', () => {
   const script = [
     `import { observeConsequences } from ${JSON.stringify(url)};`,
     `if (typeof observeConsequences !== 'function') { console.error('BAD'); process.exit(2); }`,
+    `console.log('OK');`,
+  ].join('\n');
+  const out = execFileSync('node', ['--input-type=module', '-e', script], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  expect(out.trim()).toBe('OK');
+});
+
+test('should_import_aggregate_subpath_from_dist', () => {
+  // The `deltawright/aggregate` subpath (#59): the read-only aggregator fns resolve from dist.
+  const url = pathToFileURL(distAggregate).href;
+  const script = [
+    `import { readSidecars, aggregate, toJSONL, recordFromSidecar, renderReport } from ${JSON.stringify(url)};`,
+    `const ok = [readSidecars, aggregate, toJSONL, recordFromSidecar, renderReport].every((f) => typeof f === 'function');`,
+    `const nullOnGarbage = recordFromSidecar({ nope: 1 }, 'r') === null;`,
+    `if (!ok || !nullOnGarbage) { console.error('BAD'); process.exit(2); }`,
     `console.log('OK');`,
   ].join('\n');
   const out = execFileSync('node', ['--input-type=module', '-e', script], {

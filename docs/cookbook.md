@@ -26,6 +26,7 @@ below is a separate import you add only when you want it.
 | Wait for the DOM to **settle** after an action (a signal, cheaper than a delta) | `deltawright/wait` (#58) | `const { settleMs, hitMaxWait, suspectedEarly } = await observeConsequences(page, (p) => p.click('#save'));` |
 | **Suggest** selectors + assertions for a delta's changed nodes | `suggest` (#57) | `const { selectors, assertions, warnings } = suggest(delta);` |
 | Triage **every failing test** with zero test edits | `deltawright/reporter` (#55) | `reporter: [['list'], ['deltawright/reporter']]` in `playwright.config.ts` |
+| **Rank flaky tests** across runs from the triage side-cars | `deltawright/aggregate` (#59) | `deltawright aggregate --report ./run-1 ./run-2` (or `aggregate(readSidecars(dirs))`) |
 | …with a **geometry-grounded** cause on a specific action | `attachDelta` (rich mode, a test edit) | `await attachDelta(testInfo, await actAndObserve(page, act));` |
 | Drive Deltawright from an **agent** (MCP) | `deltawright mcp` | MCP config: `command: "npx", args: ["deltawright-mcp"]` |
 | Observe a **canvas / WebGL** draw (no DOM mutation) | screenshot fallback (#20) | `actAndObserve(page, act, { screenshotFallback: true })` |
