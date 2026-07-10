@@ -13,20 +13,24 @@ import {
 } from 'deltawright';
 // The second declared entry point must resolve to a real module with usable types too.
 import { DeltawrightSession, startServer } from 'deltawright/mcp';
-// …as must the matchers subpath (#53): the preflight fn + matcher bag + its option/result types.
+// …as must the matchers subpath (#53/#54): the preflight fn, the checksum matcher + its pure core,
+// the matcher bag, and the option/result types.
 import {
   preflight,
+  matchDeltaChecksum,
   dwMatchers,
   type PreflightOptions,
   type PreflightResult,
+  type ChecksumMatchResult,
 } from 'deltawright/matchers';
 
 export const primitive = actAndObserve;
 export const mcp = { DeltawrightSession, startServer };
-export const matchers = { preflight, dwMatchers };
+export const matchers = { preflight, matchDeltaChecksum, dwMatchers };
 export const opts: ActAndObserveOptions = { label: 'demo' };
 export const preflightOpts: PreflightOptions = { trialTimeoutMs: 800 };
 export type Preflight = PreflightResult;
+export type Checksum = ChecksumMatchResult;
 
 export function summarize(delta: Delta): { line: string; tokens: number; sum: string } {
   const first: DeltaNode | undefined = delta.nodes[0];

@@ -4,8 +4,14 @@
 // geometry<->Playwright disagreement (geometryVerdict + agreed), a coarse size bucket,
 // viewport/coverage flags, and the parent->child tree — while DROPPING everything that
 // jitters across runs: the raw data-dw-ref ids (only tree EDGES are kept), raw pixel
-// rects, computed-style strings, reason/error text, changedAttrs order, timing stats,
-// and MutationObserver record order (siblings are sorted by a stable key).
+// rects, computed-style strings, reason/error text, timing stats, and MutationObserver
+// record order (siblings are sorted by a stable key).
+//
+// KNOWN BLIND SPOT: an attrChanged node's `changedAttrs` is NOT hashed at all — the
+// fingerprint records THAT a node's attributes changed (kind=attrChanged), not WHICH ones.
+// So an action that starts toggling a different attribute (class -> aria-pressed) without
+// altering the verdict or tree is NOT distinguished. Deliberate for now (keeps the coarse
+// bucket coarse); folding the attr SET back in is a candidate refinement.
 //
 // IMPORTANT (honesty): a matching checksum proves output == the output we captured — it
 // is a REGRESSION guard, nothing more. It says nothing about whether the fixture faithfully

@@ -181,6 +181,17 @@ disagreement in the failure message and **never flips the boolean** (DW-02). It 
 degrades to a Playwright-only verdict under a strict CSP / non-Chromium. Or read the structured
 result: `const { verdict, reason, geometryVerdict, agreed } = await preflight(locator)`.
 
+The same module adds a **delta checksum regression** matcher:
+
+```ts
+expect(delta).toMatchDeltaChecksum('submit-opens-dialog'); // or .toMatchDeltaSnapshot()
+```
+
+It matches across pixel/timing jitter but fails on a **verdict or tree change**, storing baselines in
+`__dw_checksums__/` (refresh with `DW_UPDATE_CHECKSUMS=1`, `--update-snapshots`, or
+`deltawright checksum --update`) and rendering a structural diff on mismatch. A green checksum is
+**regression-only** — it proves the delta's structure is unchanged, not that it's correct.
+
 ## How it works
 
 ```
