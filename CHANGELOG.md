@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-10
+
+The **root-cause explainer** milestone — a single consolidated release of everything since 0.1.0:
+the v0.5 core hardening (robust settle, causal attribution, role-aware verdicts, shadow DOM,
+same-origin iframes, MCP server, screenshot fallback, packaged `dist/`), and the full v0.6 accuracy
+spine (closed 18-code taxonomy, first-class `unsure` confidence, the pure `diagnose()` engine, the
+labeled flake corpus, and the accuracy harness with **three gated floors** — DW-02 verdict-vs-reality,
+confirmed-precision ≥95%, silent-miss ≤5% — all passing with `diagnose()` emitting all 18 codes at
+100% recall / 0% silent-miss on the seed corpus), plus the Wave-1 wrappers (`toBeActionable()`
+preflight matcher, delta checksum matcher, flake-triage reporter, and the integration cookbook).
+
 ### Added
 
 - **v0.6 integration cookbook** (#56, `docs/cookbook.md`): a problem → capability → one-line-wiring
@@ -43,19 +54,6 @@ All notable changes to this project are documented here. The format is based on
   the `[geom:]` disagreement hint and **never flips the verdict** (DW-02); under a strict CSP /
   non-Chromium page (where the observer can't be injected) it degrades to a Playwright-only verdict
   (`geometryVerdict: 'n/a'`). Register with `expect.extend(dwMatchers)`. ADR 2026-07-10.
-
-### Changed
-
-- **Accuracy floors ratcheted from reported to gated** (#52/#71): now that `diagnose()` closed every
-  #71 silent miss (recall 100% / silent-miss 0%), `npm run bench:accuracy` hard-fails on **three**
-  floors, not just DW-02 — confirmed-band precision **≥95%** and silent-miss **≤5%** are now gates,
-  alongside the DW-02 live verdict-vs-reality floor (checked first so a reality drift short-circuits).
-  All three pass today with headroom (8/0 precision, 0/18 silent-miss). The floors are
-  corpus-relative — they keep the engine in lockstep with the corpus, so a future code the engine
-  can't yet diagnose fails CI rather than being silently reported. Supersedes the 2026-07-10
-  reporting-first ADR.
-
-### Added
 
 - **Capture-integrity diagnoses** (#71 fix #4): the last two `diagnose()` silent misses close.
   **`injection-blocked`** (confirmed) — when a strict CSP (`script-src 'none'`) blocks
@@ -257,6 +255,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Accuracy floors ratcheted from reported to gated** (#52/#71): now that `diagnose()` closed every
+  #71 silent miss (recall 100% / silent-miss 0%), `npm run bench:accuracy` hard-fails on **three**
+  floors, not just DW-02 — confirmed-band precision **≥95%** and silent-miss **≤5%** are now gates,
+  alongside the DW-02 live verdict-vs-reality floor (checked first so a reality drift short-circuits).
+  All three pass today with headroom (8/0 precision, 0/18 silent-miss). The floors are
+  corpus-relative — they keep the engine in lockstep with the corpus, so a future code the engine
+  can't yet diagnose fails CI rather than being silently reported. Supersedes the 2026-07-10
+  reporting-first ADR.
+
 - **Dependency classification for the distributable** (#45): `@playwright/test` is now a
   **peerDependency** (consumers bring their own Playwright — the core only uses type-only
   imports; the MCP server uses `chromium`), and `gpt-tokenizer` moved to a runtime
@@ -358,5 +365,6 @@ pointer/click-actionability (role-aware probes are v0.5); settle is a simple lab
 heuristic; mutation-noise filtering is untested; and the token win is unproven on the
 tiny controlled fixture.
 
-[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mstomar698/deltawright/compare/v0.1.0...v0.6.0
 [0.1.0]: https://github.com/mstomar698/deltawright/releases/tag/v0.1.0
