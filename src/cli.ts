@@ -9,6 +9,8 @@ Usage:
   deltawright mcp                        Start the MCP server on stdio (same as deltawright-mcp)
   deltawright checksum --update -- <cmd> Run <cmd> with delta-checksum baselines set to UPDATE
                                          (e.g. deltawright checksum --update -- npx playwright test)
+  deltawright aggregate [--report] <dir> Read-only: rank flaky tests from triage side-cars (#55) —
+                                         JSONL by default, --report for a ranked summary
   deltawright --version, -v              Print the installed version
   deltawright --help, -h                 Show this help
 
@@ -63,6 +65,26 @@ async function main(argv: string[]): Promise<number> {
         return 1;
       }
       return res.status ?? 1;
+    }
+    case 'aggregate': {
+      // Read-only flake aggregation (#59) over the reporter's triage side-cars. JSONL by default; a
+      // ranked human summary with --report. Writes nothing.
+      const rest = argv.slice(1);
+      const report = rest.includes('--report');
+      const dirs = rest.filter((a) => !a.startsWith('--'));
+      if (dirs.length === 0) {
+        console.error('usage: deltawright aggregate [--report] <dir> [<dir> ...]\n');
+        console.error(
+          '  (each <dir> is scanned for *.deltawright-sidecar.json; one run = one dir)',
+        );
+        return 1;
+      }
+      const { readSidecars, aggregate, toJSONL, renderReport } = await import(
+        new URL('./aggregate/index.js', import.meta.url).href
+      );
+      const records = readSidecars(dirs);
+      console.log(report ? renderReport(aggregate(records)) : toJSONL(records));
+      return 0;
     }
     case '-v':
     case '--version':

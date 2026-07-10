@@ -23,6 +23,7 @@ await tsupBuild({
     'matchers/index': 'src/matchers/index.ts',
     'reporter/index': 'src/reporter/index.ts',
     'wait/index': 'src/wait/index.ts',
+    'aggregate/index': 'src/aggregate/index.ts',
     cli: 'src/cli.ts',
   },
   outDir: 'dist',

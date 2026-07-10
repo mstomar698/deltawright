@@ -34,10 +34,9 @@ import DeltawrightReporter, {
   type TriageInput,
 } from 'deltawright/reporter';
 // …and the wait subpath (#58): the settle-signal fn + its observation type.
-import {
-  observeConsequences,
-  type ConsequenceObservation,
-} from 'deltawright/wait';
+import { observeConsequences, type ConsequenceObservation } from 'deltawright/wait';
+// …and the aggregate subpath (#59): the read-only flake aggregator + its report type.
+import { readSidecars, aggregate as aggregateFlakes, type FlakeReport } from 'deltawright/aggregate';
 
 export const primitive = actAndObserve;
 export const mcp = { DeltawrightSession, startServer };
@@ -46,6 +45,8 @@ export const reporter = { DeltawrightReporter, triageFailure, DELTA_ATTACHMENT_N
 export type Triage = { input: TriageInput; sidecar: Sidecar };
 export const wait = { observeConsequences };
 export type Consequence = ConsequenceObservation;
+export const aggregateFns = { readSidecars, aggregateFlakes };
+export type Flakes = FlakeReport;
 export const opts: ActAndObserveOptions = { label: 'demo' };
 export const suggestFn = suggest;
 export type Suggestions = SuggestResult;

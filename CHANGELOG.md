@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Flake-priority aggregator** (#59, `deltawright/aggregate` + a `deltawright aggregate` bin): a
+  **read-only** pass over the #55 reporter's `*.deltawright-sidecar.json` artifacts across runs → a
+  **JSONL** stream (`{ testId, runId, code, confidence, category, hitMaxWait, disagreement, … }`) and a
+  ranked summary — which tests fail most, under which **dominant taxonomy category**, at what
+  settle-cap / geometry-disagreement rate (both derived from the side-car's own diagnoses). `unsure`
+  and any untaxonomized code are **bucketed separately** and never inflate a real category; missing /
+  foreign / unparseable side-cars are skipped, never guessed. It **writes nothing** (`deltawright
+  aggregate [--report] <dir…>`, one run = one dir). The rendered HTML dashboard is deliberately
+  **cut** this cycle — this is the cheap, engine-independent stub. Third gated Wave-2 capability.
+  Pure core, unit-tested. ADR 2026-07-10.
 - **`observeConsequences(page, action)` settle-as-a-wait** (#58, `deltawright/wait`): a **locator-free**
   observe/explain completion **signal** → `{ settleMs, hitMaxWait, suspectedEarly, observed }`. It arms
   the observer, performs the action, waits for **structural quiescence**, and reports the gap-E
