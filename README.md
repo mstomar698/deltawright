@@ -162,6 +162,25 @@ re-snapshotting), and **`snapshot`** (full-tree fallback). Point Claude Code / C
 via their MCP config — installed: `command: "npx"`, `args: ["deltawright-mcp"]`; or from a
 source checkout: `command: "npx"`, `args: ["tsx", "src/mcp/server.ts"]`.
 
+## Preflight actionability matcher
+
+For test suites, `deltawright/matchers` adds a fail-fast assertion on Playwright's *own*
+actionability verdict — no `actAndObserve` needed:
+
+```ts
+import { expect } from '@playwright/test';
+import { dwMatchers } from 'deltawright/matchers';
+expect.extend(dwMatchers);
+
+await expect(page.getByRole('button', { name: 'Submit' })).toBeActionable();
+```
+
+The verdict is **role-aware** (click-trial for buttons/links, `fill`-editable for text inputs,
+`selectOption`-enabled for selects) and is Playwright's — geometry only annotates a `[geom:]`
+disagreement in the failure message and **never flips the boolean** (DW-02). It works standalone and
+degrades to a Playwright-only verdict under a strict CSP / non-Chromium. Or read the structured
+result: `const { verdict, reason, geometryVerdict, agreed } = await preflight(locator)`.
+
 ## How it works
 
 ```

@@ -43,6 +43,10 @@
       "types": "./dist/mcp/server.d.ts",
       "import": "./dist/mcp/server.js"
     },
+    "./matchers": {
+      "types": "./dist/matchers/index.d.ts",
+      "import": "./dist/matchers/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

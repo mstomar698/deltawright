@@ -189,6 +189,14 @@ export interface DeltawrightApi {
   lateResult(): Promise<{ lateStructural: boolean }>;
   /** Gap-F (#50): wait, then re-read every stamped node's current geometry (host compares). */
   recheckRects(rectRecheckMs: number): Promise<Array<{ ref: string; geometry: GeometryRead }>>;
+  /**
+   * Preflight (#53): read one element's geometry on demand, for the actionability matcher's
+   * `[geom:]` annotation. Additive and stateless — it never touches the observer/arm/collect
+   * state, so it works standalone (no prior actAndObserve) and is a no-op when absent (the host
+   * degrades to a Playwright-only verdict if injection was blocked). Called via
+   * `locator.evaluate(el => window.__deltawright.probeGeometry(el))`.
+   */
+  probeGeometry(el: Element): GeometryRead;
   reset(): void;
 }
 
