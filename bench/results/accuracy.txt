@@ -1,0 +1,59 @@
+Deltawright accuracy harness (#52) — CORPUS-RELATIVE, reporting-first
+========================================================================
+
+cases: 36  (specific-cause: 18, unsure-label: 18)
+
+HEADLINE
+  verdict-vs-reality LIVE (DW-02 gate):     100.0%  (16/16)  PASS
+  verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
+  confirmed-band precision (target ≥95%):  100.0%  (7 correct / 0 wrong)  [reported]
+  recall (labeled cause emitted):          83.3%  (15/18)
+  silent-miss rate (target ≤5%):           16.7%  (3/18)  [reported]
+  confidence-band accuracy (on hits):      100.0%
+
+OUTCOMES BY CASE
+  ✓ hit        covered-pos                  [covered-by-overlay] → covered-by-overlay confirmed
+  ✓ unsure     covered-confuser             [unknown]
+  ✓ hit        offscreen-pos                [off-screen] → off-screen confirmed
+  ✓ unsure     offscreen-confuser           [unknown]
+  ✓ hit        not-visible-pos              [not-visible] → not-visible confirmed
+  ✓ unsure     not-visible-confuser         [unknown]
+  ✓ hit        pointer-events-none-pos      [pointer-events-none] → pointer-events-none suspected
+  ✓ unsure     pointer-events-none-confuser [unknown]
+  ✓ hit        disabled-pos                 [disabled] → disabled confirmed
+  ✓ unsure     disabled-confuser            [unknown]
+  ✓ hit        read-only-pos                [read-only] → read-only confirmed
+  ✓ unsure     read-only-confuser           [unknown]
+  ✓ hit        unstable-animating-pos       [unstable-animating] → unstable-animating confirmed
+  ✓ unsure     unstable-animating-confuser  [unknown]
+  ✓ hit        geom-disagreement-pos        [geom-disagreement] → geom-disagreement suspected
+  ✓ unsure     geom-disagreement-confuser   [unknown]
+  ✓ hit        settle-timeout-pos           [settle-timeout] → settle-timeout suspected  +background-churn/suspected
+  ✓ unsure     settle-timeout-confuser      [unknown]
+  ✓ hit        suspected-miss-empty-pos     [suspected-miss-empty] → suspected-miss-empty unknown
+  ✓ unsure     suspected-miss-empty-confuser [unknown]
+  ✓ hit        background-churn-pos         [background-churn] → background-churn suspected
+  ✓ unsure     background-churn-confuser    [unknown]
+  ✗ SILENT     detached-re-render-pos       [detached-re-render]
+  ✓ unsure     detached-re-render-confuser  [unknown]
+  ✓ hit        late-wave-suspected-pos      [late-wave-suspected] → late-wave-suspected suspected
+  ✓ unsure     late-wave-suspected-confuser [unknown]
+  ✓ hit        stale-rect-suspected-pos     [stale-rect-suspected] → stale-rect-suspected suspected
+  ✓ unsure     stale-rect-suspected-confuser [unknown]
+  ✗ SILENT     injection-blocked-pos        [injection-blocked]
+  ✓ unsure     injection-blocked-confuser   [unknown]
+  ✗ SILENT     cross-boundary-partial-pos   [cross-boundary-partial]
+  ✓ unsure     cross-boundary-partial-confuser [unknown]
+  ✓ hit        pixel-region-fallback-pos    [pixel-region-fallback] → pixel-region-fallback suspected  +settle-timeout/suspected
+  ✓ unsure     pixel-region-fallback-confuser [unknown]
+  ✓ unsure     unknown-pos                  [unknown]
+  ✓ hit        unknown-confuser             [covered-by-overlay] → covered-by-overlay confirmed
+
+HONESTY STAMP
+  Corpus-relative on a ~36-case seed. NOT real-production precision (blocked on #25/#41).
+  DW-02 gate is the LIVE verdict subset (real Playwright); delta verdicts are authored
+  self-consistency, reported separately, never gated (F1).
+  Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);
+  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).
+  Known silent misses (open in #71): detached-re-render, injection-blocked,
+  cross-boundary-partial — visible above as ✗ SILENT, by design (the corpus reveals them).

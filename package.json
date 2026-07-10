@@ -58,6 +58,7 @@
     "mcp": "tsx src/mcp/server.ts",
     "bench": "tsx bench/run-bench.ts",
     "bench:admissible": "tsx bench/run-admissible.ts",
+    "bench:accuracy": "tsx bench/run-accuracy.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
