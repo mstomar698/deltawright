@@ -1,5 +1,11 @@
 # Deltawright
 
+[![CI](https://github.com/mstomar698/deltawright/actions/workflows/ci.yml/badge.svg)](https://github.com/mstomar698/deltawright/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mstomar698/deltawright?sort=semver&color=3fb950)](https://github.com/mstomar698/deltawright/releases)
+[![License: MIT](https://img.shields.io/github/license/mstomar698/deltawright?color=blue)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen)](package.json)
+[![Built on Playwright](https://img.shields.io/badge/built%20on-Playwright-2EAD33)](https://playwright.dev)
+
 **A delta-and-actionability layer for Playwright agents: it tells the agent what
 changed after an action and whether it can act on it.**
 
@@ -13,6 +19,27 @@ Playwright's own actionability judgment so the verdict matches reality.
 > it what just changed and whether it can act on it.* Use both.
 
 ---
+
+## Quickstart
+
+```bash
+npm install deltawright @playwright/test
+```
+
+```ts
+import { chromium } from '@playwright/test';
+import { actAndObserve, render } from 'deltawright';
+
+const page = await (await chromium.launch()).newPage();
+await page.goto('https://example.com');
+
+// one action → a compact, actionability-annotated delta of what changed
+const delta = await actAndObserve(page, (p) => p.click('#sign-in'), { label: 'click "Sign in"' });
+console.log(render(delta).text);
+```
+
+Requires **Node ≥ 20**. Full API and options are in **[Use it](#use-it)** below; to drive it
+from an agent, see **[Use it as an MCP server](#use-it-as-an-mcp-server)**.
 
 ## The gap it closes
 
