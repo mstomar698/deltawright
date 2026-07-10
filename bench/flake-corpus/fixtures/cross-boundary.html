@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright flake-corpus · cross-boundary (uninjectable child frame)</title>
+  </head>
+  <body>
+    <h1>Cross-boundary partial capture</h1>
+    <!-- A child frame the observer CANNOT be injected into: its srcdoc carries a strict CSP that
+         blocks addScriptTag, so armChildFrames (frames:true) skips it → stats.crossBoundarySkipped
+         → cross-boundary-partial (#71 fix #4a). This is a same-origin stand-in for the cross-origin
+         case (a true cross-origin child needs two origins → real-app expansion, #25); either way it
+         is an UNINJECTABLE boundary, which is exactly what the code counts. A change inside it would
+         be invisible to the delta. -->
+    <iframe
+      id="child"
+      srcdoc='&lt;meta http-equiv="Content-Security-Policy" content="script-src &apos;none&apos;"&gt;&lt;button&gt;hidden-from-observer&lt;/button&gt;'
+    ></iframe>
+    <div>
+      <button id="go">go</button>
+    </div>
+    <div id="stage"></div>
+    <script>
+      // The main-frame action produces a normal, observable change, so the delta is not empty; the
+      // capture gap is purely the skipped child frame.
+      document.getElementById('go').addEventListener('click', () => {
+        const d = document.createElement('div');
+        d.id = 'added';
+        d.textContent = 'added in the main frame';
+        document.getElementById('stage').appendChild(d);
+      });
+    </script>
+  </body>
+</html>

@@ -6,9 +6,9 @@ cases: 36  (specific-cause: 18, unsure-label: 18)
 HEADLINE
   verdict-vs-reality LIVE (DW-02 gate):     100.0%  (16/16)  PASS
   verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
-  confirmed-band precision (target ≥95%):  100.0%  (7 correct / 0 wrong)  [reported]
-  recall (labeled cause emitted):          88.9%  (16/18)
-  silent-miss rate (target ≤5%):           11.1%  (2/18)  [reported]
+  confirmed-band precision (target ≥95%):  100.0%  (8 correct / 0 wrong)  [reported]
+  recall (labeled cause emitted):          100.0%  (18/18)
+  silent-miss rate (target ≤5%):           0.0%  (0/18)  [reported]
   confidence-band accuracy (on hits):      100.0%
 
 OUTCOMES BY CASE
@@ -40,9 +40,9 @@ OUTCOMES BY CASE
   ✓ unsure     late-wave-suspected-confuser [unknown]
   ✓ hit        stale-rect-suspected-pos     [stale-rect-suspected] → stale-rect-suspected suspected
   ✓ unsure     stale-rect-suspected-confuser [unknown]
-  ✗ SILENT     injection-blocked-pos        [injection-blocked]
+  ✓ hit        injection-blocked-pos        [injection-blocked] → injection-blocked confirmed
   ✓ unsure     injection-blocked-confuser   [unknown]
-  ✗ SILENT     cross-boundary-partial-pos   [cross-boundary-partial]
+  ✓ hit        cross-boundary-partial-pos   [cross-boundary-partial] → cross-boundary-partial suspected
   ✓ unsure     cross-boundary-partial-confuser [unknown]
   ✓ hit        pixel-region-fallback-pos    [pixel-region-fallback] → pixel-region-fallback suspected  +settle-timeout/suspected
   ✓ unsure     pixel-region-fallback-confuser [unknown]
@@ -55,5 +55,6 @@ HONESTY STAMP
   self-consistency, reported separately, never gated (F1).
   Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);
   recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).
-  Known silent misses (open in #71): injection-blocked, cross-boundary-partial —
-  visible above as ✗ SILENT, by design (the corpus reveals them).
+  All 18 taxonomy codes now emit (recall 100% / silent-miss 0% on this seed); #71 closed
+  its detached-re-render + capture-integrity signals. Precision/silent-miss are still
+  REPORTED (not gated) — the floors ratchet to hard gates next; only DW-02 hard-fails today.

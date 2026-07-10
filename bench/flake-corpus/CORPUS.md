@@ -30,7 +30,7 @@ Ground truth is never a stored Deltawright output (the `CorpusCase` schema has n
 cases feed a hand-built `Delta` for causes not cleanly reproducible live this cycle (honesty-
 stamped, weaker reality anchor).
 
-## Coverage (18/18 codes; 36 cases: 22 live, 14 delta)
+## Coverage (18/18 codes; 36 cases: 24 live, 12 delta)
 
 Each code has **1 positive + 1 confuser**. The **engine behavior** column records what
 `diagnose()` *actually* emits today, discovered by live probe — the corpus labels the **true**
@@ -52,15 +52,15 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `suspected-miss-empty` | delta (empty + cap) | ✅ `suspected-miss-empty` / unknown |
 | `late-wave-suspected` | live (`lateWatchMs`) | ✅ `late-wave-suspected` / suspected |
 | `stale-rect-suspected` | live (`rectRecheckMs`) | ✅ `stale-rect-suspected` / suspected |
-| `injection-blocked` | delta | ⚠️ **not emitted** — CSP injection failure isn't surfaced as a code yet |
-| `cross-boundary-partial` | delta | ⚠️ **not emitted** — skipped cross-origin frame / closed shadow root isn't surfaced yet |
+| `injection-blocked` | live (`<meta CSP script-src 'none'>`) | ✅ `injection-blocked` / confirmed (#71 fix #4b — addScriptTag is blocked, so actAndObserve degrades to an empty delta carrying `stats.injectionBlocked`; the failure is authoritatively observed) |
+| `cross-boundary-partial` | live (CSP-uninjectable child frame) | ✅ `cross-boundary-partial` / suspected (#71 fix #4a — `armChildFrames` counts skipped uninjectable frames into `stats.crossBoundarySkipped`; closed shadow roots are structurally uncountable, so skipped frames are the honest signal. A same-origin CSP-uninjectable child stands in for the cross-origin case, which pairs with #25) |
 | `pixel-region-fallback` | live (canvas + `screenshotFallback`) | ✅ `pixel-region-fallback` / suspected (#71 fix — the pixel-region node is now mapped) |
 | `unknown` | delta (agreed, unattributable) | ✅ first-class unsure |
 
 ## Known engine gaps this corpus surfaces (for #52 and follow-ups)
 
-The probe found gaps between the taxonomy and what the engine emits from real pages. **Four
-fixes have shipped** (tracked in #71):
+The probe found gaps between the taxonomy and what the engine emits from real pages. **All six #71
+fixes have now shipped** (each with an independent adversarial review before merge):
 
 - ✅ **`pointer-events-none` (was mislabeled `covered-by-overlay`).** When the target's own
   `pointer-events:none` is why the hit misses (Playwright reports a generic "intercept" and
@@ -82,17 +82,29 @@ fixes have shipped** (tracked in #71):
   `bgInsert` background quarantine as the delta itself (a recurring background toast does NOT trip
   it). **Scope:** the in-window add-then-detach sub-case only — a keyed-list reorder, a detach
   inside a shadow root / child frame, and a re-render AFTER collect are out of scope. ADR 2026-07-10.
+- ✅ **`injection-blocked` (was silent).** When a strict CSP (`script-src 'none'`) blocks
+  `addScriptTag`, the observer cannot be injected. `actAndObserve` now DEGRADES instead of throwing:
+  it still performs the action, then returns an empty delta carrying `stats.injectionBlocked`, which
+  `diagnose()` maps to `injection-blocked` (**confirmed** — the injection failure was authoritatively
+  observed). Verified LIVE against a `<meta CSP>` fixture. ADR 2026-07-10.
+- ✅ **`cross-boundary-partial` (was silent).** During `frames:true` traversal, `armChildFrames`
+  already catch-skips cross-origin / uninjectable child frames; it now COUNTS those skips into
+  `stats.crossBoundarySkipped`, which `diagnose()` maps to `cross-boundary-partial` (suspected — a
+  boundary was skipped, but whether a change hides behind it is unknown). Closed shadow roots are
+  structurally uncountable (`el.shadowRoot` is `null`), so skipped frames are the honest signal.
+  Runs LIVE against a child frame whose srcdoc CSP blocks injection (a same-origin stand-in for the
+  cross-origin case, #25), so the real skip-counting path is exercised, not a hand-authored stat.
+  ADR 2026-07-10.
 
-Remaining gaps (open in #71):
+**All #71 diagnosis gaps are now closed.** No taxonomy code is a silent miss on this seed.
 
-1. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
-   plumbed from `inject.ts` / frame+shadow traversal into the Delta.
-
-**Net: the engine now emits ~15 of the 18 codes well** (the four geometry-visible blocking codes,
-the three geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`,
-`detached-re-render`, and the five delta/stats-level codes), with the two capture-integrity
-silent-miss codes above remaining. That is exactly why diagnosis capabilities are **gated** behind
-the harness floor (#52): the corpus makes the gaps measurable before any capability ships.
+**Net: the engine now emits all 18 codes** (the four geometry-visible blocking codes, the three
+geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, `detached-re-render`,
+the two capture-integrity codes, and the five delta/stats-level codes). That is exactly why
+diagnosis capabilities are **gated** behind the harness floor (#52): the corpus made every gap
+measurable, and each closed with an independent adversarial review before shipping. With recall at
+100% / silent-miss at 0%, the precision + silent-miss floors are ready to ratchet from `reported`
+to hard-gated (next).
 
 ## Running
 
@@ -108,13 +120,13 @@ Verdict-vs-reality is split by case kind: only the live cases exercise Playwrigh
 
 ```
 verdict-vs-reality LIVE (DW-02 gate):  100.0%  (16/16)  PASS
-verdict self-consistency (delta):      100.0%  (10/10)  [authored, not reality]
-confirmed-band precision:              100.0%  (7 correct / 0 wrong)   [reported]
-recall:                                 88.9%  (16/18)
-silent-miss rate:                       11.1%  (2/18)                  [reported]
+verdict self-consistency (delta):      100.0%  ( 9/9)   [authored, not reality]
+confirmed-band precision:              100.0%  (8 correct / 0 wrong)   [reported]
+recall:                                100.0%  (18/18)
+silent-miss rate:                        0.0%  (0/18)                  [reported]
 ```
 
-The two remaining silent misses are the open #71 capture-integrity gaps (injection-blocked,
-cross-boundary-partial) — surfaced as `✗ SILENT`, by design. `test/accuracy.spec.ts` guards the
-scorer contract + the DW-02 floor (browser-free delta integration + live smokes, including the
-detached-re-render fix).
+All 18 codes now emit — no silent misses remain. `test/accuracy.spec.ts` guards the scorer contract
++ the DW-02 floor (browser-free delta integration + live smokes, including the detached-re-render
+background-quarantine regression and the CSP injection-blocked degrade). With recall 100% /
+silent-miss 0%, the precision + silent-miss floors are ready to ratchet from reported to gated.

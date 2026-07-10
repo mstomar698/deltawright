@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Capture-integrity diagnoses** (#71 fix #4): the last two `diagnose()` silent misses close.
+  **`injection-blocked`** (confirmed) — when a strict CSP (`script-src 'none'`) blocks
+  `addScriptTag`, `actAndObserve` no longer throws; it DEGRADES (still performs the action) and
+  returns an empty delta carrying `stats.injectionBlocked`, so the caller gets a nameable failure
+  instead of an exception or a silent no-op. Verified live against a `<meta CSP>` fixture.
+  **`cross-boundary-partial`** (suspected) — `armChildFrames` now counts cross-origin/uninjectable
+  child frames it skipped during `frames:true` traversal into `stats.crossBoundarySkipped`, so a
+  partial capture is surfaced rather than passed off as complete (closed shadow roots are
+  structurally uncountable, so skipped frames are the honest signal). Both fields are default-absent
+  → the default path is byte-unchanged. **Harness: recall 88.9% → 100% (18/18), silent-miss
+  11.1% → 0% (0/18)** — every taxonomy code now emits. ADR 2026-07-10.
 - **`detached-re-render` diagnosis** (#71 fix #3): `diagnose()` now emits `detached-re-render`
   (suspected) when a freshly-added subtree was inserted and then DETACHED again within the settle
   window — a React re-render / list-virtualization swap. Such a node nets OUT of the reported delta

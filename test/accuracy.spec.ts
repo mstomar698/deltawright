@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { actAndObserve, diagnose } from '../src/index';
+import { ensureInjected, InjectionBlockedError } from '../src/host/inject';
 import type { Diagnosis, Verdict } from '../src/index';
 import { CORPUS } from '../bench/flake-corpus/load';
 import type { CorpusCase } from '../bench/flake-corpus/cases';
@@ -188,8 +189,9 @@ test('integration: every delta corpus case scores as expected and never drifts t
   // live oracle here — so the DW-02 gate would (correctly) refuse to pass on this subset alone.
   expect(m.deltaVerdictAccuracy).toBe(1);
   expect(m.liveVerdictOracleCases).toBe(0);
-  // The known delta-level silent misses (injection-blocked, cross-boundary-partial) show up here.
-  expect(known.silent).toBeGreaterThanOrEqual(2);
+  // The former delta-level silent misses (injection-blocked, cross-boundary-partial) now HIT via
+  // their capture-integrity signals (#71 fix #4), so no delta case stays silent.
+  expect(known.silent).toBe(0);
 });
 
 test('integration (live): a disabled target is recovered and its verdict matches reality', async ({
@@ -281,4 +283,54 @@ test('detached-re-render honors the background-insert quarantine (a recurring to
   const withBaseline = await actAndObserve(page, act, { label: 'open', maxWaitMs: 400 });
   expect(withBaseline.stats.detachedReRender).toBeUndefined();
   expect(diagnose(withBaseline).diagnoses.some((d) => d.code === 'detached-re-render')).toBe(false);
+});
+
+test('integration (live): a strict CSP that blocks injection degrades to injection-blocked (#71 fix #4b)', async ({
+  page,
+}) => {
+  // script-src 'none' blocks addScriptTag, so the observer can't be injected. actAndObserve must
+  // DEGRADE: still run the action, then return an empty delta flagged injectionBlocked, which
+  // diagnose maps to injection-blocked (confirmed) — not a silent no-op.
+  await page.setContent(`
+    <meta http-equiv="Content-Security-Policy" content="script-src 'none'">
+    <button id="go">go</button>
+  `);
+  const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'go' });
+  expect(delta.stats.injectionBlocked).toBe(true);
+  expect(delta.nodes).toHaveLength(0);
+  const c = CORPUS.find((x) => x.id === 'injection-blocked-pos')!;
+  const s = scoreCase(c, diagnose(delta));
+  expect(s.outcome).toBe('hit');
+  expect(s.emittedCode).toBe('injection-blocked');
+  expect(s.emittedConfidence).toBe('confirmed');
+});
+
+test('ensureInjected: only an addScriptTag block raises InjectionBlockedError; a normal page injects', async ({
+  page,
+}) => {
+  // Guards the degrade gate (#71 fix #4b review): the confirmed injection-blocked path must fire
+  // ONLY on an authoritative addScriptTag rejection, never on a probe/transient throw — so the
+  // marker error is raised exactly there and nowhere else. (Uses real navigations, not two
+  // setContent calls, because a <meta> CSP can leak across setContent within one document.)
+  await page.goto(pathToFileURL(resolve(FLAKE_DIR, 'fixtures/csp-blocked.html')).href);
+  await expect(ensureInjected(page)).rejects.toThrow(InjectionBlockedError);
+
+  await page.goto(pathToFileURL(resolve(FLAKE_DIR, 'fixtures/reveal.html')).href);
+  await expect(ensureInjected(page)).resolves.toBeUndefined();
+});
+
+test('integration (live): an uninjectable child frame is counted and diagnosed cross-boundary-partial (#71 fix #4a)', async ({
+  page,
+}) => {
+  // Exercises the REAL armChildFrames skip path (not a hand-authored stat): a child frame whose
+  // srcdoc CSP blocks injection is skipped during frames:true traversal → stats.crossBoundarySkipped
+  // → cross-boundary-partial (suspected). The main-frame click still produces an observable delta.
+  await page.goto(pathToFileURL(resolve(FLAKE_DIR, 'fixtures/cross-boundary.html')).href);
+  const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'go', frames: true });
+  expect(delta.stats.crossBoundarySkipped).toBeGreaterThanOrEqual(1);
+  const c = CORPUS.find((x) => x.id === 'cross-boundary-partial-pos')!;
+  const s = scoreCase(c, diagnose(delta));
+  expect(s.outcome).toBe('hit');
+  expect(s.emittedCode).toBe('cross-boundary-partial');
+  expect(s.emittedConfidence).toBe('suspected');
 });

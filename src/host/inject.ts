@@ -51,14 +51,34 @@ export function injectedSource(): Promise<string> {
 }
 
 /**
+ * Thrown by `ensureInjected` ONLY when `addScriptTag` itself is rejected — the authoritative
+ * "the observer could not be injected" signal, typically a strict CSP (`script-src 'none'`).
+ * Distinct from a presence-probe or bundle failure (which propagate as their own errors), so a
+ * caller can degrade on THIS and only this, and never mislabel a transient/config fault as a
+ * confirmed injection block (#71 fix #4b; DW-03).
+ */
+export class InjectionBlockedError extends Error {
+  constructor(cause: string) {
+    super(`observer injection blocked: ${cause}`);
+    this.name = 'InjectionBlockedError';
+  }
+}
+
+/**
  * Ensure window.__deltawright is installed on the page. Idempotent: the injected
  * script no-ops if it is already present. We use addScriptTag (a program context)
  * rather than page.evaluate(string) so the bundled IIFE runs cleanly regardless of
- * expression-vs-statement quirks.
+ * expression-vs-statement quirks. A blocked addScriptTag (strict CSP) — and ONLY that —
+ * is re-thrown as `InjectionBlockedError`; the presence probe and the bundle load above it
+ * throw their own errors so a transient/config fault is never mistaken for a CSP block.
  */
 export async function ensureInjected(target: Page | Frame): Promise<void> {
   const present = await target.evaluate(() => typeof (window as any).__deltawright !== 'undefined');
   if (present) return;
   const source = await injectedSource();
-  await target.addScriptTag({ content: source });
+  try {
+    await target.addScriptTag({ content: source });
+  } catch (e) {
+    throw new InjectionBlockedError(e instanceof Error ? e.message : String(e));
+  }
 }
