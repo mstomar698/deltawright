@@ -34,7 +34,7 @@ Emergency bypass: `git commit --no-verify` — but CI enforces the same checks.
 
 ## Read first
 
-1. `ideation-agent-delta-layer.md` — the binding design doc (§3 delta format, §5 architecture, §6 hard parts, §7 scope, §10 go/no-go).
+1. `docs/specs/ideation-agent-delta-layer.md` — the binding design doc (§3 delta format, §5 architecture, §6 hard parts, §7 scope, §10 go/no-go).
 2. `docs/plans/` — the current milestone plan. **No non-trivial code without a plan slice it traces to.**
 3. `docs/decisions/design-watches.md` — the judgment rules every change is reviewed against (currently DW-01 settle, DW-02 actionability alignment).
 
