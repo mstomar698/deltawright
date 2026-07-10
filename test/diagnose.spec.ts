@@ -90,6 +90,53 @@ const disabledButton = node({
   },
 });
 
+// A read-only input: Playwright NOT-actionable (not editable), geometry reads it actionable.
+const readOnlyInput = node({
+  ref: 'ro',
+  tag: 'input',
+  role: 'textbox',
+  name: 'email',
+  geometry: geom(),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'read-only',
+    geometryVerdict: 'ACTIONABLE',
+    playwright: { actionable: false, error: 'read-only' },
+    agreed: false,
+  },
+});
+
+// A mid-animation element: Playwright NOT-actionable (not stable), geometry cannot see stability.
+const unstableAnimating = node({
+  ref: 'an',
+  name: 'Confirm',
+  geometry: geom(),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'unstable (animating)',
+    geometryVerdict: 'ACTIONABLE',
+    playwright: { actionable: false, error: 'unstable (animating)' },
+    agreed: false,
+  },
+});
+
+// A GENUINE geom-disagreement: Playwright reports a generic intercept (NOT-actionable) but
+// geometry sees NOTHING covering the target (hitSelf, no coveredBy) → geometry reads it
+// ACTIONABLE. `covered-by-overlay` is a geometry-VISIBLE cause, so geometry's dissent is real
+// counter-evidence — this must stay geom-disagreement, never be recovered as a blocking code.
+const interceptedButGeomClean = node({
+  ref: 'ig',
+  name: 'Confirm',
+  geometry: geom({ hitSelf: true, coveredBy: null }),
+  actionability: {
+    verdict: 'NOT-actionable',
+    reason: 'covered (intercepted)',
+    geometryVerdict: 'ACTIONABLE',
+    playwright: { actionable: false, error: 'covered (intercepted)' },
+    agreed: false,
+  },
+});
+
 // Disabled AND covered: BOTH engines say NOT-actionable (agreed), but Playwright's
 // authoritative cause is `disabled` while geometry only sees the cover. Playwright wins.
 const disabledAndCovered = node({
@@ -167,15 +214,42 @@ test('should_classify_covered_target_as_covered_by_overlay_only_when_geometry_an
   expect(disagree.some((d) => d.code === 'covered-by-overlay')).toBe(false);
 });
 
-test('should_emit_geom_disagreement_with_direction_when_agreed_is_false', () => {
-  const diagnoses = diagnose(delta([disabledButton])).diagnoses;
-  const d = diagnoses.find((x) => x.ref === 'dis');
+test('should_emit_geom_disagreement_with_direction_when_a_visible_cause_disagrees', () => {
+  // A geometry-VISIBLE cause (covered) that geometry did NOT corroborate — a real conflict, so
+  // it stays a flagged disagreement (NOT recovered into a blocking code, unlike the blind
+  // causes below).
+  const diagnoses = diagnose(delta([interceptedButGeomClean])).diagnoses;
+  const d = diagnoses.find((x) => x.ref === 'ig');
   expect(d?.code).toBe('geom-disagreement');
   // Direction is carried both ways: Playwright's authoritative verdict (+ reason) AND what
   // geometry read.
   expect(d?.detail).toContain('Playwright NOT-actionable');
-  expect(d?.detail).toContain('disabled');
+  expect(d?.detail).toContain('intercepted');
   expect(d?.detail).toContain('geometry read ACTIONABLE');
+});
+
+test('should_recover_geometry_blind_causes_from_the_disagreed_branch', () => {
+  // #71 recall fix: disabled / read-only / unstable-animating are Playwright-only causes
+  // geometry cannot see, so the node reads geometry-ACTIONABLE (agreed=false). Geometry's
+  // "actionable" is structural blindness, not counter-evidence, so the Playwright-named cause
+  // is recovered as CONFIRMED — it is the verdict's reason, never a contradiction of it.
+  const dis = diagnose(delta([disabledButton])).diagnoses.find((d) => d.ref === 'dis');
+  expect(dis?.code).toBe('disabled');
+  expect(dis?.confidence).toBe('confirmed');
+  expect(dis?.detail).toContain('geometry cannot observe');
+  expect(dis?.detail).toContain('geometry read ACTIONABLE');
+
+  const ro = diagnose(delta([readOnlyInput])).diagnoses.find((d) => d.ref === 'ro');
+  expect(ro?.code).toBe('read-only');
+  expect(ro?.confidence).toBe('confirmed');
+
+  const an = diagnose(delta([unstableAnimating])).diagnoses.find((d) => d.ref === 'an');
+  expect(an?.code).toBe('unstable-animating');
+  expect(an?.confidence).toBe('confirmed');
+
+  // A geometry-VISIBLE cause geometry dissents on is NOT a blind cause → still flagged, no code.
+  const ig = diagnose(delta([interceptedButGeomClean])).diagnoses.find((d) => d.ref === 'ig');
+  expect(ig?.code).toBe('geom-disagreement');
 });
 
 test('should_never_contradict_the_playwright_verdict', () => {
@@ -188,21 +262,28 @@ test('should_never_contradict_the_playwright_verdict', () => {
     'read-only',
     'unstable-animating',
   ]);
-  const nodes = [coveredAgreed, coveredInputDisagree, disabledButton];
+  const nodes = [
+    coveredAgreed,
+    coveredInputDisagree,
+    disabledButton,
+    readOnlyInput,
+    unstableAnimating,
+    interceptedButGeomClean,
+  ];
   const out = diagnose(delta(nodes));
   const byRef = new Map(nodes.map((n) => [n.ref, n]));
 
   for (const d of out.diagnoses) {
     if (d.scope !== 'node' || !d.ref) continue;
     const n = byRef.get(d.ref)!;
-    // A node Playwright deems ACTIONABLE must never receive a blocking code.
+    // A node Playwright deems ACTIONABLE must never receive a blocking code (the DW-02 line).
     if (n.actionability.verdict === 'ACTIONABLE') {
       expect(BLOCKING.has(d.code), `${d.ref} actionable but got blocking ${d.code}`).toBe(false);
     }
-    // A blocking code only ever attaches to a NOT-actionable node the engines agreed on.
+    // A blocking code only ever attaches to a NOT-actionable node. (It may be agreed OR a
+    // recovered geometry-blind cause where geometry dissented — but never ACTIONABLE.)
     if (BLOCKING.has(d.code)) {
       expect(n.actionability.verdict).toBe('NOT-actionable');
-      expect(n.actionability.agreed).toBe(true);
     }
   }
   // The fillable covered input (ACTIONABLE) is only flagged, never blocked.

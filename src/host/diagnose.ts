@@ -4,15 +4,24 @@
 // geometry never filters (DW-02: Playwright's verdict is authoritative and untouched here).
 //
 // The core rule is AGREE-OR-FLAG (DW-03): a NOT-actionable node earns a specific cause code
-// only from the branch where the two engines already agree it is blocked (`agreed===true`).
-// When they disagree (`agreed===false`) the node is `geom-disagreement` WITH DIRECTION —
-// never a code that contradicts Playwright's verdict.
+// from the branch where the two engines agree it is blocked (`agreed===true`). When they
+// disagree (`agreed===false`) the node is `geom-disagreement` WITH DIRECTION — never a code
+// that contradicts Playwright's verdict.
 //
 // Within the agreed branch, PLAYWRIGHT'S NAMED CAUSE WINS: verdict-agreement is not
 // cause-agreement (a disabled AND covered button has both engines saying NOT-actionable, but
 // Playwright's authoritative cause is `disabled`, not `covered`). So we prefer the cause
 // Playwright named (→ confirmed), fall back to the geometry-visible cause only as a
 // `suspected` hypothesis when Playwright did not name a specific one.
+//
+// GEOMETRY-BLIND RECOVERY (#71, extends agree-or-flag): some causes only Playwright can
+// observe — `disabled` / `read-only` / `unstable-animating`. Geometry has NO signal for them,
+// so a NOT-actionable node with one of these causes reads geometry-ACTIONABLE and lands in the
+// disagreed branch. That "disagreement" is structural blindness, not real counter-evidence, so
+// we still recover the Playwright-named cause (confirmed — it IS the verdict's reason and never
+// contradicts it). Crucially this recovery is limited to the geometry-BLIND set: a dissent on a
+// geometry-VISIBLE cause (covered / off-screen / not-visible / pointer-events) is genuine
+// counter-evidence and stays `geom-disagreement`.
 
 import type { DeltaNode, Delta, DiagnosedDelta, Diagnosis } from './types';
 import { assessConfidence, type Confidence } from './confidence';
@@ -21,6 +30,16 @@ import type { RootCauseCode } from './taxonomy';
 // A background-churn flag fires only when dropped churn is both substantial and dominant,
 // so a couple of incidental drops next to a real change do not cry wolf.
 const CHURN_MIN = 3;
+
+// Causes ONLY Playwright can observe. Geometry (rect / style / elementFromPoint) has no read
+// for the enabled, editable, or stability state, so its "actionable" verdict on one of these
+// is the ABSENCE of evidence about the cause, never evidence against it. Recovering these from
+// the disagreed branch (#71) is what gives the disabled/read-only/animating class its recall.
+const GEOMETRY_BLIND_CAUSES = new Set<RootCauseCode>([
+  'disabled',
+  'read-only',
+  'unstable-animating',
+]);
 
 /** The cause Playwright's authoritative error string names, or null if it is not specific. */
 function codeFromPlaywrightError(error: string | undefined): RootCauseCode | null {
@@ -105,6 +124,25 @@ function blockingDiagnosis(node: DeltaNode): Diagnosis {
   return { code, confidence, scope: 'node', ref: node.ref, detail };
 }
 
+/**
+ * A Playwright-only blocking cause recovered from the DISAGREED branch (#71). Playwright's
+ * verdict is NOT-actionable and its error names a cause geometry is structurally blind to;
+ * geometry's dissenting "actionable" read is that blindness, not counter-evidence, so the cause
+ * is `confirmed` (Playwright is authoritative and named it). It never contradicts the verdict —
+ * it IS the verdict's reason. Geometry's read is kept in the detail for transparency.
+ */
+function blindCauseDiagnosis(node: DeltaNode, code: RootCauseCode): Diagnosis {
+  const a = node.actionability;
+  const err = a.playwright?.error;
+  return {
+    code,
+    confidence: assessConfidence({ source: 'playwright' }),
+    scope: 'node',
+    ref: node.ref,
+    detail: `Playwright NOT-actionable${err ? ` (${err})` : ''}; a Playwright-only cause geometry cannot observe (geometry read ${a.geometryVerdict})`,
+  };
+}
+
 /** A geometry↔Playwright disagreement, carrying the direction both ways. */
 function geomDisagreement(node: DeltaNode): Diagnosis {
   const a = node.actionability;
@@ -124,9 +162,15 @@ function diagnoseNode(node: DeltaNode): Diagnosis | null {
   const a = node.actionability;
 
   if (a.verdict === 'NOT-actionable') {
-    // Both engines agree it is blocked → attribute the cause (Playwright's wins). Otherwise
-    // geometry dissented (e.g. a covered input Playwright can still fill) → flag it, no code.
-    return a.agreed ? blockingDiagnosis(node) : geomDisagreement(node);
+    // Both engines agree it is blocked → attribute the cause (Playwright's wins).
+    if (a.agreed) return blockingDiagnosis(node);
+    // Disagreed: geometry read it actionable. If Playwright named a cause geometry is
+    // structurally BLIND to (disabled / read-only / unstable-animating), that is not a real
+    // conflict — recover the Playwright-named cause (#71). For a geometry-VISIBLE cause the
+    // dissent is genuine counter-evidence → flag the disagreement, no blocking code.
+    const pwCode = codeFromPlaywrightError(a.playwright?.error);
+    if (pwCode && GEOMETRY_BLIND_CAUSES.has(pwCode)) return blindCauseDiagnosis(node, pwCode);
+    return geomDisagreement(node);
   }
 
   if (a.verdict === 'ACTIONABLE' && !a.agreed) {
