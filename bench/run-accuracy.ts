@@ -8,10 +8,13 @@
 // precision, which stays blocked on #25/#41 (the owner's real apps).
 //
 // HEADLINE metrics: verdict-vs-reality (DW-02), confirmed-band precision, recall, silent-miss.
-// GATING is deliberately reporting-first while #71's remaining recall/signal gaps close: ONLY the
-// DW-02 verdict floor (must be 100%) fails the run; confirmed-precision (target ≥0.95) and
-// silent-miss (target ≤0.05) are REPORTED, then ratcheted into hard floors as #71 lands its
-// detached-re-render / injection-blocked / cross-boundary-partial signals.
+// GATING is deliberately reporting-first while #71's remaining recall/signal gaps close: ONLY a
+// real DW-02 regression fails the run — the LIVE verdict subset < 100% (or zero live oracles).
+// Verdict-vs-reality is SPLIT by case kind (only live cases exercise Playwright's real verdict;
+// delta verdicts are authored self-consistency, reported not gated). Confirmed-precision (target
+// ≥0.95) and silent-miss (target ≤0.05) are REPORTED, then ratcheted into hard floors as #71 lands
+// its detached-re-render / injection-blocked / cross-boundary-partial signals. See score.ts for
+// the scoring rules and the known seed-corpus scoping limits (F3/F4).
 
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -20,7 +23,13 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { actAndObserve, diagnose, type DiagnosedDelta } from '../src/index';
 import { CORPUS } from './flake-corpus/load';
 import type { CorpusAction, CorpusCase } from './flake-corpus/cases';
-import { scoreCase, aggregate, type CaseScore, type Metrics } from './flake-corpus/score';
+import {
+  scoreCase,
+  aggregate,
+  gateFailure,
+  type CaseScore,
+  type Metrics,
+} from './flake-corpus/score';
 
 const FLAKE_DIR = fileURLToPath(new URL('./flake-corpus', import.meta.url));
 const VIEWPORT = { width: 1280, height: 720 };
@@ -77,8 +86,13 @@ function report(scores: CaseScore[], m: Metrics): string {
   L.push('');
   L.push('HEADLINE');
   L.push(
-    `  verdict-vs-reality (DW-02, hard floor):  ${pct(m.verdictAccuracy)}  ` +
-      `(${m.verdictMatches}/${m.verdictOracleCases})  ${m.verdictAccuracy === 1 ? 'PASS' : 'FAIL'}`,
+    `  verdict-vs-reality LIVE (DW-02 gate):     ${pct(m.liveVerdictAccuracy)}  ` +
+      `(${m.liveVerdictMatches}/${m.liveVerdictOracleCases})  ` +
+      `${gateFailure(m) === null ? 'PASS' : 'FAIL'}`,
+  );
+  L.push(
+    `  verdict self-consistency (delta):        ${pct(m.deltaVerdictAccuracy)}  ` +
+      `(${m.deltaVerdictMatches}/${m.deltaVerdictOracleCases})  [authored, not reality]`,
   );
   L.push(
     `  confirmed-band precision (target ≥95%):  ${pct(m.confirmedPrecision)}  ` +
@@ -105,10 +119,14 @@ function report(scores: CaseScore[], m: Metrics): string {
     const band = s.emittedConfidence ? ` ${s.emittedConfidence}` : '';
     const got = s.emittedCode ? ` → ${s.emittedCode}${band}` : '';
     const conf = s.outcome === 'hit' && !s.confidenceMatch ? ` (band≠${s.expectedConfidence})` : '';
+    // Surface co-emitted specific codes so an extra (esp. a confident one) is never hidden (F2).
+    const extra = s.extraSpecificCodes.length
+      ? `  +${s.extraSpecificCodes.map((e) => `${e.code}/${e.confidence}`).join(', ')}`
+      : '';
     const vv =
       s.verdictMatch === false ? `  ⚠ verdict ${s.verdictActual}≠${s.verdictExpected}` : '';
     L.push(
-      `  ${mark[s.outcome].padEnd(12)} ${s.id.padEnd(28)} [${s.expectedCode}]${got}${conf}${vv}`,
+      `  ${mark[s.outcome].padEnd(12)} ${s.id.padEnd(28)} [${s.expectedCode}]${got}${conf}${extra}${vv}`,
     );
   }
   L.push('');
@@ -116,8 +134,13 @@ function report(scores: CaseScore[], m: Metrics): string {
   L.push(
     '  Corpus-relative on a ~36-case seed. NOT real-production precision (blocked on #25/#41).',
   );
+  L.push('  DW-02 gate is the LIVE verdict subset (real Playwright); delta verdicts are authored');
+  L.push('  self-consistency, reported separately, never gated (F1).');
   L.push(
-    '  Scored per-case against the labeled cause; incidental extra diagnoses are not penalised.',
+    '  Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);',
+  );
+  L.push(
+    '  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).',
   );
   L.push('  Known silent misses (open in #71): detached-re-render, injection-blocked,');
   L.push(
@@ -142,9 +165,10 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(resolve(outDir, 'accuracy.txt'), text + '\n');
 
-    // Reporting-first gate: only the DW-02 verdict floor fails the run today.
-    if (metrics.verdictAccuracy !== 1) {
-      console.error('\nFAIL: verdict-vs-reality is not 100% — a DW-02 (reality) regression.');
+    // Reporting-first gate: only a real DW-02 (live-verdict) regression fails the run today.
+    const failure = gateFailure(metrics);
+    if (failure) {
+      console.error(`\nFAIL: ${failure}.`);
       process.exitCode = 1;
     }
   } finally {

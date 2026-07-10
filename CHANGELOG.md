@@ -9,15 +9,20 @@ All notable changes to this project are documented here. The format is based on
 ### Added
 
 - **Accuracy harness** (#52, `npm run bench:accuracy`): scores the pure `diagnose()` engine against
-  the #51 corpus and reports four headline metrics — verdict-vs-reality (DW-02), confirmed-band
+  the #51 corpus and reports headline metrics — verdict-vs-reality (DW-02), confirmed-band
   precision, recall, silent-miss rate — all **corpus-relative** (NOT real-production precision;
-  blocked on #25/#41). **Reporting-first gating** (ADR 2026-07-10): only verdict-vs-reality < 100%
-  (a real DW-02 regression) fails the run; precision (target ≥95%) and silent-miss (target ≤5%) are
-  reported while #71's remaining signals land. Current run: **verdict 100% (26/26), confirmed
-  precision 100% (7/0), recall 83.3% (15/18), silent-miss 16.7% (3/18)** — the three silent misses
-  are exactly the open #71 gaps (detached-re-render / injection-blocked / cross-boundary-partial),
-  surfaced as `✗ SILENT` by design. Pure scorer in `bench/flake-corpus/score.ts` (browser-free,
-  unit-tested); `test/accuracy.spec.ts` guards the scorer contract + the DW-02 floor.
+  blocked on #25/#41). **Reporting-first gating** (ADR 2026-07-10): only a real DW-02 regression
+  fails the run — the **live** verdict-vs-reality subset < 100% (or zero live oracles); precision
+  (target ≥95%) and silent-miss (target ≤5%) are reported while #71's remaining signals land.
+  Verdict-vs-reality is **split by case kind** — only live cases exercise Playwright's real verdict
+  (the gate); delta verdicts are authored self-consistency, reported not gated. Confirmed-precision
+  is scored **per-emitted-confirmed-diagnosis** (a confident non-label code counts wrong and is
+  surfaced, never hidden by per-case scoring). Current run: **live-verdict 100% (16/16),
+  delta-verdict 100% (10/10 authored), confirmed precision 100% (7/0), recall 83.3% (15/18),
+  silent-miss 16.7% (3/18)** — the three silent misses are exactly the open #71 gaps
+  (detached-re-render / injection-blocked / cross-boundary-partial), surfaced as `✗ SILENT` by
+  design. Pure scorer in `bench/flake-corpus/score.ts` (browser-free, unit-tested);
+  `test/accuracy.spec.ts` guards the scorer contract, the split verdict oracle, and the gate.
 - **Labeled flake corpus** (#51): `bench/flake-corpus/` — the non-circular ground truth for the
   accuracy harness (#52). 36 cases (22 live real-DOM + 14 hand-built delta) covering **all 18**
   taxonomy codes, each with a **positive AND a mandatory near-miss confuser** (a superficially-

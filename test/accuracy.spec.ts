@@ -5,7 +5,7 @@ import { actAndObserve, diagnose } from '../src/index';
 import type { Diagnosis, Verdict } from '../src/index';
 import { CORPUS } from '../bench/flake-corpus/load';
 import type { CorpusCase } from '../bench/flake-corpus/cases';
-import { scoreCase, aggregate, type ScoredInput } from '../bench/flake-corpus/score';
+import { scoreCase, aggregate, gateFailure, type ScoredInput } from '../bench/flake-corpus/score';
 
 // The accuracy harness (#52) scores diagnose() against the labeled corpus (#51). These guard the
 // PURE scorer contract (browser-free) + the DW-02 verdict floor on the delta cases and a live
@@ -86,10 +86,16 @@ test('scorer: the verdict oracle compares the target node verdict to reality (DW
   expect(drift.verdictMatch).toBe(false);
 });
 
-test('aggregate: computes recall, silent-miss, confirmed precision, and the DW-02 floor', () => {
+test('aggregate: computes recall, silent-miss, confirmed precision, and splits the verdict oracle', () => {
   const scores = [
     scoreCase(
-      caseOf({ id: 'a', code: 'disabled', confidence: 'confirmed', verdict: 'NOT-actionable' }),
+      caseOf({
+        id: 'a',
+        kind: 'live',
+        code: 'disabled',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
       input([diag('disabled', 'confirmed')], 'NOT-actionable'),
     ),
     scoreCase(caseOf({ id: 'b', code: 'detached-re-render', confidence: 'suspected' }), input([])),
@@ -111,7 +117,55 @@ test('aggregate: computes recall, silent-miss, confirmed precision, and the DW-0
   expect(m.recall).toBeCloseTo(0.5);
   expect(m.silentMissRate).toBeCloseTo(0.5);
   expect(m.confirmedPrecision).toBe(1); // 1 confirmed correct, 0 confirmed wrong
-  expect(m.verdictAccuracy).toBe(1);
+  // Verdict oracle is split by kind (F1): the live case is the DW-02 gate; there are no delta ones.
+  expect(m.liveVerdictOracleCases).toBe(1);
+  expect(m.liveVerdictAccuracy).toBe(1);
+  expect(m.deltaVerdictOracleCases).toBe(0);
+  expect(gateFailure(m)).toBeNull(); // one live oracle, 100% → passes
+});
+
+test('F2: a confident non-label code co-emitted on a hit case still lowers confirmed precision', () => {
+  // The engine correctly names `disabled` (confirmed) AND spuriously names `off-screen`
+  // (confirmed) on a second node. Per-case the outcome is a hit, but precision must SEE the
+  // spurious confident code — the pre-fix per-case metric hid it (F2).
+  const s = scoreCase(
+    caseOf({ code: 'disabled', confidence: 'confirmed' }),
+    input([diag('disabled', 'confirmed'), diag('off-screen', 'confirmed')]),
+  );
+  expect(s.outcome).toBe('hit');
+  expect(s.confirmedCorrect).toBe(1);
+  expect(s.confirmedWrong).toBe(1);
+  expect(s.extraSpecificCodes.map((e) => e.code)).toContain('off-screen');
+  const m = aggregate([s]);
+  expect(m.confirmedPrecision).toBeCloseTo(0.5); // 1 correct / (1 correct + 1 wrong)
+});
+
+test('F5: the gate refuses to pass vacuously when there is no live verdict oracle', () => {
+  // A suspected co-emission does NOT touch confirmed precision (only confirmed codes count).
+  const suspectedExtra = scoreCase(
+    caseOf({ code: 'settle-timeout', confidence: 'suspected' }),
+    input([diag('settle-timeout', 'suspected'), diag('background-churn', 'suspected')]),
+  );
+  expect(suspectedExtra.confirmedWrong).toBe(0);
+
+  // No live oracle (all delta / no verdict) → the ONLY hard gate would pass vacuously; guard it.
+  const m = aggregate([suspectedExtra]);
+  expect(m.liveVerdictOracleCases).toBe(0);
+  expect(gateFailure(m)).toMatch(/vacuous/i);
+
+  // A live oracle that drifted → the gate fails with a DW-02 message.
+  const drift = aggregate([
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'disabled',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
+      input([diag('disabled', 'confirmed')], 'ACTIONABLE'),
+    ),
+  ]);
+  expect(gateFailure(drift)).toMatch(/DW-02/);
 });
 
 test('integration: every delta corpus case scores as expected and never drifts the verdict (DW-02)', () => {
@@ -130,7 +184,10 @@ test('integration: every delta corpus case scores as expected and never drifts t
     else known.unsure++;
   }
   const m = aggregate(deltaCases.map((c) => scoreCase(c, diagnose(c.delta!))));
-  expect(m.verdictAccuracy).toBe(1);
+  // These are all delta cases: their authored verdicts are self-consistent (F1), and there is no
+  // live oracle here — so the DW-02 gate would (correctly) refuse to pass on this subset alone.
+  expect(m.deltaVerdictAccuracy).toBe(1);
+  expect(m.liveVerdictOracleCases).toBe(0);
   // The known delta-level silent misses (injection-blocked, cross-boundary-partial) show up here.
   expect(known.silent).toBeGreaterThanOrEqual(2);
 });
