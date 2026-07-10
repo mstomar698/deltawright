@@ -1,4 +1,4 @@
-// Deltawright ACCURACY harness (#52). REPORTING-FIRST.
+// Deltawright ACCURACY harness (#52).
 //   npm run bench:accuracy   (npx tsx bench/run-accuracy.ts)
 //
 // Scores the pure diagnose() engine against the labeled flake corpus (#51). Ground truth is the
@@ -8,14 +8,13 @@
 // precision, which stays blocked on #25/#41 (the owner's real apps).
 //
 // HEADLINE metrics: verdict-vs-reality (DW-02), confirmed-band precision, recall, silent-miss.
-// GATING is (still) reporting-first: ONLY a real DW-02 regression fails the run — the LIVE verdict
-// subset < 100% (or zero live oracles). #71's signals have now all landed, so the precision/
-// silent-miss floors are ready to move from reported to gated (a follow-up ratchet).
-// Verdict-vs-reality is SPLIT by case kind (only live cases exercise Playwright's real verdict;
-// delta verdicts are authored self-consistency, reported not gated). Confirmed-precision (target
-// ≥0.95) and silent-miss (target ≤0.05) are REPORTED; with #71's signals now all landed (recall
-// 100% / silent-miss 0% on this seed) they are ready to ratchet into hard floors next. See score.ts
-// for the scoring rules and the known seed-corpus scoping limits (F3/F4).
+// GATING: three floors now hard-fail the run — DW-02 (the LIVE verdict subset must be 100% with at
+// least one live oracle), confirmed-band precision ≥95%, and silent-miss ≤5%. The precision/silent
+// floors were RATCHETED from reported to gated once #71 closed every silent miss (recall 100%);
+// see the ADR superseding the 2026-07-10 reporting-first decision. Verdict-vs-reality is SPLIT by
+// case kind (only live cases exercise Playwright's real verdict and gate; delta verdicts are
+// authored self-consistency, reported never gated). See score.ts for the scoring rules and the
+// known seed-corpus scoping limits (F3/F4).
 
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -28,6 +27,8 @@ import {
   scoreCase,
   aggregate,
   gateFailure,
+  CONFIRMED_PRECISION_FLOOR,
+  SILENT_MISS_CEILING,
   type CaseScore,
   type Metrics,
 } from './flake-corpus/score';
@@ -80,31 +81,36 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
 function report(scores: CaseScore[], m: Metrics): string {
   const L: string[] = [];
-  L.push('Deltawright accuracy harness (#52) — CORPUS-RELATIVE, reporting-first');
+  L.push('Deltawright accuracy harness (#52) — CORPUS-RELATIVE, gated');
   L.push('='.repeat(72));
   L.push('');
   L.push(`cases: ${m.total}  (specific-cause: ${m.specificCases}, unsure-label: ${m.unsureCases})`);
   L.push('');
-  L.push('HEADLINE');
+  const gateMark = (ok: boolean) => (ok ? 'PASS' : 'FAIL');
+  const dw02Ok = m.liveVerdictOracleCases > 0 && m.liveVerdictAccuracy === 1;
+  // Non-vacuous AND above the floor — mirrors the gate, which fails a 0-confirmed vacuous pass.
+  const precisionOk =
+    m.confirmedCorrect + m.confirmedWrong > 0 && m.confirmedPrecision >= CONFIRMED_PRECISION_FLOOR;
+  const silentOk = m.silentMissRate <= SILENT_MISS_CEILING;
+  L.push('HEADLINE  (all three gates now hard-fail the run; recall is informational)');
   L.push(
-    `  verdict-vs-reality LIVE (DW-02 gate):     ${pct(m.liveVerdictAccuracy)}  ` +
-      `(${m.liveVerdictMatches}/${m.liveVerdictOracleCases})  ` +
-      `${gateFailure(m) === null ? 'PASS' : 'FAIL'}`,
+    `  verdict-vs-reality LIVE (DW-02 gate):    ${pct(m.liveVerdictAccuracy)}  ` +
+      `(${m.liveVerdictMatches}/${m.liveVerdictOracleCases})  ${gateMark(dw02Ok)}`,
   );
   L.push(
     `  verdict self-consistency (delta):        ${pct(m.deltaVerdictAccuracy)}  ` +
       `(${m.deltaVerdictMatches}/${m.deltaVerdictOracleCases})  [authored, not reality]`,
   );
   L.push(
-    `  confirmed-band precision (target ≥95%):  ${pct(m.confirmedPrecision)}  ` +
-      `(${m.confirmedCorrect} correct / ${m.confirmedWrong} wrong)  [reported]`,
+    `  confirmed-band precision (gate ≥95%):    ${pct(m.confirmedPrecision)}  ` +
+      `(${m.confirmedCorrect} correct / ${m.confirmedWrong} wrong)  ${gateMark(precisionOk)}`,
   );
   L.push(
     `  recall (labeled cause emitted):          ${pct(m.recall)}  (${m.hits}/${m.specificCases})`,
   );
   L.push(
-    `  silent-miss rate (target ≤5%):           ${pct(m.silentMissRate)}  ` +
-      `(${m.silentMisses}/${m.specificCases})  [reported]`,
+    `  silent-miss rate (gate ≤5%):             ${pct(m.silentMissRate)}  ` +
+      `(${m.silentMisses}/${m.specificCases})  ${gateMark(silentOk)}`,
   );
   L.push(`  confidence-band accuracy (on hits):      ${pct(m.confidenceAccuracy)}`);
   L.push('');
@@ -144,11 +150,13 @@ function report(scores: CaseScore[], m: Metrics): string {
     '  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).',
   );
   L.push(
-    '  All 18 taxonomy codes now emit (recall 100% / silent-miss 0% on this seed); #71 closed',
+    '  All 18 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision',
   );
-  L.push('  its detached-re-render + capture-integrity signals. Precision/silent-miss are still');
   L.push(
-    '  REPORTED (not gated) — the floors ratchet to hard gates next; only DW-02 hard-fails today.',
+    '  (≥95%), and silent-miss (≤5%) floors are all GATED now — a regression in any hard-fails CI.',
+  );
+  L.push(
+    '  Corpus-relative floors: they guarantee the engine keeps pace with the corpus, not real prod.',
   );
   return L.join('\n');
 }
@@ -169,7 +177,8 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(resolve(outDir, 'accuracy.txt'), text + '\n');
 
-    // Reporting-first gate: only a real DW-02 (live-verdict) regression fails the run today.
+    // Three-floor gate (post-#71 ratchet): a DW-02 live-verdict regression (checked first), then a
+    // confirmed-precision vacuity/floor breach, then silent-miss above the ceiling — any one fails.
     const failure = gateFailure(metrics);
     if (failure) {
       console.error(`\nFAIL: ${failure}.`);

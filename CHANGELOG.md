@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Accuracy floors ratcheted from reported to gated** (#52/#71): now that `diagnose()` closed every
+  #71 silent miss (recall 100% / silent-miss 0%), `npm run bench:accuracy` hard-fails on **three**
+  floors, not just DW-02 — confirmed-band precision **≥95%** and silent-miss **≤5%** are now gates,
+  alongside the DW-02 live verdict-vs-reality floor (checked first so a reality drift short-circuits).
+  All three pass today with headroom (8/0 precision, 0/18 silent-miss). The floors are
+  corpus-relative — they keep the engine in lockstep with the corpus, so a future code the engine
+  can't yet diagnose fails CI rather than being silently reported. Supersedes the 2026-07-10
+  reporting-first ADR.
+
 ### Added
 
 - **Capture-integrity diagnoses** (#71 fix #4): the last two `diagnose()` silent misses close.
@@ -33,17 +44,17 @@ All notable changes to this project are documented here. The format is based on
 - **Accuracy harness** (#52, `npm run bench:accuracy`): scores the pure `diagnose()` engine against
   the #51 corpus and reports headline metrics — verdict-vs-reality (DW-02), confirmed-band
   precision, recall, silent-miss rate — all **corpus-relative** (NOT real-production precision;
-  blocked on #25/#41). **Reporting-first gating** (ADR 2026-07-10): only a real DW-02 regression
-  fails the run — the **live** verdict-vs-reality subset < 100% (or zero live oracles); precision
-  (target ≥95%) and silent-miss (target ≤5%) are reported while #71's remaining signals land.
+  blocked on #25/#41). **Gating at introduction was reporting-first** (ADR 2026-07-10) — only a real
+  DW-02 regression failed the run — with precision (target ≥95%) and silent-miss (target ≤5%)
+  reported while #71's signals landed; both floors were **later ratcheted to hard gates** once #71
+  closed (see _Changed_ above).
   Verdict-vs-reality is **split by case kind** — only live cases exercise Playwright's real verdict
   (the gate); delta verdicts are authored self-consistency, reported not gated. Confirmed-precision
   is scored **per-emitted-confirmed-diagnosis** (a confident non-label code counts wrong and is
-  surfaced, never hidden by per-case scoring). Current run: **live-verdict 100% (16/16),
-  delta-verdict 100% (10/10 authored), confirmed precision 100% (7/0), recall 83.3% (15/18),
-  silent-miss 16.7% (3/18)** — the three silent misses are exactly the open #71 gaps
-  (detached-re-render / injection-blocked / cross-boundary-partial), surfaced as `✗ SILENT` by
-  design. Pure scorer in `bench/flake-corpus/score.ts` (browser-free, unit-tested);
+  surfaced, never hidden by per-case scoring). Run at introduction: **live-verdict 100% (16/16),
+  confirmed precision 100% (7/0), recall 83.3% (15/18), silent-miss 16.7% (3/18)** — the three silent
+  misses were the open #71 gaps (detached-re-render / injection-blocked / cross-boundary-partial),
+  surfaced as `✗ SILENT`; all three have since closed (recall 100%, see _Changed_). Pure scorer in `bench/flake-corpus/score.ts` (browser-free, unit-tested);
   `test/accuracy.spec.ts` guards the scorer contract, the split verdict oracle, and the gate.
 - **Labeled flake corpus** (#51): `bench/flake-corpus/` — the non-circular ground truth for the
   accuracy harness (#52). 36 cases (22 live real-DOM + 14 hand-built delta) covering **all 18**

@@ -103,8 +103,8 @@ geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, `de
 the two capture-integrity codes, and the five delta/stats-level codes). That is exactly why
 diagnosis capabilities are **gated** behind the harness floor (#52): the corpus made every gap
 measurable, and each closed with an independent adversarial review before shipping. With recall at
-100% / silent-miss at 0%, the precision + silent-miss floors are ready to ratchet from `reported`
-to hard-gated (next).
+100% / silent-miss at 0%, the precision + silent-miss floors have been **ratcheted from reported to
+hard-gated** (ADR 2026-07-10, superseding the reporting-first decision).
 
 ## Running
 
@@ -112,21 +112,22 @@ to hard-gated (next).
 enforces per-code coverage, the confuser requirement, and the independent-oracle rule.
 
 The accuracy harness (**#52**) that scores `diagnose()` against these labels is live:
-**`npm run bench:accuracy`** (`bench/run-accuracy.ts`; pure scorer in `score.ts`). It is
-**reporting-first** — only the LIVE verdict-vs-reality subset < 100% (a DW-02 regression) fails the
-run; precision and silent-miss are reported while #71's remaining signals land (ADR 2026-07-10).
-Verdict-vs-reality is split by case kind: only the live cases exercise Playwright's real verdict
-(the gate); delta verdicts are authored self-consistency. Latest run:
+**`npm run bench:accuracy`** (`bench/run-accuracy.ts`; pure scorer in `score.ts`). **Three floors now
+hard-fail the run**: DW-02 (the LIVE verdict-vs-reality subset must be 100% with ≥1 live oracle),
+confirmed-band precision ≥95%, and silent-miss ≤5%. Verdict-vs-reality is split by case kind: only
+the live cases exercise Playwright's real verdict (and gate); delta verdicts are authored
+self-consistency (never gated). Latest run:
 
 ```
-verdict-vs-reality LIVE (DW-02 gate):  100.0%  (16/16)  PASS
-verdict self-consistency (delta):      100.0%  ( 9/9)   [authored, not reality]
-confirmed-band precision:              100.0%  (8 correct / 0 wrong)   [reported]
-recall:                                100.0%  (18/18)
-silent-miss rate:                        0.0%  (0/18)                  [reported]
+verdict-vs-reality LIVE (DW-02 gate):    100.0%  (16/16)  PASS
+verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
+confirmed-band precision (gate ≥95%):    100.0%  (8 correct / 0 wrong)  PASS
+recall (labeled cause emitted):          100.0%  (18/18)
+silent-miss rate (gate ≤5%):               0.0%  (0/18)  PASS
 ```
 
-All 18 codes now emit — no silent misses remain. `test/accuracy.spec.ts` guards the scorer contract
-+ the DW-02 floor (browser-free delta integration + live smokes, including the detached-re-render
-background-quarantine regression and the CSP injection-blocked degrade). With recall 100% /
-silent-miss 0%, the precision + silent-miss floors are ready to ratchet from reported to gated.
+All 18 codes emit and all three floors pass with headroom. `test/accuracy.spec.ts` guards the scorer
+contract + the ratcheted gate (a precision/silent-miss regression test) + live smokes (the
+detached-re-render background-quarantine regression, the CSP injection-blocked degrade, and the
+uninjectable-child-frame cross-boundary path). The floors are **corpus-relative** — they keep the
+engine in lockstep with the corpus, not with real production (blocked on #25/#41).
