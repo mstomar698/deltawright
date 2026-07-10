@@ -42,10 +42,10 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `off-screen` | live (fixed, clipped above viewport) | ✅ `off-screen` / confirmed |
 | `not-visible` | live (`visibility:hidden`) | ✅ `not-visible` / confirmed |
 | `pointer-events-none` | live (`pointer-events:none`) | ✅ `pointer-events-none` / suspected (#71 fix — geometry's self-cause preferred over Playwright's generic "intercept") |
-| `disabled` | live (disabled button) | ⚠️ **`geom-disagreement`** — geometry can't see `disabled`, so `agreed=false`; a flag, not a wrong confirmed. Recall gap. |
-| `read-only` | live (readonly input) | ⚠️ **`geom-disagreement`** — same class as `disabled`. Recall gap. |
-| `unstable-animating` | delta | (delta) — live CSS-animation reproduction is future work |
-| `geom-disagreement` | live (disabled button) | ✅ `geom-disagreement` / suspected (the code it *does* emit for the disabled/readonly class) |
+| `disabled` | live (disabled button) | ✅ `disabled` / confirmed (#71 geometry-blind recovery — geometry can't see `disabled` so `agreed=false`, but Playwright's authoritative cause is recovered from the disagreed branch) |
+| `read-only` | live (readonly input) | ✅ `read-only` / confirmed (#71 — same geometry-blind recovery as `disabled`) |
+| `unstable-animating` | delta | ✅ `unstable-animating` / confirmed (#71 recovery; delta — live CSS-animation reproduction is future work) |
+| `geom-disagreement` | live (covered fillable input) | ✅ `geom-disagreement` / suspected (a GENUINE disagreement on a geometry-VISIBLE cause: Playwright can `fill` a covered input, geometry sees the cover — NOT recovered, unlike the geometry-blind class) |
 | `background-churn` | delta (dominant `droppedBackground`) | ✅ `background-churn` / suspected |
 | `detached-re-render` | live (target removed + replaced) | ⚠️ **not emitted** — no `ref-staleified` signal in the Delta yet. Silent miss. |
 | `settle-timeout` | live (churning page, low `maxWaitMs`) | ✅ `settle-timeout` / suspected |
@@ -59,29 +59,32 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 
 ## Known engine gaps this corpus surfaces (for #52 and follow-ups)
 
-The probe found gaps between the taxonomy and what the engine emits from real pages. **Two were
-already fixed** (tracked in #71):
+The probe found gaps between the taxonomy and what the engine emits from real pages. **Three
+fixes have shipped** (tracked in #71):
 
 - ✅ **`pointer-events-none` (was mislabeled `covered-by-overlay`).** When the target's own
   `pointer-events:none` is why the hit misses (Playwright reports a generic "intercept" and
   `elementFromPoint` returns the element behind), the engine now names `pointer-events-none`.
 - ✅ **`pixel-region-fallback` (was unmapped).** `diagnose()` now maps the screenshot-diff
   pixel-region node to the code.
+- ✅ **`disabled` / `read-only` / `unstable-animating` (was `geom-disagreement`; recall).** These
+  are Playwright-only causes geometry is structurally BLIND to, so the node reads
+  geometry-actionable (`agreed=false`). The engine now RECOVERS the Playwright-named cause from
+  the disagreed branch (geometry's dissent is blindness, not counter-evidence — it doesn't
+  contradict the verdict, it *is* the verdict's reason). Limited to the geometry-blind set: a
+  dissent on a geometry-VISIBLE cause stays `geom-disagreement`. ADR 2026-07-10.
 
 Remaining gaps (open in #71):
 
-1. **`disabled` / `read-only` / `unstable-animating` → `geom-disagreement` (recall).** These are
-   Playwright-only causes geometry can't see, so `agreed=false` routes them to `geom-disagreement`.
-   Fix: emit the Playwright-named cause from the disagreed branch too (it doesn't contradict the
-   verdict — it *is* the verdict's reason). Needs an ADR (extends agree-or-flag) + a review.
-2. **`detached-re-render` (silent).** Needs a `ref-staleified` signal added to the Delta.
-3. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
+1. **`detached-re-render` (silent).** Needs a `ref-staleified` signal added to the Delta.
+2. **`injection-blocked` / `cross-boundary-partial` (silent).** Need capture-integrity signals
    plumbed from `inject.ts` / frame+shadow traversal into the Delta.
 
-**Net: the engine now emits ~11 of the 18 codes well** (the three actionability-blocking codes,
-`pointer-events-none`, `pixel-region-fallback`, `geom-disagreement`, and the five delta/stats-level
-codes), with the rest documented above. That is exactly why diagnosis capabilities are **gated**
-behind the harness floor (#52): the corpus makes the gaps measurable before any capability ships.
+**Net: the engine now emits ~14 of the 18 codes well** (the four geometry-visible blocking codes,
+the three geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, and the
+five delta/stats-level codes), with the three silent-miss codes above remaining. That is exactly
+why diagnosis capabilities are **gated** behind the harness floor (#52): the corpus makes the gaps
+measurable before any capability ships.
 
 ## Running
 

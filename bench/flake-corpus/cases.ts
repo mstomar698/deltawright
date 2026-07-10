@@ -226,7 +226,7 @@ export const CORPUS: CorpusCase[] = [
     action: reveal('disabled'),
     verdict: 'NOT-actionable',
     truth: { reveal: 'disabled', intendedCause: 'disabled' },
-    note: 'KNOWN ENGINE GAP: geometry cannot see "disabled" so agreed=false and the engine emits geom-disagreement (a flag, not a wrong confirmed). Corpus labels the TRUE cause; #52 shows the recall gap.',
+    note: 'A disabled button: geometry cannot see "disabled" so agreed=false. The engine RECOVERS the Playwright-named cause from the disagreed branch (#71 geometry-blind recovery) → disabled/confirmed.',
   },
   {
     id: 'disabled-confuser',
@@ -250,7 +250,7 @@ export const CORPUS: CorpusCase[] = [
     action: reveal('readonly'),
     verdict: 'NOT-actionable',
     truth: { reveal: 'readonly', intendedCause: 'read-only' },
-    note: 'KNOWN ENGINE GAP: a read-only input reads geometry-actionable so the engine emits geom-disagreement. Corpus labels the TRUE cause; #52 shows the recall gap.',
+    note: 'A read-only input reads geometry-actionable (agreed=false); the engine RECOVERS the Playwright-named cause from the disagreed branch (#71) → read-only/confirmed.',
   },
   {
     id: 'read-only-confuser',
@@ -290,7 +290,7 @@ export const CORPUS: CorpusCase[] = [
       },
     }),
     verdict: 'NOT-actionable',
-    note: 'A mid-animation element Playwright deems not stable (geometry cannot see stability). kind:delta — live CSS-animation reproduction pairs with real-app expansion.',
+    note: 'A mid-animation element Playwright deems not stable (geometry cannot see stability, so agreed=false); the engine RECOVERS unstable-animating from the disagreed branch (#71) → confirmed. kind:delta — live CSS-animation reproduction pairs with real-app expansion.',
   },
   {
     id: 'unstable-animating-confuser',
@@ -320,10 +320,10 @@ export const CORPUS: CorpusCase[] = [
     confuser: false,
     kind: 'live',
     fixture: R,
-    action: reveal('disabled'),
-    verdict: 'NOT-actionable',
-    truth: { reveal: 'disabled', intendedCause: 'disabled' },
-    note: 'A disabled button: geometry reads it actionable, Playwright says not — the engine emits geom-disagreement with direction (this is the code it DOES emit for the disabled/read-only class).',
+    action: reveal('covered-input'),
+    verdict: 'ACTIONABLE',
+    truth: { reveal: 'covered-input', intendedCause: 'geom-disagreement' },
+    note: 'A text input covered by an overlay: Playwright can still `fill` it (ACTIONABLE, no hit-test) but geometry sees the cover (NOT-actionable) — a GENUINE disagreement on a geometry-VISIBLE cause, so it stays geom-disagreement (not recovered like the geometry-blind disabled/read-only class). The canonical case DW exists to surface.',
   },
   {
     id: 'geom-disagreement-confuser',

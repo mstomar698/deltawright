@@ -225,6 +225,17 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Geometry-blind cause recall** (#71): `disabled` / `read-only` / `unstable-animating` are
+  causes only Playwright can observe, so the node reads geometry-actionable (`agreed===false`) and
+  used to collapse to `geom-disagreement` — a recall gap the corpus surfaced. `diagnose()` now
+  RECOVERS the Playwright-named cause from the disagreed branch as `confirmed`: geometry's dissent
+  on a cause it is structurally blind to is the absence of evidence, not counter-evidence, so it
+  doesn't contradict the verdict — it *is* the verdict's reason. Strictly limited to the closed
+  geometry-blind set; a dissent on a geometry-VISIBLE cause (covered / off-screen / …) stays
+  `geom-disagreement` (the live corpus positive for it is now a covered-but-fillable input, the
+  canonical genuine disagreement). Extends the #48 agree-or-flag rule (ADR 2026-07-10). The engine
+  now emits ~14 of the 18 codes well; remaining gaps (detached/injection/cross-boundary signals)
+  stay open in #71. `bench/flake-corpus/{cases.ts,CORPUS.md,fixtures/reveal.html}` updated.
 - **Two corpus-surfaced diagnosis gaps** (#71, partial): (1) `pointer-events-none` was
   mislabeled `covered-by-overlay` — Playwright's error for a `pointer-events:none` target is a
   generic "intercept" and `elementFromPoint` returns the element behind, so the engine now

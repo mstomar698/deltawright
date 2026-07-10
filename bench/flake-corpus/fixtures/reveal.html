@@ -34,6 +34,7 @@
       <button data-reveal="petauto">petauto</button>
       <button data-reveal="disabled">disabled</button>
       <button data-reveal="readonly">readonly</button>
+      <button data-reveal="covered-input">covered-input</button>
       <button data-reveal="ok">ok</button>
       <button data-reveal="detached">detached</button>
     </div>
@@ -168,6 +169,23 @@
           box(inp, 20, 20, 160, 28);
           stage.appendChild(inp);
           return 'read-only';
+        },
+        // A text input covered by a higher overlay. `fill` has NO hit-test, so Playwright can
+        // still fill it (ACTIONABLE), but geometry's elementFromPoint hits the overlay
+        // (NOT-actionable) → the two engines GENUINELY disagree → geom-disagreement. This is
+        // the canonical case Deltawright exists to surface (and it is NOT a geometry-blind
+        // cause, so it must NOT be recovered as a blocking code).
+        'covered-input'() {
+          const inp = document.createElement('input');
+          inp.id = 'target';
+          inp.type = 'text';
+          box(inp, 20, 20, 160, 28);
+          stage.appendChild(inp);
+          const ov = document.createElement('div');
+          ov.className = 'overlay';
+          box(ov, 10, 10, 200, 52);
+          stage.appendChild(ov);
+          return 'geom-disagreement';
         },
         // A plain actionable button (the clean control / confuser for the blocking codes).
         ok() {
