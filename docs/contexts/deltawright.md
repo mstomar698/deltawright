@@ -29,7 +29,7 @@ reusing Playwright's own actionability judgment so the verdict matches reality.
 - `src/injected/observer.ts` `readGeometry`/`coalesce` — do not turn `elementFromPoint`/rect into a membership filter.
 
 ## relevant to current task
-- `ideation-agent-delta-layer.md` · binding design doc (§3/§5/§6/§7/§10).
+- `docs/specs/ideation-agent-delta-layer.md` · binding design doc (§3/§5/§6/§7/§10).
 - `docs/plans/v0.1-milestone.md` · the plan every changed line traces to.
 - `test/fixtures/northstar.html` · the three controlled cases.
 
