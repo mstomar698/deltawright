@@ -24,9 +24,19 @@ import {
   type ChecksumMatchResult,
 } from 'deltawright/matchers';
 
+// …and the reporter subpath (#55): the default Reporter class + the pure triage core + types.
+import DeltawrightReporter, {
+  triageFailure,
+  DELTA_ATTACHMENT_NAME,
+  type Sidecar,
+  type TriageInput,
+} from 'deltawright/reporter';
+
 export const primitive = actAndObserve;
 export const mcp = { DeltawrightSession, startServer };
 export const matchers = { preflight, matchDeltaChecksum, dwMatchers };
+export const reporter = { DeltawrightReporter, triageFailure, DELTA_ATTACHMENT_NAME };
+export type Triage = { input: TriageInput; sidecar: Sidecar };
 export const opts: ActAndObserveOptions = { label: 'demo' };
 export const preflightOpts: PreflightOptions = { trialTimeoutMs: 800 };
 export type Preflight = PreflightResult;

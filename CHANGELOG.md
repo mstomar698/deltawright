@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Flake-triage side-car reporter** (#55, `deltawright/reporter`): a **zero-edit** Playwright Reporter —
+  one line in `playwright.config.ts` (`reporter: [['deltawright/reporter']]`) writes a taxonomy-labeled
+  triage side-car (`*.deltawright-sidecar.json` + `*.triage.txt`) for every **failed / timed-out** test,
+  **never** on a passing test and **never** altering pass/fail. It consumes the **one** `diagnose()`
+  engine (so it hard-gates on the #52 accuracy harness): the failing test's Playwright actionability
+  error is turned into a synthetic delta and diagnosed (passive, zero-edit), or a `deltawright-delta`
+  attachment left by `attachDelta(testInfo, delta)` is diagnosed richly (carrying the late-wave /
+  stale-rect flags). A cause below the confidence threshold is reported as **`unsure`**, and a locator
+  that never resolved degrades to **detached** — it never fabricates a cause. Pure, browser-free core
+  (`triageFailure`) is unit-tested against all five criteria. ADR 2026-07-10.
 - **Delta checksum regression matcher** (#54, `deltawright/matchers`): `expect(delta).toMatchDeltaChecksum(id)`
   + `expect(delta).toMatchDeltaSnapshot()` over the existing geometry/timing-tolerant `checksum` /
   `normalizeDelta` primitive. It **matches across pixel and timing jitter** (raw rects, computed

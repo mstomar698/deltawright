@@ -47,6 +47,10 @@
       "types": "./dist/matchers/index.d.ts",
       "import": "./dist/matchers/index.js"
     },
+    "./reporter": {
+      "types": "./dist/reporter/index.d.ts",
+      "import": "./dist/reporter/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

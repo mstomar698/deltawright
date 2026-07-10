@@ -19,6 +19,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distIndex = resolve(root, 'dist/index.js');
 const distMcp = resolve(root, 'dist/mcp/server.js');
 const distMatchers = resolve(root, 'dist/matchers/index.js');
+const distReporter = resolve(root, 'dist/reporter/index.js');
 
 // Build once if dist/ is missing so the suite is runnable standalone. CI builds
 // explicitly before the tests, so this is a no-op there.
@@ -59,6 +60,26 @@ test('should_import_matchers_subpath_from_dist', () => {
     `const okBag = m.dwMatchers && ['toBeActionable','toMatchDeltaChecksum','toMatchDeltaSnapshot']`,
     `  .every((k) => typeof m.dwMatchers[k] === 'function');`,
     `if (!okFns || !okBag) { console.error('BAD'); process.exit(2); }`,
+    `console.log('OK');`,
+  ].join('\n');
+  const out = execFileSync('node', ['--input-type=module', '-e', script], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  expect(out.trim()).toBe('OK');
+});
+
+test('should_import_reporter_subpath_from_dist', () => {
+  // The `deltawright/reporter` subpath (#55): a default-exported Reporter class + the pure triage
+  // core + the delta-attachment helper resolve from dist under plain node.
+  const url = pathToFileURL(distReporter).href;
+  const script = [
+    `import Reporter, { triageFailure, renderTriageText, attachDelta, DELTA_ATTACHMENT_NAME } from ${JSON.stringify(url)};`,
+    `const okClass = typeof Reporter === 'function' && typeof new Reporter({}).onTestEnd === 'function';`,
+    `const okFns = [triageFailure, renderTriageText, attachDelta].every((f) => typeof f === 'function');`,
+    `const okConst = DELTA_ATTACHMENT_NAME === 'deltawright-delta';`,
+    `const nullOnPass = triageFailure({ status: 'passed', title: 't', errorMessages: [], attachments: [] }) === null;`,
+    `if (!okClass || !okFns || !okConst || !nullOnPass) { console.error('BAD'); process.exit(2); }`,
     `console.log('OK');`,
   ].join('\n');
   const out = execFileSync('node', ['--input-type=module', '-e', script], {

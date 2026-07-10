@@ -192,6 +192,25 @@ It matches across pixel/timing jitter but fails on a **verdict or tree change**,
 `deltawright checksum --update`) and rendering a structural diff on mismatch. A green checksum is
 **regression-only** — it proves the delta's structure is unchanged, not that it's correct.
 
+## Flake-triage reporter (zero-edit)
+
+Add one line to `playwright.config.ts` and every failed test gets a taxonomy-labeled triage side-car,
+with **no per-test changes**:
+
+```ts
+// playwright.config.ts
+export default defineConfig({
+  reporter: [['list'], ['deltawright/reporter']],
+});
+```
+
+For each failed / timed-out test it writes `*.deltawright-sidecar.json` + `*.triage.txt` — never on a
+passing test, never altering pass/fail. The cause comes from the same `diagnose()` engine (the failing
+Playwright error is diagnosed as a synthetic delta); a low-confidence cause is reported as **`unsure`**
+and a locator that was already gone degrades to **detached** — it never fabricates. Attach a real
+delta with `attachDelta(testInfo, delta)` for a geometry-grounded diagnosis that also carries the
+late-wave / stale-rect flags.
+
 ## How it works
 
 ```
