@@ -78,6 +78,86 @@ server.registerTool(
   async () => text(await session.snapshot()),
 );
 
+// --- #60 agent-assist debug tools (LIVE-REPRODUCE; additive) ------------------------------------
+// Each drives THIS server's own browser session and diagnoses what happens here. They do NOT read
+// your live Playwright test run (the session has no handle on it), and NONE mutates a test or
+// "fixes" a flake — they only observe and explain. The action tools share act_and_observe's schema.
+const actionSchema = {
+  action: z.enum(['click', 'fill', 'select', 'check', 'press']),
+  selector: z.string().describe('CSS selector, or [data-dw-ref="eN"] from a prior delta'),
+  value: z.string().optional().describe('Value for fill/select'),
+  key: z.string().optional().describe('Key for press, e.g. "Enter"'),
+};
+
+server.registerTool(
+  'preflight',
+  {
+    title: 'Preflight a selector',
+    description:
+      'LIVE-REPRODUCE (this session, NOT your test run): probe one selector on the current page ' +
+      "and return Playwright's AUTHORITATIVE actionability verdict, what geometry alone concluded, " +
+      'and whether they agreed. Reads only — performs no action, mutates nothing.',
+    inputSchema: { selector: z.string().describe('CSS selector to preflight') },
+  },
+  async ({ selector }) => text(JSON.stringify(await session.preflightSelector(selector), null, 2)),
+);
+
+server.registerTool(
+  'observe_settle',
+  {
+    title: 'Observe settle',
+    description:
+      'LIVE-REPRODUCE (this session, NOT your test run): perform ONE action and report the settle ' +
+      'SIGNAL — when the DOM went structurally quiet, whether that was inconclusive (hit the cap), ' +
+      'and whether a late wave landed. A signal, NOT a readiness guarantee; it does not retry, ' +
+      'suppress a flake, or mutate the test.',
+    inputSchema: actionSchema,
+  },
+  async ({ action, selector, value, key }) =>
+    text(
+      JSON.stringify(
+        await session.observeSettle(buildAction(action, selector, value, key)),
+        null,
+        2,
+      ),
+    ),
+);
+
+server.registerTool(
+  'explain_delta',
+  {
+    title: 'Explain delta',
+    description:
+      'LIVE-REPRODUCE (this session, NOT your test run): perform ONE action and return its compact ' +
+      'delta WITH the root-cause diagnostics section — the same explanation an author would read. ' +
+      'Observes and explains only; it does not change the page permanently or fix anything.',
+    inputSchema: actionSchema,
+  },
+  async ({ action, selector, value, key }) =>
+    text(await session.explainDelta(buildAction(action, selector, value, key))),
+);
+
+server.registerTool(
+  'diagnose',
+  {
+    title: 'Diagnose action',
+    description:
+      'LIVE-REPRODUCE (this session, NOT your test run): perform ONE action and return the gated ' +
+      "taxonomy read — {category, confidence, unsure, geomDisagreement} grounded in Playwright's " +
+      'AUTHORITATIVE verdict. When no cause crosses the confidence gate it stays `unsure` (never a ' +
+      'fabricated cause). It reports a hypothesis; it does not mutate the test or fix a flake.',
+    inputSchema: actionSchema,
+  },
+  async ({ action, selector, value, key }) =>
+    text(
+      JSON.stringify(
+        await session.diagnoseAction(buildAction(action, selector, value, key)),
+        null,
+        2,
+      ),
+    ),
+);
+
 /**
  * Start the stdio MCP server. Invoked automatically when this file is run directly
  * (the `deltawright-mcp` bin, `deltawright mcp`, or `tsx src/mcp/server.ts`); exported

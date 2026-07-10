@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Agent-assist MCP debug tools** (#60, additive on the `deltawright/mcp` server): four **live-reproduce**
+  tools — `preflight`, `observe_settle`, `explain_delta`, and `diagnose` — that drive the MCP session's
+  **own** browser and diagnose what happens there. `diagnose` returns the gated taxonomy read
+  `{ category, confidence, unsure, geomDisagreement }` grounded in Playwright's **authoritative**
+  verdict (below the confidence gate, and for the `unknown` bucket, it stays **`unsure`** — never a
+  fabricated cause). It consumes a new **shared reducer** (`summarizeDiagnoses`) that the #55 reporter
+  now uses too, so the MCP and the side-car can't drift on which cause crossed the gate. Every tool
+  (description **and** result) carries a **live-reproduce disclaimer**: these do **NOT** read your live
+  Playwright test run (the session has no handle on it — a real past-run/trace reader is **cut** this
+  cycle), and **none mutates a test or fixes a flake**. The existing `navigate` / `act_and_observe` /
+  `snapshot` tools are unchanged (default path byte-identical). Final gated Wave-2 capability. ADR
+  2026-07-10.
 - **Flake-priority aggregator** (#59, `deltawright/aggregate` + a `deltawright aggregate` bin): a
   **read-only** pass over the #55 reporter's `*.deltawright-sidecar.json` artifacts across runs → a
   **JSONL** stream (`{ testId, runId, code, confidence, category, hitMaxWait, disagreement, … }`) and a
