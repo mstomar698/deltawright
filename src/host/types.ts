@@ -221,6 +221,13 @@ export interface SettleResult {
   hitMaxWait: boolean;
 }
 
+/**
+ * Default v0.1 settle knobs. Lives on this side-effect-free leaf (not in actAndObserve) so lean
+ * consumers — e.g. `deltawright/wait` — can reference it without dragging actAndObserve's
+ * screenshot-diff/pngjs subtree. `actAndObserve` re-exports it as the canonical home.
+ */
+export const DEFAULT_SETTLE: SettleOptions = { quietMs: 120, maxWaitMs: 2000, animMaxMs: 1000 };
+
 export interface CollectResult {
   nodes: RawNode[];
   rawRecords: number;

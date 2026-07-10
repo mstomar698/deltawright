@@ -22,6 +22,7 @@ await tsupBuild({
     'mcp/server': 'src/mcp/server.ts',
     'matchers/index': 'src/matchers/index.ts',
     'reporter/index': 'src/reporter/index.ts',
+    'wait/index': 'src/wait/index.ts',
     cli: 'src/cli.ts',
   },
   outDir: 'dist',
