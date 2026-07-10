@@ -20,6 +20,7 @@ const distIndex = resolve(root, 'dist/index.js');
 const distMcp = resolve(root, 'dist/mcp/server.js');
 const distMatchers = resolve(root, 'dist/matchers/index.js');
 const distReporter = resolve(root, 'dist/reporter/index.js');
+const distWait = resolve(root, 'dist/wait/index.js');
 
 // Build once if dist/ is missing so the suite is runnable standalone. CI builds
 // explicitly before the tests, so this is a no-op there.
@@ -80,6 +81,21 @@ test('should_import_reporter_subpath_from_dist', () => {
     `const okConst = DELTA_ATTACHMENT_NAME === 'deltawright-delta';`,
     `const nullOnPass = triageFailure({ status: 'passed', title: 't', errorMessages: [], attachments: [] }) === null;`,
     `if (!okClass || !okFns || !okConst || !nullOnPass) { console.error('BAD'); process.exit(2); }`,
+    `console.log('OK');`,
+  ].join('\n');
+  const out = execFileSync('node', ['--input-type=module', '-e', script], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  expect(out.trim()).toBe('OK');
+});
+
+test('should_import_wait_subpath_from_dist', () => {
+  // The `deltawright/wait` subpath (#58): the observeConsequences settle-signal resolves from dist.
+  const url = pathToFileURL(distWait).href;
+  const script = [
+    `import { observeConsequences } from ${JSON.stringify(url)};`,
+    `if (typeof observeConsequences !== 'function') { console.error('BAD'); process.exit(2); }`,
     `console.log('OK');`,
   ].join('\n');
   const out = execFileSync('node', ['--input-type=module', '-e', script], {

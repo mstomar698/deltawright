@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`observeConsequences(page, action)` settle-as-a-wait** (#58, `deltawright/wait`): a **locator-free**
+  observe/explain completion **signal** → `{ settleMs, hitMaxWait, suspectedEarly, observed }`. It arms
+  the observer, performs the action, waits for **structural quiescence**, and reports the gap-E
+  late-wave heuristic (`suspectedEarly`) — and it **skips the O(nodes) reconcile** (no per-node
+  Playwright probes / geometry), its cost win vs `actAndObserve` (though the default late-watch window
+  means it is not unconditionally faster wall-clock; set `lateWatchMs: 0` to skip it). It is explicitly **NOT** a completion
+  guarantee, a retry, or a flake suppressant (a named non-goal): the result type exposes only settle
+  signals (no `ready`/`safe`/`settled` boolean, no retry knob) and `hitMaxWait` / `suspectedEarly` flag
+  an inconclusive or possibly-early settle. Degrades with a reason under a strict CSP / non-Chromium.
+  Second gated Wave-2 capability. ADR 2026-07-10.
 - **`suggest(delta)` new-test authoring aid** (#57): a **pure** function → `{ assertions, selectors,
   warnings }` that proposes candidate Playwright locators for a delta's changed nodes, ranked
   **getByRole > getByText > testid > css**, and a `toBeActionable()` assertion **only** for nodes

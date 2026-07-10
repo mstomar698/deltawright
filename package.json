@@ -51,6 +51,10 @@
       "types": "./dist/reporter/index.d.ts",
       "import": "./dist/reporter/index.js"
     },
+    "./wait": {
+      "types": "./dist/wait/index.d.ts",
+      "import": "./dist/wait/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

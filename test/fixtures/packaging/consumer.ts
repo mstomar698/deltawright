@@ -33,12 +33,19 @@ import DeltawrightReporter, {
   type Sidecar,
   type TriageInput,
 } from 'deltawright/reporter';
+// …and the wait subpath (#58): the settle-signal fn + its observation type.
+import {
+  observeConsequences,
+  type ConsequenceObservation,
+} from 'deltawright/wait';
 
 export const primitive = actAndObserve;
 export const mcp = { DeltawrightSession, startServer };
 export const matchers = { preflight, matchDeltaChecksum, dwMatchers };
 export const reporter = { DeltawrightReporter, triageFailure, DELTA_ATTACHMENT_NAME };
 export type Triage = { input: TriageInput; sidecar: Sidecar };
+export const wait = { observeConsequences };
+export type Consequence = ConsequenceObservation;
 export const opts: ActAndObserveOptions = { label: 'demo' };
 export const suggestFn = suggest;
 export type Suggestions = SuggestResult;

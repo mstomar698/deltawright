@@ -23,6 +23,8 @@ below is a separate import you add only when you want it.
 | **Fail fast** on a not-actionable target (preflight) | `deltawright/matchers` (#53) | `expect.extend(dwMatchers); await expect(page.getByRole('button', { name: 'Save' })).toBeActionable();` |
 | Read that verdict **structurally**, standalone | `preflight` | `const { verdict, reason, geometryVerdict, agreed } = await preflight(locator);` |
 | **Regression-guard** a delta's structure (jitter-tolerant) | `deltawright/matchers` (#54) | `expect(delta).toMatchDeltaChecksum('save-opens-toast');` |
+| Wait for the DOM to **settle** after an action (a signal, cheaper than a delta) | `deltawright/wait` (#58) | `const { settleMs, hitMaxWait, suspectedEarly } = await observeConsequences(page, (p) => p.click('#save'));` |
+| **Suggest** selectors + assertions for a delta's changed nodes | `suggest` (#57) | `const { selectors, assertions, warnings } = suggest(delta);` |
 | Triage **every failing test** with zero test edits | `deltawright/reporter` (#55) | `reporter: [['list'], ['deltawright/reporter']]` in `playwright.config.ts` |
 | …with a **geometry-grounded** cause on a specific action | `attachDelta` (rich mode, a test edit) | `await attachDelta(testInfo, await actAndObserve(page, act));` |
 | Drive Deltawright from an **agent** (MCP) | `deltawright mcp` | MCP config: `command: "npx", args: ["deltawright-mcp"]` |
@@ -47,6 +49,8 @@ Subpaths: `deltawright` (core), `deltawright/matchers` (#53/#54), `deltawright/r
 | **Token size** | The delta is small in absolute terms (~100 tokens), not necessarily smaller than the incumbent. | Real large-SPA wins are measured (#23: ~1% of a re-snapshot); the general "cuts tokens vs before+after diff" is app-dependent. |
 | **Diagnosis accuracy** | Corpus-relative, not real-prod. | 100% recall / 0% silent-miss **on the 36-case seed**; gated by `npm run bench:accuracy`. Real-app fidelity is blocked on the owner's apps (#25/#41). |
 | **Checksum fidelity** | A green checksum is **regression-only**. | It proves the normalized structure/semantics is unchanged, *not* that the delta is correct or models a real app. It also does **not** distinguish *which* attribute changed on an `attrChanged` node (a documented blind spot). |
+| **Settle-as-a-wait** | `observeConsequences` is a **signal, not a guarantee**. | It reports when the DOM went structurally quiet (`settleMs`), whether that was inconclusive (`hitMaxWait`), and whether a late wave landed (`suspectedEarly`) — it is NOT a completion guarantee, retry, or flake suppressant, and exposes no `ready` boolean. It saves the **O(nodes) reconcile** (its cost win) but is not unconditionally faster wall-clock — the default late-watch adds a fixed window (`lateWatchMs`, set 0 to skip). `suspectedEarly` is coarse: light-DOM only (misses open-shadow-root late waves) and can trip on background churn. |
+| **Suggested selectors** | Every `suggest()` selector is a **candidate to verify**. | role/name are heuristic reads (not Playwright's a11y algorithm), a `name` may be an aria-label, and uniqueness/durability are not checked; `getByTestId` and the ephemeral `data-dw-ref` are never suggested. |
 | **Triage cause** | A reporter cause is a **hypothesis**. | It is derived from Playwright's own failure signal (passive) or an attached delta (rich); a low-confidence cause is `unsure` and a gone locator is `detached` — it never fabricates. |
 
 ## Notes

@@ -2,6 +2,7 @@ import type { Frame, Page } from '@playwright/test';
 import { ensureInjected, InjectionBlockedError } from './inject';
 import { annotateActionability, geometryVerdict } from './actionability';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
+import { DEFAULT_SETTLE } from './types';
 import type {
   BaselineOptions,
   CollectResult,
@@ -96,11 +97,9 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   minPixels?: number;
 }
 
-export const DEFAULT_SETTLE: SettleOptions = {
-  quietMs: 120,
-  maxWaitMs: 2000,
-  animMaxMs: 1000,
-};
+// Canonical re-export for the delta path + the main entry; the value lives on the side-effect-free
+// `types` leaf (imported below) so lean subpaths can reference it without this module's pngjs subtree.
+export { DEFAULT_SETTLE };
 
 export const DEFAULT_RECONCILE_CONCURRENCY = 12;
 
