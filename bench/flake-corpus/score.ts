@@ -163,9 +163,10 @@ export interface Metrics {
   /** confirmedCorrect / (confirmedCorrect + confirmedWrong) — the ≥0.95 target band */
   confirmedPrecision: number;
   // Verdict-vs-reality is split by case kind (F1): only LIVE cases exercise Playwright's real
-  // verdict, so they are the true DW-02 anchor and the ONLY reporting-first hard floor. Delta
-  // cases re-check a hand-authored constant `diagnose()` never touches — self-consistency, not
-  // reality — so they are reported separately and NEVER gate.
+  // verdict, so they are the true DW-02 anchor — the gate's first, short-circuiting floor (the
+  // confirmed-precision and silent-miss floors gate too, post-#71 ratchet). Delta cases re-check a
+  // hand-authored constant `diagnose()` never touches — self-consistency, not reality — so they are
+  // reported separately and NEVER gate.
   liveVerdictOracleCases: number;
   liveVerdictMatches: number;
   /** verdictMatches / oracleCases over LIVE cases — DW-02, must be 1 (and oracleCases must be >0) */
@@ -223,15 +224,39 @@ export function aggregate(scores: CaseScore[]): Metrics {
 }
 
 /**
- * The reporting-first gate (F1/F5): the run FAILS only on a real DW-02 reality regression — the
- * LIVE verdict accuracy must be 100% AND there must be at least one live oracle case (so the gate
- * can never pass vacuously if the corpus's `verdict` fields disappear). Precision/silent-miss are
- * reported, not gated, until #71's remaining signals land.
+ * Gate floors. DW-02 (live verdict-vs-reality) is a structural 100% and always gated. The
+ * diagnosis floors below were RATCHETED from reported to gated once #71 closed every silent miss
+ * (recall 100% / silent-miss 0%): they now hard-fail the run, so a future corpus code the engine
+ * can't yet handle — or a confident mislabel — fails CI instead of merely being reported.
+ */
+export const CONFIRMED_PRECISION_FLOOR = 0.95;
+export const SILENT_MISS_CEILING = 0.05;
+
+/**
+ * The gate (F1/F5 + the #71 ratchet). The run FAILS on, in order (a reality drift short-circuits
+ * before the diagnosis floors):
+ *  - a DW-02 reality regression — the LIVE verdict accuracy must be 100% AND there must be at least
+ *    one live oracle case (so the gate can't pass vacuously if the corpus's `verdict` fields vanish);
+ *  - a precision VACUITY — zero confirmed-band emissions across the whole corpus. `confirmedPrecision`
+ *    is `ratio(0,0) === 1`, a vacuous PASS, so it is guarded like DW-02: today's corpus emits 8
+ *    confirmed codes, and a regression that downgraded EVERY confirmed code to `suspected` would
+ *    otherwise slip through (those cases stay `hit`s with a matching code, so the silent-miss ceiling
+ *    does NOT catch them — only the ungated `confidenceAccuracy` would move). This guard closes that;
+ *  - a precision regression — confirmed-band precision below the floor (a confident code is mislabeled);
+ *  - a silent-miss regression — the silent-miss rate above the ceiling (a real cause went undiagnosed).
+ * A PARTIAL confidence downgrade (some confirmed codes still emitted confirmed) is not gated here —
+ * band miscalibration on individual codes is surfaced by the informational `confidenceAccuracy`.
  */
 export function gateFailure(m: Metrics): string | null {
   if (m.liveVerdictOracleCases === 0)
     return 'no live verdict-oracle cases — the DW-02 gate would pass vacuously';
   if (m.liveVerdictAccuracy !== 1)
     return `live verdict-vs-reality is ${(m.liveVerdictAccuracy * 100).toFixed(1)}% (not 100%) — a DW-02 regression`;
+  if (m.confirmedCorrect + m.confirmedWrong === 0)
+    return 'no confirmed-band emissions — confirmed precision would pass vacuously (every confirmed code downgraded?)';
+  if (m.confirmedPrecision < CONFIRMED_PRECISION_FLOOR)
+    return `confirmed-band precision is ${(m.confirmedPrecision * 100).toFixed(1)}% (< ${CONFIRMED_PRECISION_FLOOR * 100}%) — a confident diagnosis is mislabeled`;
+  if (m.silentMissRate > SILENT_MISS_CEILING)
+    return `silent-miss rate is ${(m.silentMissRate * 100).toFixed(1)}% (> ${SILENT_MISS_CEILING * 100}%) — a real cause went undiagnosed`;
   return null;
 }

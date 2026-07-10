@@ -1,14 +1,14 @@
-Deltawright accuracy harness (#52) — CORPUS-RELATIVE, reporting-first
+Deltawright accuracy harness (#52) — CORPUS-RELATIVE, gated
 ========================================================================
 
 cases: 36  (specific-cause: 18, unsure-label: 18)
 
-HEADLINE
-  verdict-vs-reality LIVE (DW-02 gate):     100.0%  (16/16)  PASS
+HEADLINE  (all three gates now hard-fail the run; recall is informational)
+  verdict-vs-reality LIVE (DW-02 gate):    100.0%  (16/16)  PASS
   verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
-  confirmed-band precision (target ≥95%):  100.0%  (8 correct / 0 wrong)  [reported]
+  confirmed-band precision (gate ≥95%):    100.0%  (8 correct / 0 wrong)  PASS
   recall (labeled cause emitted):          100.0%  (18/18)
-  silent-miss rate (target ≤5%):           0.0%  (0/18)  [reported]
+  silent-miss rate (gate ≤5%):             0.0%  (0/18)  PASS
   confidence-band accuracy (on hits):      100.0%
 
 OUTCOMES BY CASE
@@ -55,6 +55,6 @@ HONESTY STAMP
   self-consistency, reported separately, never gated (F1).
   Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);
   recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).
-  All 18 taxonomy codes now emit (recall 100% / silent-miss 0% on this seed); #71 closed
-  its detached-re-render + capture-integrity signals. Precision/silent-miss are still
-  REPORTED (not gated) — the floors ratchet to hard gates next; only DW-02 hard-fails today.
+  All 18 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision
+  (≥95%), and silent-miss (≤5%) floors are all GATED now — a regression in any hard-fails CI.
+  Corpus-relative floors: they guarantee the engine keeps pace with the corpus, not real prod.

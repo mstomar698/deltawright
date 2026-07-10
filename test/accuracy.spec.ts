@@ -9,9 +9,10 @@ import type { CorpusCase } from '../bench/flake-corpus/cases';
 import { scoreCase, aggregate, gateFailure, type ScoredInput } from '../bench/flake-corpus/score';
 
 // The accuracy harness (#52) scores diagnose() against the labeled corpus (#51). These guard the
-// PURE scorer contract (browser-free) + the DW-02 verdict floor on the delta cases and a live
-// smoke — so a scoring regression or a reality (verdict) drift fails CI. The full 36-case sweep is
-// `npm run bench:accuracy` (reporting-first: only the DW-02 floor fails the run today).
+// PURE scorer contract (browser-free) + the three gated floors (DW-02 verdict-vs-reality,
+// confirmed-band precision ≥95%, silent-miss ≤5%) and a couple of live smokes — so a scoring
+// regression, a reality drift, or a diagnosis-quality regression fails CI. The full 36-case sweep
+// is `npm run bench:accuracy`.
 
 const FLAKE_DIR = resolve(process.cwd(), 'bench/flake-corpus');
 
@@ -122,7 +123,90 @@ test('aggregate: computes recall, silent-miss, confirmed precision, and splits t
   expect(m.liveVerdictOracleCases).toBe(1);
   expect(m.liveVerdictAccuracy).toBe(1);
   expect(m.deltaVerdictOracleCases).toBe(0);
-  expect(gateFailure(m)).toBeNull(); // one live oracle, 100% → passes
+  // DW-02 passes (one live oracle, 100%), but this synthetic metric has a 50% silent-miss, which
+  // the RATCHETED gate now hard-fails (was merely reported pre-#71-close).
+  expect(gateFailure(m)).toMatch(/silent-miss/i);
+});
+
+test('ratcheted gate: precision <95% and silent-miss >5% now hard-fail (DW-02 short-circuits first)', () => {
+  const liveHit = () =>
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'disabled',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
+      input([diag('disabled', 'confirmed')], 'NOT-actionable'),
+    );
+
+  // All three floors clear → the run passes.
+  expect(gateFailure(aggregate([liveHit()]))).toBeNull();
+
+  // A confident non-label co-emission drags confirmed precision to 0.5 → precision gate fails
+  // (DW-02 still 100%, so it is the precision message that surfaces).
+  const lowPrecision = aggregate([
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'disabled',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
+      input([diag('disabled', 'confirmed'), diag('off-screen', 'confirmed')], 'NOT-actionable'),
+    ),
+  ]);
+  expect(gateFailure(lowPrecision)).toMatch(/precision/i);
+
+  // A live silent-miss alongside a clean hit → silent-miss 50% > 5%, precision still 100% → the
+  // silent-miss gate fires (after precision passes).
+  const highSilentMiss = aggregate([
+    liveHit(),
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'off-screen',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
+      input([], 'NOT-actionable'),
+    ),
+  ]);
+  expect(gateFailure(highSilentMiss)).toMatch(/silent-miss/i);
+
+  // Precision-VACUITY guard (review fix): a global confidence downgrade — every code emitted at the
+  // correct label but a lower band — leaves 0 confirmed emissions (precision = ratio(0,0) = 1, a
+  // vacuous pass) while the cases stay hits (silent-miss 0). Neither the precision floor nor the
+  // silent-miss ceiling would catch it, so the gate guards `confirmedCorrect + confirmedWrong === 0`.
+  const noConfirmed = aggregate([
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'pointer-events-none',
+        confidence: 'suspected',
+        verdict: 'NOT-actionable',
+      }),
+      input([diag('pointer-events-none', 'suspected')], 'NOT-actionable'),
+    ),
+  ]);
+  expect(noConfirmed.confirmedPrecision).toBe(1); // vacuous — 0 confirmed emissions
+  expect(noConfirmed.silentMissRate).toBe(0); // the case is a hit, not a silent-miss
+  expect(gateFailure(noConfirmed)).toMatch(/vacuously/i); // …yet the guard fails it
+
+  // Short-circuit ORDER: a live case that both drifts the verdict (DW-02) AND is a silent-miss →
+  // the DW-02 message wins (it is checked first), proving the ordering the test name claims.
+  const dw02AndSilent = aggregate([
+    scoreCase(
+      caseOf({
+        kind: 'live',
+        code: 'off-screen',
+        confidence: 'confirmed',
+        verdict: 'NOT-actionable',
+      }),
+      input([], 'ACTIONABLE'),
+    ),
+  ]);
+  expect(gateFailure(dw02AndSilent)).toMatch(/DW-02/);
 });
 
 test('F2: a confident non-label code co-emitted on a hit case still lowers confirmed precision', () => {
