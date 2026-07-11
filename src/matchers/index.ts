@@ -23,6 +23,13 @@ export { preflight, toBeActionable } from './actionable';
 export type { PreflightOptions, PreflightResult } from './actionable';
 export { matchDeltaChecksum } from './checksum';
 export type { ChecksumMatchResult, MatchDeltaChecksumOptions } from './checksum';
+export { verifySuggestions } from './verify-suggest';
+export type {
+  VerifiedSuggestResult,
+  VerifiedSelectorSuggestion,
+  VerifyStatus,
+  VerifySuggestionsOptions,
+} from './verify-suggest';
 
 import type { PreflightOptions } from './actionable';
 

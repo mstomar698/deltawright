@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-07-11
+
+First Wave-2 (correctness depth) release: a page-aware durable-selector recommender. Plus the Wave-1
+composite GitHub Action (infra).
+
+### Added
+
+- **Durable-selector recommender** (Wave-2 #6, `deltawright/matchers`): `verifySuggestions(page, delta)`
+  — a page-aware layer over the pure `suggest()` (which #57 punted). It rounds each suggested selector
+  through the live page: `locator.count()` for uniqueness and same-element identity (via Playwright's
+  `.and()` against the delta's `data-dw-ref`), classifying each `verified` / `ambiguous` /
+  `unique-elsewhere` / `unconfirmed` / `broken`, re-ranking verified-first, and surfacing a paste-ready
+  `bestVerified` — or **`null` with a warning when nothing resolves uniquely** (DW-03: stay unsure).
+  Suggested `toBeActionable()` assertions are re-pointed onto each node's verified selector (dropped,
+  with a warning, when a node has none), so it never hands back an assertion built on a selector it
+  proved ambiguous. `suggest()` stays pure and unchanged. Honest limit: "stability" is single-page
+  uniqueness + same-element identity, **not** cross-render history (no selector store exists to back
+  that). ADR 2026-07-11.
+
 ### Added (infrastructure — not shipped in the npm package)
 
 - **Composite GitHub Action** (Wave-1 #4, repo-root `action.yml`): one `uses: mstomar698/deltawright@<ref>`
