@@ -27,6 +27,7 @@ below is a separate import you add only when you want it.
 | **Suggest** selectors + assertions for a delta's changed nodes | `suggest` (#57) | `const { selectors, assertions, warnings } = suggest(delta);` |
 | Triage **every failing test** with zero test edits | `deltawright/reporter` (#55) | `reporter: [['list'], ['deltawright/reporter']]` in `playwright.config.ts` |
 | **Rank flaky tests** across runs from the triage side-cars | `deltawright/aggregate` (#59) | `deltawright aggregate --report ./run-1 ./run-2` (or `aggregate(readSidecars(dirs))`) |
+| …as a **static HTML dashboard** a lead opens each morning | `aggregate --html` (Wave-1) | `deltawright aggregate --html ./runs > flakes.html` (or `renderHtml(aggregate(records))`) — self-contained, theme-aware, view-only |
 | …with a **geometry-grounded** cause on a specific action | `attachDelta` (rich mode, a test edit) | `await attachDelta(testInfo, await actAndObserve(page, act));` |
 | Drive Deltawright from an **agent** (MCP) | `deltawright mcp` | MCP config: `command: "npx", args: ["deltawright-mcp"]` |
 | Let an **agent live-reproduce + diagnose** a failure (in the MCP browser) | MCP debug tools (#60) | `diagnose` / `preflight` / `observe_settle` / `explain_delta` tools — over the MCP session's own page |

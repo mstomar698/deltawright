@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-11
+
+First release of the v0.7.x "Trust & Adoption hardening" wave: a view-only flake dashboard, plus the
+CI accuracy gate and tag-triggered OIDC release automation. The diagnosis engine is unchanged.
+
+### Added
+
+- **`deltawright aggregate --html`** (Wave-1): a self-contained, theme-aware static HTML dashboard
+  over the existing `FlakeReport` — most-flaky-first table, dominant-category chips, a proportional
+  category bar, settle-cap / disagreement rates, and the `unsure` bucket in its **own** panel (never
+  folded into a category). New pure export `renderHtml(report)` from `deltawright/aggregate`; the CLI
+  prints the document to stdout (`--html` wins over `--report`; redirect it, e.g. `> flakes.html`).
+  View-only: no engine change, and the module writes nothing. Test IDs are HTML-escaped (a malicious
+  test name cannot inject markup). Inline CSS + a tiny theme toggle, no external assets — opens
+  offline anywhere.
+
 ### Changed (infrastructure — not shipped in the npm package)
 
 - **CI now runs the accuracy floors on every PR** (Wave-1): an `accuracy` job runs
