@@ -229,6 +229,10 @@ export function readSidecars(dirs: string[]): FlakeRecord[] {
   return records;
 }
 
+// The self-contained, theme-aware HTML dashboard over this same FlakeReport (Wave-1 #2). Kept in a
+// sibling module so the large template stays out of the aggregation core; it too writes nothing.
+export { renderHtml } from './html';
+
 /** Render a compact human summary of a report (for the CLI `--report` view). */
 export function renderReport(report: FlakeReport): string {
   const lines = [

@@ -9,8 +9,10 @@ Usage:
   deltawright mcp                        Start the MCP server on stdio (same as deltawright-mcp)
   deltawright checksum --update -- <cmd> Run <cmd> with delta-checksum baselines set to UPDATE
                                          (e.g. deltawright checksum --update -- npx playwright test)
-  deltawright aggregate [--report] <dir> Read-only: rank flaky tests from triage side-cars (#55) —
-                                         JSONL by default, --report for a ranked summary
+  deltawright aggregate [--report|--html] <dir>
+                                         Read-only: rank flaky tests from triage side-cars (#55) —
+                                         JSONL by default, --report for a ranked summary, --html for
+                                         a self-contained dashboard (redirect: > flakes.html)
   deltawright --version, -v              Print the installed version
   deltawright --help, -h                 Show this help
 
@@ -68,22 +70,31 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'aggregate': {
       // Read-only flake aggregation (#59) over the reporter's triage side-cars. JSONL by default; a
-      // ranked human summary with --report. Writes nothing.
+      // ranked human summary with --report; a self-contained HTML dashboard with --html (redirect it
+      // to a file, e.g. `> flakes.html`). Writes nothing itself.
       const rest = argv.slice(1);
+      const html = rest.includes('--html');
       const report = rest.includes('--report');
       const dirs = rest.filter((a) => !a.startsWith('--'));
       if (dirs.length === 0) {
-        console.error('usage: deltawright aggregate [--report] <dir> [<dir> ...]\n');
+        console.error('usage: deltawright aggregate [--report | --html] <dir> [<dir> ...]\n');
         console.error(
-          '  (each <dir> is scanned for *.deltawright-sidecar.json; one run = one dir)',
+          '  (each <dir> is scanned for *.deltawright-sidecar.json; one run = one dir)\n' +
+            '  --html prints a static dashboard to stdout — redirect it, e.g. > flakes.html',
         );
         return 1;
       }
-      const { readSidecars, aggregate, toJSONL, renderReport } = await import(
+      const { readSidecars, aggregate, toJSONL, renderReport, renderHtml } = await import(
         new URL('./aggregate/index.js', import.meta.url).href
       );
       const records = readSidecars(dirs);
-      console.log(report ? renderReport(aggregate(records)) : toJSONL(records));
+      // --html wins over --report; both derive from the same aggregate(records).
+      const out = html
+        ? renderHtml(aggregate(records))
+        : report
+          ? renderReport(aggregate(records))
+          : toJSONL(records);
+      console.log(out);
       return 0;
     }
     case '-v':
