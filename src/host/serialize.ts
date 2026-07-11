@@ -59,6 +59,19 @@ function nodeLine(node: DeltaNode): string {
   }
   if (node.kind === 'textChanged') parts.push('text-changed');
 
+  // #8: additive a11y-state annotations. `state:` shows the VALUE direction of a toggled state
+  // attribute (aria-expanded false→true = "the menu is now open") that `changed:` names alone can't;
+  // `live:` marks a change announced by a live region. Both absent → this line is byte-unchanged.
+  if (node.stateChanges?.length) {
+    // ∅ = attribute absent; "" = a present native boolean (disabled/open/…) whose value is the empty
+    // string — quoted so it can't read as a truncated/blank value.
+    const dir = (v: string | null) => (v === null ? '∅' : v === '' ? '""' : v);
+    parts.push(
+      `state:${node.stateChanges.map((s) => `${s.attr}=${dir(s.old)}→${dir(s.new)}`).join(',')}`,
+    );
+  }
+  if (node.ariaLive) parts.push(`live:${node.ariaLive}`);
+
   // Reachability hint for added container nodes an agent won't directly click.
   if (node.geometry?.hitSelf && !node.interactive && node.kind === 'added') {
     parts.push('topmost');

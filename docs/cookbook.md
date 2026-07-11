@@ -17,6 +17,7 @@ below is a separate import you add only when you want it.
 | You want to… | Capability | One-line wiring |
 |---|---|---|
 | See **what changed** after one action + whether it's actionable | `actAndObserve` (core) | `const delta = await actAndObserve(page, (p) => p.click('#save'), { label: 'save' });` |
+| See the **direction** of an ARIA state toggle / a live-region announcement | delta node `stateChanges` / `ariaLive` (Wave-2) | `node.stateChanges // [{ attr: 'aria-expanded', old: 'false', new: 'true' }]`; serialized as `state:aria-expanded=false→true` / `live:polite` |
 | Get a **compact, token-tiny** render of that delta | `render` | `console.log(render(delta).text);` |
 | Ask **why** a node is not actionable (root cause) | `diagnose` | `for (const d of diagnose(delta).diagnoses) console.log(d.code, d.confidence);` |
 | …or fold the diagnosis into the text output | `serialize` opt-in | `render(delta, { diagnostics: true }).text` |

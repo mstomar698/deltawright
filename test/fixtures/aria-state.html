@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright ARIA state fixture</title>
+  </head>
+  <body>
+    <h1>ARIA state</h1>
+    <!-- Clicking #toggle flips ONLY the button's aria-expanded — no structural DOM change. Today the
+         delta reports "aria-expanded changed"; #8 adds the direction (false→true = expanded). -->
+    <button id="toggle" aria-expanded="false">Toggle menu</button>
+
+    <!-- Clicking #announce appends a message into a live region (role=status, aria-live=polite) — a
+         change assistive tech would ANNOUNCE. -->
+    <button id="announce">Save</button>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <!-- A SILENCED region (aria-live="off"): a change here is NOT announced, so it must NOT carry a
+         live annotation. -->
+    <button id="announce-off">Save silently</button>
+    <div id="status-off" aria-live="off"></div>
+
+    <!-- Clicking #toggle-disabled flips the native boolean `disabled` attribute (value "" when
+         present) — tests the empty-string state-value rendering. -->
+    <button id="toggle-disabled">Disable field</button>
+    <input id="field" type="text" />
+
+    <script>
+      const btn = document.getElementById('toggle');
+      btn.addEventListener('click', () => {
+        btn.setAttribute('aria-expanded', btn.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+      });
+      function appendTo(id) {
+        const msg = document.createElement('div');
+        msg.textContent = 'Saved!';
+        document.getElementById(id).appendChild(msg);
+      }
+      document.getElementById('announce').addEventListener('click', () => appendTo('status'));
+      document.getElementById('announce-off').addEventListener('click', () => appendTo('status-off'));
+      document.getElementById('toggle-disabled').addEventListener('click', () => {
+        document.getElementById('field').setAttribute('disabled', '');
+      });
+    </script>
+  </body>
+</html>

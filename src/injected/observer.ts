@@ -13,6 +13,7 @@
 
 import type {
   RawNode,
+  AttrStateChange,
   GeometryRead,
   ChangeKind,
   SettleOptions,
@@ -422,7 +423,7 @@ declare global {
   interface NetDelta {
     addedRoots: Element[];
     removed: Element[];
-    attrChanged: Array<{ el: Element; attrs: string[] }>;
+    attrChanged: Array<{ el: Element; attrs: string[]; stateChanges: AttrStateChange[] }>;
     textChanged: Element[];
     droppedBackground: number;
     /**
@@ -540,21 +541,27 @@ declare global {
     // net-compare: keep an attribute only if its current value differs from the
     // earliest observed oldValue (drops churn-to-original; skips our own stamp).
     // Attributes already churning in the pre-arm baseline are dropped as background.
-    const attrChanged: Array<{ el: Element; attrs: string[] }> = [];
+    const attrChanged: Array<{ el: Element; attrs: string[]; stateChanges: AttrStateChange[] }> =
+      [];
     for (const [el, perEl] of attrOld) {
       if (!el.isConnected || inAddedSubtree(el)) continue;
       const bg = bgAttr.get(el);
       const attrs: string[] = [];
+      const stateChanges: AttrStateChange[] = [];
       for (const [name, old] of perEl) {
         if (name === 'data-dw-ref') continue;
-        if (el.getAttribute(name) === old) continue; // no net change
+        const current = el.getAttribute(name);
+        if (current === old) continue; // no net change
         if (bg && bg.has(name)) {
           droppedBackground++; // background attribute churn — not the action's effect
           continue;
         }
         attrs.push(name);
+        // Capture the VALUE transition for an allowlisted state attribute (#8) — the old/new are
+        // already in hand here, so this is nearly free.
+        if (ARIA_STATE_ATTRS.has(name)) stateChanges.push({ attr: name, old, new: current });
       }
-      if (attrs.length) attrChanged.push({ el, attrs });
+      if (attrs.length) attrChanged.push({ el, attrs, stateChanges });
     }
 
     // text changes on surviving elements, excluding elements already churning text in
@@ -608,6 +615,41 @@ declare global {
 
   function isInteractive(el: Element): boolean {
     return el.matches(INTERACTIVE_SELECTOR);
+  }
+
+  // Accessibility STATE attributes (#8) whose value TRANSITION (old→new) is worth surfacing — kept
+  // aligned with checksum.ts's STATE_ATTR_ALLOWLIST (minus `class`, whose value is not a clean state).
+  const ARIA_STATE_ATTRS = new Set<string>([
+    'aria-expanded',
+    'aria-selected',
+    'aria-pressed',
+    'aria-checked',
+    'aria-current',
+    'aria-disabled',
+    'aria-invalid',
+    'aria-hidden',
+    'aria-busy',
+    'aria-required',
+    'disabled',
+    'checked',
+    'open',
+    'hidden',
+    'readonly',
+    'selected',
+    'contenteditable',
+  ]);
+
+  // Live-region politeness for a node (#8): if the node is inside a region that ANNOUNCES changes to
+  // assistive tech, return its politeness. `aria-live="off"` (and an empty value = default off) does
+  // NOT announce, so it is treated as no live region — the field means "was announced", never claim it
+  // for a silenced region.
+  function liveRegionOf(el: Element): string | null {
+    const region = el.closest('[aria-live],[role="status"],[role="alert"],[role="log"]');
+    if (!region) return null;
+    const live = region.getAttribute('aria-live');
+    if (live === 'off' || live === '') return null; // explicitly silenced → not announced
+    if (live) return live; // polite | assertive
+    return region.getAttribute('role') === 'alert' ? 'assertive' : 'polite'; // status/log → polite
   }
 
   function roleOf(el: Element): string | null {
@@ -727,12 +769,22 @@ declare global {
 
     // Build the reported node set: added roots + their interactive descendants,
     // plus removed / attrChanged / textChanged elements.
-    const reported: Array<{ el: Element; kind: ChangeKind; attrs?: string[] }> = [];
+    const reported: Array<{
+      el: Element;
+      kind: ChangeKind;
+      attrs?: string[];
+      stateChanges?: AttrStateChange[];
+    }> = [];
     const seen = new Set<Element>();
-    const push = (el: Element, kind: ChangeKind, attrs?: string[]) => {
+    const push = (
+      el: Element,
+      kind: ChangeKind,
+      attrs?: string[],
+      stateChanges?: AttrStateChange[],
+    ) => {
       if (seen.has(el)) return;
       seen.add(el);
-      reported.push({ el, kind, attrs });
+      reported.push({ el, kind, attrs, stateChanges });
     };
 
     for (const root of net.addedRoots) {
@@ -740,7 +792,8 @@ declare global {
       root.querySelectorAll(INTERACTIVE_SELECTOR).forEach((d) => push(d, 'added'));
     }
     for (const el of net.removed) push(el, 'removed');
-    for (const { el, attrs } of net.attrChanged) push(el, 'attrChanged', attrs);
+    for (const { el, attrs, stateChanges } of net.attrChanged)
+      push(el, 'attrChanged', attrs, stateChanges);
     for (const el of net.textChanged) push(el, 'textChanged');
 
     // Stamp refs (only on connected nodes — the observer is already stopped, so
@@ -763,7 +816,7 @@ declare global {
     };
 
     const nodes: RawNode[] = reported.map((item) => {
-      const { el, kind, attrs } = item;
+      const { el, kind, attrs, stateChanges } = item;
       const ref = elToRef.get(el)!;
       const node: RawNode = {
         ref,
@@ -776,6 +829,12 @@ declare global {
         geometry: el.isConnected ? readGeometry(el) : null,
       };
       if (attrs && attrs.length) node.changedAttrs = attrs;
+      // #8: additive a11y-state annotations — never relabel role/name (DW-03), no verdict impact.
+      if (stateChanges && stateChanges.length) node.stateChanges = stateChanges;
+      if (el.isConnected) {
+        const live = liveRegionOf(el);
+        if (live) node.ariaLive = live;
+      }
       return node;
     });
 
