@@ -48,3 +48,32 @@ jobs:
 
       - name: Test (coalescer units + north-star validation + packaging)
         run: npm test
+
+  # Runs the three accuracy floors (DW-02 live-verdict, confirmed-precision >=95%,
+  # silent-miss <=5%) on every PR — the floors are corpus-relative (a ~36-case seed, NOT real
+  # production), but this is the central trust claim, so it belongs in CI, not only a local
+  # smoke test. NOTE: defining this job does NOT by itself block merges. To make an accuracy
+  # regression un-mergeable, this job's check name — "accuracy floors (DW-02 / precision /
+  # silent-miss)" — must be listed in the `main` branch ruleset's required status checks (a
+  # one-time owner setting; see docs/RELEASING.md). `bench:accuracy` runs the real Playwright
+  # verdict (DW-02 needs a live oracle), so Chromium is required. Single Node version: the
+  # harness is deterministic and version-independent, so one run reports the floors.
+  accuracy:
+    runs-on: ubuntu-latest
+    name: accuracy floors (DW-02 / precision / silent-miss)
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Accuracy gate (exits non-zero on any floor breach)
+        run: npm run bench:accuracy

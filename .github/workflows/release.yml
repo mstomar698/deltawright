@@ -1,0 +1,124 @@
+name: release
+
+# One tag = one full release. Pushing a `vX.Y.Z` tag builds, runs the FULL suite AND the three
+# accuracy floors, then publishes to npm and cuts the matching GitHub release — keeping npm == git
+# tag == changelog in lock-step (the "every bump ships a release" convention).
+#
+# npm auth is via OIDC **trusted publishing** (no long-lived token, no OTP): the job mints a
+# short-lived credential from GitHub's OIDC provider and npm attaches build provenance
+# automatically. ONE-TIME SETUP (owner, on npmjs.com): package → Settings → Trusted Publisher →
+# add a GitHub Actions publisher for repo `mstomar698/deltawright`, workflow `release.yml`.
+# See docs/RELEASING.md. Until that is configured the publish step fails loudly (the release is
+# still recoverable — configure it and re-run the job, or publish manually with an automation
+# token). Both the publish and the GitHub-release steps are IDEMPOTENT, so a hand-published
+# version (fallback path) does not make a subsequent workflow run red.
+
+on:
+  push:
+    tags: ['v*']
+
+# Least privilege: `contents: write` only to create the GitHub release; `id-token: write` only so
+# npm can exchange the OIDC token for a publish credential + provenance. No other scope is granted.
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: publish + github release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm can lag. Pin forward.
+      - name: Upgrade npm (OIDC trusted publishing support)
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      # A tag must name the version it ships — refuse to release if the tag and package.json drift.
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG}." >&2
+            exit 1
+          fi
+          echo "Releasing ${PKG}."
+
+      - name: Build distributable (dist/ + types + bins)
+        run: npm run build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Full check (typecheck + lint + format + test)
+        run: npm run check
+
+      # PRIMARY GATE — never publish a build that regresses the accuracy floors (exits non-zero on
+      # any breach: DW-02 live verdict, confirmed-precision >=95%, silent-miss <=5%).
+      - name: Accuracy gate (3 floors)
+        run: npm run bench:accuracy
+
+      # Idempotent: skip if this exact version is already on the registry (e.g. a manual fallback
+      # publish). OIDC trusted publishing supplies auth + provenance with no NODE_AUTH_TOKEN.
+      - name: Publish to npm (OIDC trusted publishing)
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION} is already published — skipping npm publish (idempotent)."
+          else
+            # A prerelease (version contains a hyphen, e.g. 0.8.0-rc.1) must NOT take the `latest`
+            # dist-tag; route it to `next` so `npm i pkg` stays on the last stable.
+            case "$VERSION" in
+              *-*) npm publish --tag next ;;
+              *)   npm publish ;;
+            esac
+          fi
+
+      - name: Extract changelog section for this release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e '
+            const fs = require("node:fs");
+            const version = process.argv[1];
+            const cl = fs.readFileSync("CHANGELOG.md", "utf8");
+            const lines = cl.split("\n");
+            const start = lines.findIndex((l) => l.startsWith(`## [${version}]`));
+            if (start === -1) {
+              // No dedicated section — leave notes empty; the release still cuts.
+              fs.writeFileSync("RELEASE_NOTES.md", "");
+              process.exit(0);
+            }
+            let end = lines.findIndex((l, i) => i > start && l.startsWith("## ["));
+            if (end === -1) end = lines.length;
+            fs.writeFileSync("RELEASE_NOTES.md", lines.slice(start + 1, end).join("\n").trim() + "\n");
+          ' "$VERSION"
+
+      # Idempotent: only create the release if the tag has none yet. `--prerelease` for hyphenated
+      # versions. Uses the built-in GITHUB_TOKEN (contents: write) — no third-party action.
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists — skipping (idempotent)."
+            exit 0
+          fi
+          PRERELEASE=""
+          case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file RELEASE_NOTES.md \
+            --verify-tag \
+            $PRERELEASE
