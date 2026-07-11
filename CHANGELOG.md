@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed (infrastructure — not shipped in the npm package)
+
+- **CI now runs the accuracy floors on every PR** (Wave-1): an `accuracy` job runs
+  `npm run bench:accuracy`, surfacing any regression in DW-02 (live verdict), confirmed-precision
+  (≥ 95%), or silent-miss (≤ 5%) as a red check — previously the floors ran only in a local smoke
+  test. To make such a regression **un-mergeable**, the check must be added to the `main` branch
+  ruleset's required status checks (a one-time owner step, documented in
+  [docs/RELEASING.md](docs/RELEASING.md)).
+- **Tag-triggered release automation** (Wave-1): pushing a `vX.Y.Z` tag runs
+  [`release.yml`](.github/workflows/release.yml), which builds, runs the full suite **and the
+  accuracy gate**, publishes to npm via **OIDC trusted publishing** (no token/OTP, automatic
+  provenance), and cuts the matching GitHub release. Both steps are idempotent. Retires the manual
+  2FA/OTP publish path. See [docs/RELEASING.md](docs/RELEASING.md) (owner one-time setup required).
+
 ## [0.7.0] - 2026-07-11
 
 Wave-2 of the v0.6 "root-cause explainer" milestone — the agent/author-facing capabilities on the
