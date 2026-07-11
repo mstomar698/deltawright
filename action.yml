@@ -1,0 +1,112 @@
+name: 'Deltawright flake triage'
+description: >-
+  Aggregate the deltawright reporter's triage side-cars into a taxonomy-labeled, sticky PR comment and
+  a self-contained HTML flake dashboard artifact. Read-only: it never edits tests or suppresses flakes.
+author: 'deltawright'
+branding:
+  icon: 'activity'
+  color: 'blue'
+
+inputs:
+  results-dir:
+    description: >-
+      Directory holding the reporter's *.deltawright-sidecar.json side-cars (searched recursively),
+      relative to the REPO ROOT (the workflow working directory). NOTE: the reporter resolves its
+      `outputDir` against Playwright's rootDir, so if your playwright config lives in a subdir you must
+      prefix that here — e.g. `e2e/deltawright-triage`, not just `deltawright-triage`.
+    required: false
+    default: 'deltawright-triage'
+  version:
+    description: 'deltawright npm version to run via npx (e.g. 0.7.2, or latest).'
+    required: false
+    default: 'latest'
+  comment:
+    description: 'Post/update a sticky PR triage comment (pull_request events only; needs pull-requests: write).'
+    required: false
+    default: 'true'
+  dashboard-artifact:
+    description: 'Name for the uploaded HTML dashboard artifact. Empty string skips the upload.'
+    required: false
+    default: 'deltawright-flakes'
+  github-token:
+    description: 'Token used to post the PR comment. Defaults to the workflow token.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'composite'
+  steps:
+    # Read-only aggregation. Degrades to nothing when there are no side-cars (a green run): no comment,
+    # no artifact. `found` gates the later steps so a passing PR stays silent.
+    - name: Aggregate deltawright side-cars → report + dashboard
+      id: agg
+      shell: bash
+      env:
+        DIR: ${{ inputs.results-dir }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -z "$(find "$DIR" -name '*.deltawright-sidecar.json' -print -quit 2>/dev/null)" ]; then
+          # Echo the ABSOLUTE path searched so a path mismatch is diagnosable (the reporter resolves
+          # outputDir against Playwright's rootDir, so for a config in a subdir results-dir must be
+          # prefixed, e.g. e2e/deltawright-triage) rather than looking like a clean green run.
+          echo "deltawright: no *.deltawright-sidecar.json under '$(pwd)/$DIR' — nothing to report."
+          echo "  (results-dir is relative to the repo root; if your playwright config is in a subdir,"
+          echo "   prefix it — e.g. results-dir: e2e/deltawright-triage.)"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "found=true" >> "$GITHUB_OUTPUT"
+        # aggregate writes nothing itself (stdout only) — redirect each rendering to a file.
+        npx --yes "deltawright@${VERSION}" aggregate --report "$DIR" > deltawright-report.txt
+        npx --yes "deltawright@${VERSION}" aggregate --html "$DIR" > deltawright-dashboard.html
+        echo "deltawright: wrote deltawright-report.txt + deltawright-dashboard.html"
+
+    - name: Upload flake dashboard artifact
+      if: steps.agg.outputs.found == 'true' && inputs.dashboard-artifact != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.dashboard-artifact }}
+        path: deltawright-dashboard.html
+        if-no-files-found: ignore
+
+    # Sticky comment: find one whose body STARTS WITH the hidden marker → PATCH it, else POST. Uses
+    # the built-in token + gh (no third-party action). The report is UNTRUSTED (test IDs are
+    # user-controlled), so it is HTML-escaped and wrapped in <pre> rather than a ``` fence — this both
+    # prevents a malicious title from breaking out into live Markdown AND neutralizes marker forgery
+    # (an escaped `&lt;!--` can never match the raw sticky marker). jq --rawfile keeps the shell/JSON
+    # layer injection-safe. PR events only.
+    - name: Post sticky PR triage comment
+      if: steps.agg.outputs.found == 'true' && inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        MARKER='<!-- deltawright-triage -->'
+        {
+          echo "$MARKER"
+          echo '## 🎯 Deltawright flake triage'
+          echo ''
+          echo '<pre>'
+          # HTML-escape untrusted report text (test IDs) so it can neither inject Markdown/HTML nor
+          # forge the marker; order matters (& first).
+          sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' deltawright-report.txt
+          echo '</pre>'
+          echo ''
+          echo "_Corpus-relative diagnosis; Playwright's verdict is authoritative. The unsure bucket is never folded into a category. Full dashboard in the run artifacts._"
+        } > deltawright-comment.md
+        jq -n --rawfile body deltawright-comment.md '{body: $body}' > deltawright-payload.json
+        # startswith (not contains) so only OUR first-line marker matches — a marker typed elsewhere
+        # in any comment body can't hijack the sticky target.
+        CID="$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+          --jq "map(select(.body | startswith(\"$MARKER\"))) | .[0].id // empty")"
+        if [ -n "$CID" ]; then
+          gh api --method PATCH "repos/${REPO}/issues/comments/${CID}" --input deltawright-payload.json >/dev/null
+          echo "deltawright: updated sticky triage comment ${CID}"
+        else
+          gh api --method POST "repos/${REPO}/issues/${PR}/comments" --input deltawright-payload.json >/dev/null
+          echo "deltawright: posted sticky triage comment"
+        fi

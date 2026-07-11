@@ -211,6 +211,38 @@ and a locator that was already gone degrades to **detached** — it never fabric
 delta with `attachDelta(testInfo, delta)` for a geometry-grounded diagnosis that also carries the
 late-wave / stale-rect flags.
 
+### CI in one step — the GitHub Action
+
+With the reporter attached, add one step after your Playwright run to post a taxonomy-labeled,
+**sticky** PR triage comment and upload the HTML flake dashboard (`deltawright aggregate --html`) as an
+artifact. It is read-only and **degrades to nothing on a green run** (no side-cars → no comment, no
+artifact):
+
+```yaml
+# .github/workflows/e2e.yml
+permissions:
+  contents: read
+  pull-requests: write # so the action can post the triage comment
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      # … checkout, setup-node, install, then run Playwright with deltawright/reporter attached …
+      - run: npx playwright test
+        continue-on-error: true # let triage run even when tests fail
+      - uses: mstomar698/deltawright@main # pin to a tag once one includes the action
+        with:
+          # Relative to the repo root. The reporter resolves its outputDir against Playwright's
+          # rootDir, so if your config is in a subdir, prefix it — e.g. e2e/deltawright-triage.
+          results-dir: deltawright-triage
+```
+
+Inputs: `results-dir` (where the side-cars are, relative to the repo root — see the note above for a
+subdir config), `version` (npm version to run, default `latest`), `comment` (default `true`),
+`dashboard-artifact` (name, empty to skip), `github-token`. It uses the built-in token via `gh` (no
+third-party action, no bespoke secret). The report text is HTML-escaped into the comment, so a
+malicious test name can't inject Markdown.
+
 ## How it works
 
 ```
