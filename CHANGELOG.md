@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added (infrastructure — not shipped in the npm package)
+
+- **Composite GitHub Action** (Wave-1 #4, repo-root `action.yml`): one `uses: mstomar698/deltawright@<ref>`
+  step turns the reporter's triage side-cars into a taxonomy-labeled **sticky** PR comment (updated in
+  place, not spammed) plus a self-contained HTML flake dashboard artifact. Read-only; **degrades to
+  nothing on a green run**. Consumes the side-car dir (does not run your suite), uses `gh` + the
+  built-in token (no third-party action, no bespoke secret), needs only `pull-requests: write`. See the
+  README "CI in one step" section. ADR 2026-07-11.
+
 ## [0.7.2] - 2026-07-11
 
 ### Changed
