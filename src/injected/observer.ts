@@ -58,6 +58,13 @@ declare global {
   // rows / virtualized lists), so background-added subtrees are excluded too (#30).
   let bgInsert = new Set<string>();
   let bgInsertCount = new Map<string, number>();
+  // In-window insertion-signature tally (#7 detection). Counts RAW insertion events during the
+  // settle window (add-then-remove churn still counts), so a container that only STARTS churning
+  // AFTER the action — invisible to the pre-arm baseline `bgInsert` — is still detectable. Read at
+  // collect to report the peak non-baseline recurrence as a SUSPECTED signal. It does NOT change
+  // settle timing or attribution (the delta still keeps every node; per #30, in-window signal must
+  // not DROP — flag, don't drop).
+  let winInsertCount = new Map<string, number>();
 
   // Trusted-event anchor (#30, KEEP-ONLY): the action's origin element + click point
   // inside the page, learned from the FIRST isTrusted event during the window. It can
@@ -119,9 +126,16 @@ declare global {
           lastStructuralAt = now;
           sawStructural = true;
         }
-        // A newly added element may host (or contain) open shadow roots to observe.
         m.addedNodes.forEach((n) => {
-          if (n.nodeType === 1) observeShadowRoots(n as Element);
+          if (n.nodeType === 1) {
+            const el = n as Element;
+            // A newly added element may host (or contain) open shadow roots to observe.
+            observeShadowRoots(el);
+            // Tally its insertion signature (raw event) for the in-window recurrence signal (#7). The
+            // node is connected here, so insertSig's parentElement read is valid.
+            const sig = insertSig(el);
+            winInsertCount.set(sig, (winInsertCount.get(sig) ?? 0) + 1);
+          }
         });
       }
     }
@@ -218,6 +232,7 @@ declare global {
     anchorPoint = null;
     anchorLatched = false;
     observedRoots = new Set();
+    winInsertCount = new Map(); // fresh in-window recurrence tally per action
   }
 
   function stop(): void {
@@ -764,12 +779,20 @@ declare global {
       return node;
     });
 
+    // Peak in-window insertion recurrence for a signature NOT already known to be background from the
+    // pre-arm baseline (#7 detection) — i.e. churn that STARTED after the action. Computed before the
+    // bgInsert reset below. Reported raw; the host applies the SUSPECTED threshold.
+    let recurringInsert = 0;
+    for (const [sig, c] of winInsertCount)
+      if (c > recurringInsert && !bgInsert.has(sig)) recurringInsert = c;
+
     // Consume the baseline footprint so a subsequent action without a fresh
     // sampleBaseline starts clean (no stale background exclusions).
     bgText = new Set();
     bgAttr = new Map();
     bgInsert = new Set();
     bgInsertCount = new Map();
+    winInsertCount = new Map();
 
     return {
       nodes,
@@ -777,6 +800,7 @@ declare global {
       animationsAwaited,
       droppedBackground: net.droppedBackground,
       detachedInWindow: net.detachedInWindow,
+      recurringInsert,
     };
   }
 

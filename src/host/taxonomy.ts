@@ -36,6 +36,7 @@ export const PRIMITIVE_SIGNALS = [
   'agreed', // did the geometry read and Playwright agree
   'hitMaxWait', // settle hit the maxWaitMs cap
   'droppedBackground', // count of nodes dropped as background churn
+  'recurringInsert', // peak in-window insertion recurrence of a non-baseline container (#7)
   'empty-delta', // zero reported nodes
   'ref-staleified', // a node's data-dw-ref went stale (element detached)
   'lateStructural', // structural mutation after settle resolved (gap-E, #49)
@@ -151,8 +152,9 @@ export const ROOT_CAUSE_TAXONOMY = {
     code: 'background-churn',
     category: 'membership-attribution',
     meaning: 'High background insertion/mutation churn may be masking the real change.',
-    signals: ['droppedBackground'],
-    grounding: 'droppedBackground is high relative to the reported node count.',
+    signals: ['droppedBackground', 'recurringInsert'],
+    grounding:
+      'droppedBackground is high relative to the reported node count, OR a single insertion signature recurred past the suspected threshold AND kept settle from quiescing (post-action churn — suspected, since a slow/large streamed payload can also cap).',
   },
   'detached-re-render': {
     code: 'detached-re-render',

@@ -1,14 +1,14 @@
 Deltawright accuracy harness (#52) — CORPUS-RELATIVE, gated
 ========================================================================
 
-cases: 36  (specific-cause: 18, unsure-label: 18)
+cases: 38  (specific-cause: 19, unsure-label: 19)
 
 HEADLINE  (all three gates now hard-fail the run; recall is informational)
   verdict-vs-reality LIVE (DW-02 gate):    100.0%  (16/16)  PASS
-  verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
+  verdict self-consistency (delta):        100.0%  (12/12)  [authored, not reality]
   confirmed-band precision (gate ≥95%):    100.0%  (8 correct / 0 wrong)  PASS
-  recall (labeled cause emitted):          100.0%  (18/18)
-  silent-miss rate (gate ≤5%):             0.0%  (0/18)  PASS
+  recall (labeled cause emitted):          100.0%  (19/19)
+  silent-miss rate (gate ≤5%):             0.0%  (0/19)  PASS
   confidence-band accuracy (on hits):      100.0%
 
 OUTCOMES BY CASE
@@ -34,6 +34,8 @@ OUTCOMES BY CASE
   ✓ unsure     suspected-miss-empty-confuser [unknown]
   ✓ hit        background-churn-pos         [background-churn] → background-churn suspected
   ✓ unsure     background-churn-confuser    [unknown]
+  ✓ hit        background-churn-recur-pos   [background-churn] → background-churn suspected  +settle-timeout/suspected
+  ✓ unsure     background-churn-recur-confuser [unknown]
   ✓ hit        detached-re-render-pos       [detached-re-render] → detached-re-render suspected
   ✓ unsure     detached-re-render-confuser  [unknown]
   ✓ hit        late-wave-suspected-pos      [late-wave-suspected] → late-wave-suspected suspected

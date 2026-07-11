@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deltawright post-action churn fixture</title>
+  </head>
+  <body>
+    <h1>Post-action churn</h1>
+    <!-- Nothing churns on load, so the pre-arm baseline sees NO background — unlike toast.html.
+         The churn STARTS only when the action fires (a polling feed), which is exactly the residual
+         the pre-arm baseline misses and #7 detection covers. -->
+    <button id="start-feed">Start feed</button>
+    <button id="reveal-few">Reveal a few</button>
+    <div id="feed"></div>
+    <script>
+      // Unbounded feed: on click, append a #feed > div.feed-row every 30 ms, forever. A recurring
+      // insertion signature that only appears AFTER the action, and never stops (settle hits the cap).
+      document.getElementById('start-feed').addEventListener('click', () => {
+        let n = 0;
+        setInterval(() => {
+          const row = document.createElement('div');
+          row.className = 'feed-row';
+          row.textContent = 'row ' + n++;
+          document.getElementById('feed').appendChild(row);
+        }, 30);
+      });
+
+      // Bounded reveal: on click, append 3 cards ONCE, then stop. Same-signature inserts, but the
+      // page goes quiet — a legitimate list reveal, which must NOT be flagged as background churn.
+      document.getElementById('reveal-few').addEventListener('click', () => {
+        const feed = document.getElementById('feed');
+        for (let i = 0; i < 3; i++) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.textContent = 'card ' + i;
+          feed.appendChild(card);
+        }
+      });
+    </script>
+  </body>
+</html>

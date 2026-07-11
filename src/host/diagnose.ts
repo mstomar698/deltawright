@@ -31,6 +31,11 @@ import type { RootCauseCode } from './taxonomy';
 // so a couple of incidental drops next to a real change do not cry wolf.
 const CHURN_MIN = 3;
 
+// In-window recurrence threshold (#7 detection): a single insertion signature must recur at least
+// this many times DURING the window before it reads as post-action background churn. Conservative,
+// so a bounded reveal (a few similar items appearing once) is never misread as an unbounded feed.
+export const RECUR_MIN = 4;
+
 // Causes ONLY Playwright can observe. Geometry (rect / style / elementFromPoint) has no read
 // for the enabled, editable, or stability state, so its "actionable" verdict on one of these
 // is the ABSENCE of evidence about the cause, never evidence against it. Recovering these from
@@ -234,12 +239,22 @@ function diagnoseDelta(delta: Delta): Diagnosis[] {
     });
   }
 
-  if (stats.droppedBackground >= CHURN_MIN && stats.droppedBackground >= nodes.length) {
+  // background-churn fires on EITHER pre-arm baseline churn (dropped, dominant) OR post-action
+  // in-window recurrence (#7). Both are `suspected` (timing) and emit ONCE.
+  const droppedChurn =
+    stats.droppedBackground >= CHURN_MIN && stats.droppedBackground >= nodes.length;
+  // In-window recurrence is background churn only when it ALSO kept settle from quiescing
+  // (hitMaxWait): a BOUNDED list reveal recurs then stops (settle goes quiet) and must NOT be
+  // flagged; an UNBOUNDED feed recurs past the cap. This is the honest bounded-vs-unbounded split.
+  const inWindowChurn = (stats.recurringInsert ?? 0) >= RECUR_MIN && stats.hitMaxWait;
+  if (droppedChurn || inWindowChurn) {
     out.push({
       code: 'background-churn',
       confidence: assessConfidence({ source: 'timing' }),
       scope: 'delta',
-      detail: `${stats.droppedBackground} background changes dropped — churn may be masking the change`,
+      detail: droppedChurn
+        ? `${stats.droppedBackground} background changes dropped — churn may be masking the change`
+        : `a container recurred ${stats.recurringInsert}× during the window — background churn that started after the action may be masking or delaying the change`,
     });
   }
 
