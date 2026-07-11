@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-11
+
+Wave-2 of the v0.6 "root-cause explainer" milestone — the agent/author-facing capabilities on the
+now-gated diagnosis engine. Everything is opt-in; the default `actAndObserve` path is byte-unchanged.
+
 ### Added
 
 - **Agent-assist MCP debug tools** (#60, additive on the `deltawright/mcp` server): four **live-reproduce**
