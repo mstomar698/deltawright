@@ -46,7 +46,7 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `read-only` | live (readonly input) | ✅ `read-only` / confirmed (#71 — same geometry-blind recovery as `disabled`) |
 | `unstable-animating` | delta | ✅ `unstable-animating` / confirmed (#71 recovery; delta — live CSS-animation reproduction is future work) |
 | `geom-disagreement` | live (covered fillable input) | ✅ `geom-disagreement` / suspected (a GENUINE disagreement on a geometry-VISIBLE cause: Playwright can `fill` a covered input, geometry sees the cover — NOT recovered, unlike the geometry-blind class) |
-| `background-churn` | delta (dominant `droppedBackground`) | ✅ `background-churn` / suspected |
+| `background-churn` | delta (dominant `droppedBackground`, OR in-window `recurringInsert` + `hitMaxWait`) | ✅ `background-churn` / suspected |
 | `detached-re-render` | live (target removed + replaced) | ✅ `detached-re-render` / suspected (#71 fix #3 — the observer counts a freshly-added subtree detached in-window; the original nets out but the transience is surfaced as a delta-level note) |
 | `settle-timeout` | live (churning page, low `maxWaitMs`) | ✅ `settle-timeout` / suspected |
 | `suspected-miss-empty` | delta (empty + cap) | ✅ `suspected-miss-empty` / unknown |

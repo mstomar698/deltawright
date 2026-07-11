@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-07-11
+
+### Added
+
+- **Post-action background-churn detection** (Wave-2 #7): the diagnosis engine now flags a container
+  that **starts churning after the action** (a polling feed, a live-updating region) — invisible to
+  the pre-arm baseline — as `background-churn` (**suspected**), completing the residual the pre-arm
+  baseline missed. The observer tracks in-window insertion recurrence; `background-churn` fires when a
+  non-baseline signature recurs past a conservative threshold **and** the churn kept settle from
+  quiescing (`hitMaxWait`) — so a list that appears and goes quiet is not flagged. (Honest residual: a
+  legitimate but slow/large streamed payload that also caps trips the **suspected** flag too —
+  tolerated because #7 only flags, never drops; see ADR.) Exposed as a new default-absent
+  `DeltaStats.recurringInsert`, so a normal page's stats object is byte-unchanged.
+  - **Non-behavioral + safe by design:** settle timing and delta membership are **unchanged** — the
+    recurring nodes are kept, not dropped. Per the #30 in-window decision, in-window signal must
+    **flag, not drop** (a false-drop of a real streamed payload is the one unforgivable error); and
+    the settle-promptness optimization is deferred pending real-app corpus telemetry rather than tuned
+    blindly (it shares the same false-early hazard). ADR 2026-07-11.
+
 ## [0.7.3] - 2026-07-11
 
 First Wave-2 (correctness depth) release: a page-aware durable-selector recommender. Plus the Wave-1

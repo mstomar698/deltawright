@@ -1,6 +1,7 @@
 import type { Frame, Page } from '@playwright/test';
 import { ensureInjected, InjectionBlockedError } from './inject';
 import { annotateActionability, geometryVerdict } from './actionability';
+import { RECUR_MIN } from './diagnose';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import { DEFAULT_SETTLE } from './types';
 import type {
@@ -418,6 +419,13 @@ export async function actAndObserve(
       // #71 fix #3: present ONLY when a freshly-added subtree was detached in-window (a re-render
       // swap), so a delta with no in-window detach keeps a byte-unchanged stats object.
       ...(collected.detachedInWindow > 0 ? { detachedReRender: true } : {}),
+      // #7 detection: present ONLY when a non-baseline signature recurred past the threshold AND
+      // that churn kept settle from quiescing (hitMaxWait) — i.e. an UNBOUNDED post-action feed, not
+      // a bounded list reveal. So a normal page keeps a byte-unchanged stats object. Non-behavioral —
+      // settle timing + delta membership are unchanged; this only flags the churn.
+      ...(collected.recurringInsert >= RECUR_MIN && settleResult.hitMaxWait
+        ? { recurringInsert: collected.recurringInsert }
+        : {}),
       // #71 fix #4a: present ONLY when a child frame was skipped during frames:true traversal, so
       // the default (no-frames) path keeps a byte-unchanged stats object.
       ...(crossBoundarySkipped > 0 ? { crossBoundarySkipped } : {}),

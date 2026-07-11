@@ -87,6 +87,16 @@ export interface DeltaStats {
    */
   detachedReRender?: boolean;
   /**
+   * Background-churn flag (#7 detection): the peak number of times a single element-insertion
+   * signature recurred DURING the settle window for a container NOT already in the pre-arm
+   * background baseline — i.e. churn (toasts, virtualized rows, a polling feed) that STARTED after
+   * the action. Always computed (zero added latency), but PRESENT ONLY at/above the suspected
+   * threshold, so a normal page's stats object is byte-unchanged. Grounds `background-churn`
+   * (suspected). NON-behavioral: settle timing and delta membership are unchanged — this only
+   * explains a live-page settle-timeout / noise; per #30 in-window signal must flag, never drop.
+   */
+  recurringInsert?: number;
+  /**
    * Capture-integrity flag (#71 fix #4a): how many child frames could NOT be observed during
    * `frames:true` traversal (cross-origin / uninjectable / detached mid-action), so the delta is
    * PARTIAL — a change inside one of them is invisible. Absent unless `frames:true` AND at least
@@ -236,6 +246,9 @@ export interface CollectResult {
   /** Freshly-added subtree roots detached again before collect (#71 fix #3). Host maps >0 → the
    * default-absent `DeltaStats.detachedReRender` flag. Always present here (internal interchange). */
   detachedInWindow: number;
+  /** Peak in-window insertion recurrence for a non-baseline signature (#7). Host maps >= the
+   * suspected threshold → the default-absent `DeltaStats.recurringInsert`. Always present here. */
+  recurringInsert: number;
 }
 
 /**
