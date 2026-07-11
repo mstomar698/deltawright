@@ -7,11 +7,14 @@
 // rects, computed-style strings, reason/error text, timing stats, and MutationObserver
 // record order (siblings are sorted by a stable key).
 //
-// KNOWN BLIND SPOT: an attrChanged node's `changedAttrs` is NOT hashed at all — the
-// fingerprint records THAT a node's attributes changed (kind=attrChanged), not WHICH ones.
-// So an action that starts toggling a different attribute (class -> aria-pressed) without
-// altering the verdict or tree is NOT distinguished. Deliberate for now (keeps the coarse
-// bucket coarse); folding the attr SET back in is a candidate refinement.
+// ATTRIBUTE IDENTITY (Wave-1 #3): an attrChanged node folds the SET of changed attribute
+// NAMES — filtered to a stable state allowlist (aria-pressed/expanded/selected/checked/…,
+// disabled, checked, open, readonly, hidden, class) and sorted — into the fingerprint. So an
+// action that starts toggling a DIFFERENT state attribute (class -> aria-pressed) is now
+// distinguished even when the tree + verdict are unchanged. LIMIT (honesty): only attribute
+// NAMES are captured upstream (values are dropped at collect), so this catches WHICH state
+// attribute changed, not its old->new value; non-allowlisted / volatile attrs (style,
+// framework-generated tokens) are dropped so they can't jitter the hash.
 //
 // IMPORTANT (honesty): a matching checksum proves output == the output we captured — it
 // is a REGRESSION guard, nothing more. It says nothing about whether the fixture faithfully
@@ -45,6 +48,50 @@ function normName(name: string | null): string {
   return (name ?? '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Stable STATE attributes folded into the fingerprint (Wave-1 #3). Only attribute NAMES reach the
+ * checksum (values are dropped at capture), so this records WHICH state attribute changed, not its
+ * value. Restricted to widget/interaction STATE so a volatile attr (`style`, framework-generated
+ * tokens) can't jitter the hash; `class` is kept by NAME only (that class changed), never by its
+ * churny token values. Background attr churn is already dropped upstream (observer bgAttr filter).
+ */
+const STATE_ATTR_ALLOWLIST = new Set<string>([
+  'class',
+  'disabled',
+  'checked',
+  'selected',
+  'open',
+  'hidden',
+  'readonly',
+  'contenteditable',
+  'aria-pressed',
+  'aria-expanded',
+  'aria-selected',
+  'aria-checked',
+  'aria-current',
+  'aria-disabled',
+  'aria-invalid',
+  'aria-hidden',
+  'aria-busy',
+  'aria-required',
+]);
+
+/** An attrChanged node's changed-attr NAMES, lower-cased, filtered to the state allowlist, de-duped
+ *  and sorted — so record order and non-state attrs never jitter the fingerprint. Guarded on kind so
+ *  the field is empty for non-attrChanged nodes locally (the collector already only sets
+ *  `changedAttrs` on attrChanged nodes; this makes that invariant hold at the checksum too). */
+function normAttrs(node: DeltaNode): string[] {
+  if (node.kind !== 'attrChanged') return [];
+  const attrs = node.changedAttrs;
+  if (!attrs || attrs.length === 0) return [];
+  const kept = new Set<string>();
+  for (const a of attrs) {
+    const name = a.toLowerCase();
+    if (STATE_ATTR_ALLOWLIST.has(name)) kept.add(name);
+  }
+  return [...kept].sort();
+}
+
 interface NormNode {
   k: DeltaNode['kind'];
   t: string;
@@ -58,13 +105,15 @@ interface NormNode {
   inv: string;
   off: string;
   cov: string;
+  /** Sorted, allowlisted changed-attribute NAMES (Wave-1 #3) — empty for non-attrChanged nodes. */
+  ca: string[];
   children: NormNode[];
 }
 
 /** Stable sibling sort key — makes the fingerprint independent of MutationObserver
  *  record order (same precedent as bench/structural-diff.ts multiset keying). */
 function sortKey(n: NormNode): string {
-  return [n.k, n.t, n.r, n.n, n.v, n.box].join('|');
+  return [n.k, n.t, n.r, n.n, n.v, n.box, n.ca.join(',')].join('|');
 }
 
 function normalizeNode(node: DeltaNode, childrenOf: Map<string | null, DeltaNode[]>): NormNode {
@@ -86,6 +135,7 @@ function normalizeNode(node: DeltaNode, childrenOf: Map<string | null, DeltaNode
     inv: g ? (g.inViewport ? '1' : '0') : '',
     off: g ? (g.offscreen ? '1' : '0') : '',
     cov: normClass(g?.coveredBy ?? null),
+    ca: normAttrs(node),
     children,
   };
 }
@@ -94,11 +144,12 @@ function normalizeNode(node: DeltaNode, childrenOf: Map<string | null, DeltaNode
  *  insertion order, which we control here). */
 function canonical(n: NormNode): string {
   const kids = n.children.map(canonical).join(',');
+  const ca = n.ca.map((a) => JSON.stringify(a)).join(',');
   return (
     `{"k":${JSON.stringify(n.k)},"t":${JSON.stringify(n.t)},"r":${JSON.stringify(n.r)},` +
     `"n":${JSON.stringify(n.n)},"i":${n.i},"v":${JSON.stringify(n.v)},"gv":${JSON.stringify(n.gv)},` +
     `"ag":${n.ag},"box":${JSON.stringify(n.box)},"inv":${JSON.stringify(n.inv)},` +
-    `"off":${JSON.stringify(n.off)},"cov":${JSON.stringify(n.cov)},"children":[${kids}]}`
+    `"off":${JSON.stringify(n.off)},"cov":${JSON.stringify(n.cov)},"ca":[${ca}],"children":[${kids}]}`
   );
 }
 

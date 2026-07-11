@@ -9,9 +9,11 @@ import type { Delta } from '../host/types';
 //
 // HONESTY (per checksum.ts's own note): a green checksum is REGRESSION-ONLY — it proves the delta's
 // structure/semantics is unchanged from the captured baseline, and says NOTHING about whether the
-// fixture faithfully models a real app or that Deltawright "works". Do not read fidelity into it. And
-// the fingerprint has a known blind spot: it records THAT a node's attributes changed, not WHICH ones
-// (see src/host/checksum.ts), so an attrChanged-identity swap with an unchanged verdict/tree passes.
+// fixture faithfully models a real app or that Deltawright "works". Do not read fidelity into it. As
+// of Wave-1 #3 the fingerprint DOES fold an attrChanged node's changed state-attribute NAMES (a
+// stable allowlist — aria-pressed/expanded/…, disabled, class; see src/host/checksum.ts), so a
+// state-attr identity swap with an unchanged verdict/tree now MISMATCHES. It still sees attr NAMES,
+// not values, so it distinguishes WHICH state attr changed, not its old->new value.
 
 const REGRESSION_ONLY =
   'A green delta checksum is REGRESSION-ONLY: it proves the normalized structure/semantics is ' +

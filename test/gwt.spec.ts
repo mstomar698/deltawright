@@ -15,7 +15,8 @@ import { GWT_FIXTURE_URL } from './helpers';
 // idiomatic Playwright stand as wins.
 
 // Regenerate after any intended delta change: run once, read the received hash, paste here.
-const GWT_APPROVE_CHECKSUM = '8c6368552cc7d8c175966e97939857f620bdb7eaee80c883c71c5cb32a328524';
+// Rebaselined for Wave-1 #3 (checksum now folds allowlisted changed-attr NAMES → new canonical form).
+const GWT_APPROVE_CHECKSUM = '0bb93af7a5a6daf34c8f7a9af12d59e24742c595e59c11ef16c4fa7502866d79';
 
 test('A: a deferred GWT render is caught by settle; a zero-wait read races and misses it', async ({
   page,

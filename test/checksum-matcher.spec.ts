@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { matchDeltaChecksum } from '../src/matchers/checksum';
-import type { Delta, DeltaNode } from '../src/index';
+import { checksum, type Delta, type DeltaNode } from '../src/index';
 
 // Delta checksum regression matcher (#54). Exercises the PURE core (browser-free, tmp baseline dir),
 // which is exactly the matcher's behavior — the thin `expect(delta).toMatchDeltaChecksum(id)` wrapper
@@ -153,4 +153,38 @@ test('failOnMissing (CI) writes a missing baseline but FAILS, so an unestablishe
   const local = matchDeltaChecksum(base, tmpBaseline());
   expect(local.pass).toBe(true);
   expect(local.written).toBe(true);
+});
+
+// --- Attribute-identity sensitivity (Wave-1 #3) ---------------------------------------------------
+
+test('should_distinguish_WHICH_state_attribute_changed_closing_the_attr_identity_blind_spot', () => {
+  // Same tree + verdict, only the changed state attribute differs. Before Wave-1 #3 both hashed
+  // identically (attrChanged carried no attr info); now the allowlisted attr NAME is folded in.
+  const pressed = delta([node({ kind: 'attrChanged', changedAttrs: ['aria-pressed'] })]);
+  const classed = delta([node({ kind: 'attrChanged', changedAttrs: ['class'] })]);
+  expect(checksum(pressed)).not.toBe(checksum(classed));
+
+  // An allowlisted state attr changes the fingerprint vs a node with no state-attr change.
+  const noneAttr = delta([node({ kind: 'attrChanged', changedAttrs: [] })]);
+  expect(checksum(pressed)).not.toBe(checksum(noneAttr));
+});
+
+test('should_not_jitter_on_record_order_or_non_state_attributes', () => {
+  // Record order is normalized away (sorted) — same set, different order → same fingerprint.
+  const ab = delta([node({ kind: 'attrChanged', changedAttrs: ['aria-pressed', 'class'] })]);
+  const ba = delta([node({ kind: 'attrChanged', changedAttrs: ['class', 'aria-pressed'] })]);
+  expect(checksum(ab)).toBe(checksum(ba));
+
+  // Non-allowlisted / volatile attrs (style, generated data-*) are dropped, so a style-only or
+  // data-only change collapses to the SAME (empty) attr set as no attr change — no jitter.
+  const styleOnly = delta([node({ kind: 'attrChanged', changedAttrs: ['style'] })]);
+  const dataOnly = delta([node({ kind: 'attrChanged', changedAttrs: ['data-reactid-9f2a'] })]);
+  const noneAttr = delta([node({ kind: 'attrChanged', changedAttrs: [] })]);
+  expect(checksum(styleOnly)).toBe(checksum(noneAttr));
+  expect(checksum(dataOnly)).toBe(checksum(noneAttr));
+
+  // Case-insensitive allowlist match (ARIA-PRESSED == aria-pressed).
+  const upper = delta([node({ kind: 'attrChanged', changedAttrs: ['ARIA-PRESSED'] })]);
+  const lower = delta([node({ kind: 'attrChanged', changedAttrs: ['aria-pressed'] })]);
+  expect(checksum(upper)).toBe(checksum(lower));
 });

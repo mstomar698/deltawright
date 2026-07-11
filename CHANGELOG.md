@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-11
+
+### Changed
+
+- **Checksum now distinguishes which state attribute changed** (Wave-1 #3): the delta fingerprint
+  (`checksum` / `toMatchDeltaChecksum` / `toMatchDeltaSnapshot`) folds each `attrChanged` node's
+  changed attribute **names**, filtered to a stable state allowlist (`aria-pressed`/`-expanded`/
+  `-selected`/`-checked`/…, `disabled`, `checked`, `open`, `readonly`, `hidden`, `class`), sorted.
+  An action that starts toggling a **different** state attribute (`class` → `aria-pressed`) with an
+  otherwise-unchanged tree + verdict now **mismatches** instead of passing silently (a named blind
+  spot, now closed). Only attribute names are captured (not values), so it catches _which_ state
+  attribute changed, not its old→new value; volatile attrs (`style`, generated tokens) are dropped
+  so they cannot jitter the hash. **This changes the canonical form** — existing committed
+  `__dw_checksums__/*.json` baselines and any pinned fingerprints must be regenerated
+  (`deltawright checksum --update -- <test cmd>`, or Playwright's `--update-snapshots`). ADR
+  2026-07-11.
+
 ## [0.7.1] - 2026-07-11
 
 First release of the v0.7.x "Trust & Adoption hardening" wave: a view-only flake dashboard, plus the
