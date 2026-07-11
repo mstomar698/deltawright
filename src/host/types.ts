@@ -44,6 +44,15 @@ export interface GeometryRead {
 }
 
 /** One changed element node, as reported by the injected script. */
+/** An accessibility STATE attribute's value transition on an attrChanged node (#8). */
+export interface AttrStateChange {
+  attr: string;
+  /** The attribute's value before the action (null = it was absent). */
+  old: string | null;
+  /** The attribute's value after the action (null = it was removed). */
+  new: string | null;
+}
+
 export interface RawNode {
   /** Stable ref stamped as data-dw-ref at drain time, e.g. "e1". */
   ref: string;
@@ -57,6 +66,23 @@ export interface RawNode {
   parentRef: string | null;
   /** For attrChanged: which attributes changed net. */
   changedAttrs?: string[];
+  /**
+   * Accessibility STATE transitions (#8): the old→new VALUES for allowlisted state attributes
+   * (aria-expanded/selected/checked/pressed/…, disabled, open, …) that changed — the direction the
+   * mutation delta's `changedAttrs` names alone can't express ("the menu is now open"). Present only
+   * for an attrChanged node that toggled a state attribute, so the default surface is byte-unchanged.
+   * ADDITIVE + non-authoritative: it annotates the SAME node (never relabels role/name — DW-03) and
+   * does not affect the verdict (DW-02) or the checksum fingerprint.
+   */
+  stateChanges?: AttrStateChange[];
+  /**
+   * Live-region politeness (#8): set when this node is inside a region that ANNOUNCES changes to
+   * assistive tech (`aria-live="polite"|"assertive"`, or `role=status|log`→polite / `role=alert`→
+   * assertive). An `aria-live="off"` (or empty = default off) region is explicitly silenced, so it is
+   * treated as no live region and this stays unset — the field never claims an announcement that ARIA
+   * suppresses. Annotation only, no verdict impact.
+   */
+  ariaLive?: string;
   /** null for removed nodes (no live geometry). */
   geometry: GeometryRead | null;
 }

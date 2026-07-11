@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-07-11
+
+### Added
+
+- **Accessibility state surface** (Wave-2 #8): a delta node now carries the **direction** of an ARIA
+  state toggle and a live-region annotation — two additive, default-absent fields. `stateChanges`
+  gives the old→new **values** for allowlisted state attributes (`aria-expanded`/`-selected`/
+  `-pressed`/`-checked`/…, `disabled`, `open`, …), so "aria-expanded changed" becomes
+  "aria-expanded false→true" (the menu is now open) — the direction the mutation delta's attribute
+  **names** alone couldn't express. `ariaLive` marks a change inside an `aria-live` /
+  `role=status|alert|log` region (a change assistive tech would announce). The serializer renders
+  `state:aria-expanded=false→true` and `live:polite` additively. **Additive + safe:** annotation only
+  (no verdict/geometry change — DW-02), never relabels role/name (DW-03), no checksum change, and the
+  default serialized delta is byte-unchanged. It deliberately does **not** diff the full a11y tree or
+  swap in Playwright's accessible-name algorithm (which would let a second naming pass relabel a
+  node). ADR 2026-07-11.
+
 ## [0.7.4] - 2026-07-11
 
 ### Added
