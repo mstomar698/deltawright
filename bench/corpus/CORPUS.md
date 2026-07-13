@@ -41,4 +41,8 @@ lint/format (they are third-party build artifacts).
 
 ## Not yet in the corpus (tracked in #25)
 - Tier-2 production sites captured to HAR/WARC and replayed offline.
-- Anthropic's tokenizer as the primary token counter (cl100k is an OpenAI proxy).
+
+The Anthropic tokenizer is now available as an **opt-in deployment counter** — set
+`ANTHROPIC_API_KEY` and the harness counts with Claude's real `count_tokens`
+(`bench/token-counter.ts`); cl100k stays the offline default. A go/no-go on the REAL Claude
+numbers still awaits a key (the published findings were produced with the cl100k proxy).

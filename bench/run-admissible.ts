@@ -235,11 +235,16 @@ async function main() {
   console.log(`token counter: ${counter.label}\n`);
   console.table(rows);
   console.log(
-    `\nlegend (counter=${counter.name}${counter.isDeploymentCounter ? ' — the real deployment tokenizer' : ' — a PROXY, not the deployment tokenizer'}; deterministic corpus => token counts exact, only time varies):` +
+    `\nlegend (counter=${counter.name}${counter.isDeploymentCounter ? ' — the real deployment tokenizer' : ' — a PROXY, not the deployment tokenizer'}):` +
+      '\n  deterministic corpus => structural counts (lite/struct-diff/resnapshot) exact; the full' +
+      '\n    delta_tokens column wobbles a little sub-pixel with geometry rects — take the median.' +
       '\n  lite_vs_structdiff <1 => delta more compact than a STRUCTURE-AWARE diff at info-parity.' +
       '\n  delta_vs_resnapshot <1 => delta smaller than re-dumping the full a11y tree.' +
       '\n  capture = trials where the delta captured the primary intended change (recall).' +
-      '\n  capability axis (not tokens): delta also carries geometry + actionability the diff lacks.',
+      '\n  capability axis (not tokens): delta also carries geometry + actionability the diff lacks.' +
+      '\n  NOTE: cl100k (raw text) and Anthropic (message-framed) are DIFFERENT metrics — within a' +
+      '\n    run all columns share one counter so ratio DIRECTION holds, but absolute numbers/ratios' +
+      '\n    are not directly comparable across the two counter modes.',
   );
 }
 

@@ -75,19 +75,53 @@ test('Anthropic counter: parses input_tokens and MEMOIZES (one call for repeated
   }
 });
 
-test('Anthropic counter: FAILS LOUD on a non-ok response (never silently falls back)', async () => {
+test('Anthropic counter: FAILS LOUD on a non-retryable 401 without retrying', async () => {
   const orig = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    ({
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return {
       ok: false,
       status: 401,
       json: async () => ({}),
       text: async () => 'authentication_error',
-    }) as Response) as typeof fetch;
+    } as Response;
+  }) as typeof fetch;
   try {
     const c = selectCounter({ ANTHROPIC_API_KEY: 'sk-bad' });
     await expect(c.count('some delta text')).rejects.toThrow(/count_tokens failed \(HTTP 401\)/);
     await expect(c.count('some delta text')).rejects.toThrow(/Refusing to silently fall back/);
+    expect(calls).toBe(2); // one fetch per count() call — a 4xx caller error is NEVER retried
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test('Anthropic counter: retries a transient 429 with backoff, then succeeds', async () => {
+  const orig = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    if (calls === 1) {
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: () => null }, // no Retry-After → exponential backoff
+        json: async () => ({}),
+        text: async () => 'rate_limit_error',
+      } as unknown as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ input_tokens: 17 }),
+      text: async () => '',
+    } as Response;
+  }) as typeof fetch;
+  try {
+    const c = selectCounter({ ANTHROPIC_API_KEY: 'sk-test' });
+    expect(await c.count('rate me')).toBe(17);
+    expect(calls).toBe(2); // one 429, retried once, then success
   } finally {
     globalThis.fetch = orig;
   }
