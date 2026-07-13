@@ -9,9 +9,10 @@
 //      reps with a discarded warm-up. The corpus is deterministic (fresh context per
 //      run), so token counts are exact and only wall-time carries variance.
 //
-// The token counter is PLUGGABLE (bench/token-counter.ts): the offline cl100k proxy by
-// default, or the real Anthropic count_tokens DEPLOYMENT counter when ANTHROPIC_API_KEY is
-// set. Each interaction is scored for RECALL (primary change captured) and PRECISION (no
+// The token counter is PLUGGABLE (bench/token-counter.ts): OpenAI cl100k offline by default,
+// or the real DEPLOYMENT tokenizer of the target model — Anthropic count_tokens
+// (ANTHROPIC_API_KEY) or Gemini countTokens (GEMINI_API_KEY). Each interaction is scored for
+// RECALL (primary change captured) and PRECISION (no
 // over-report vs a hand-labeled expected-change set). What it still does NOT cover (tracked
 // in #25): Tier-2 production sites via HAR replay; a keyed-list REORDER (TodoMVC has no
 // native reorder — needs a sortable-list third-party app); and a covered/off-screen/disabled
@@ -331,7 +332,8 @@ async function main() {
       '\n  precision = trials with ZERO over-report — every reported node matched a hand-labeled' +
       '\n    expected consequence of the action (catches padding the token ratio alone cannot).' +
       '\n  capability axis (not tokens): delta also carries geometry + actionability the diff lacks.' +
-      '\n  NOTE: cl100k (raw text) and Anthropic (message-framed) are DIFFERENT metrics — within a' +
+      '\n  NOTE: the OpenAI/cl100k proxy (raw text) and a real API counter (message-framed) are' +
+      '\n    DIFFERENT metrics — within a' +
       '\n    run all columns share one counter so ratio DIRECTION holds, but absolute numbers/ratios' +
       '\n    are not directly comparable across the two counter modes.',
   );

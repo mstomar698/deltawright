@@ -42,7 +42,8 @@ lint/format (they are third-party build artifacts).
 ## Not yet in the corpus (tracked in #25)
 - Tier-2 production sites captured to HAR/WARC and replayed offline.
 
-The Anthropic tokenizer is now available as an **opt-in deployment counter** — set
-`ANTHROPIC_API_KEY` and the harness counts with Claude's real `count_tokens`
-(`bench/token-counter.ts`); cl100k stays the offline default. A go/no-go on the REAL Claude
-numbers still awaits a key (the published findings were produced with the cl100k proxy).
+The real deployment tokenizer is now available as an **opt-in counter** — set
+`ANTHROPIC_API_KEY` (Anthropic `count_tokens`) or `GEMINI_API_KEY` (Gemini `countTokens`) and
+the harness counts with that model's real tokenizer (`bench/token-counter.ts`); OpenAI cl100k
+stays the offline default (exact for OpenAI targets, a proxy otherwise). A go/no-go on real
+deployment numbers still awaits a key — the published findings used the offline cl100k counter.
