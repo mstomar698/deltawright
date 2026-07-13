@@ -62,15 +62,30 @@ interface Interaction {
    * consequence of the action? Authored from the observed delta shapes on both React and
    * Vue. A node the delta reports that matches NO clause is a false positive — background
    * churn or over-report — so precision = |expected nodes| / |reported nodes| catches
-   * padding the node-count ratio alone cannot. (Predicates are deliberately specific to the
-   * action's semantics, not `() => true`, so a spurious node would actually be flagged.)
+   * padding the node-count ratio alone cannot. Predicates key on the action's semantics
+   * (kind + tag/role/name, and for an insert the added-subtree ANCESTRY) rather than
+   * `() => true`, so an unrelated node — even an unrelated ADDED node OUTSIDE the new
+   * subtree — is flagged. `nodes` is the full delta so a clause can resolve ancestry.
    */
-  expected: (n: DeltaNode) => boolean;
+  expected: (n: DeltaNode, nodes: DeltaNode[]) => boolean;
 }
 
 // TodoMVC's footer item-count is an unnamed, role-less text node (a <span>/<strong>); it is
 // the only text-changing element in these flows, so a role-less textChange is the count.
 const isCountText = (n: DeltaNode) => n.kind === 'textChanged' && !n.role;
+
+// True if `n` sits inside a newly-added <li> (the added todo's subtree), by walking parentRef.
+// Keeps the insert precision label faithful: an added node WITHIN the new todo is legitimate,
+// but an added node OUTSIDE it (an injected banner / portal / toast) is over-report.
+const isInAddedTodo = (n: DeltaNode, nodes: DeltaNode[]) => {
+  const byRef = new Map(nodes.map((x) => [x.ref, x]));
+  let cur = n.parentRef ? byRef.get(n.parentRef) : undefined;
+  while (cur) {
+    if (cur.kind === 'added' && cur.tag === 'li') return true;
+    cur = cur.parentRef ? byRef.get(cur.parentRef) : undefined;
+  }
+  return false;
+};
 
 export const INTERACTIONS: Interaction[] = [
   {
@@ -84,8 +99,12 @@ export const INTERACTIONS: Interaction[] = [
     // The new todo's text lives in a <label> (no accessible name), so recall is
     // "the insertion was detected", i.e. an added <li> subtree appears in the delta.
     primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'added' && n.tag === 'li'),
-    // Legit: the added <li> and its whole subtree (all kind:added) + the incremented count.
-    expected: (n) => n.kind === 'added' || isCountText(n),
+    // Legit: the added todo <li>, any node WITHIN its subtree (by ancestry), + the count.
+    // An added node OUTSIDE the new <li> (e.g. an injected banner) is NOT expected.
+    expected: (n, nodes) =>
+      (n.kind === 'added' && n.tag === 'li') ||
+      (n.kind === 'added' && isInAddedTodo(n, nodes)) ||
+      isCountText(n),
   },
   {
     name: 'toggle',
@@ -94,7 +113,10 @@ export const INTERACTIONS: Interaction[] = [
     action: async (p) => {
       await p.locator('.todo-list li .toggle').first().check();
     },
-    primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'attrChanged' || n.kind === 'added'),
+    // Primary change = the item's completed flip (its <li> class or the checkbox's checked
+    // state), NOT merely "some attribute changed" (which the revealed control alone satisfies).
+    primaryCaptured: (d) =>
+      d.nodes.some((n) => n.kind === 'attrChanged' && (n.tag === 'li' || n.role === 'checkbox')),
     // Legit: the item's completed-class flip, the checkbox's checked flip, the revealed
     // "Clear completed" control, and the active-count text.
     expected: (n) =>
@@ -112,7 +134,7 @@ export const INTERACTIONS: Interaction[] = [
       await li.hover();
       await li.locator('.destroy').click();
     },
-    primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'removed'),
+    primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'removed' && n.tag === 'li'),
     // Legit: the removed <li> + the decremented count.
     expected: (n) => (n.kind === 'removed' && n.tag === 'li') || isCountText(n),
   },
@@ -126,7 +148,8 @@ export const INTERACTIONS: Interaction[] = [
     action: async (p) => {
       await p.locator('.filters a', { hasText: 'Active' }).click();
     },
-    primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'removed' || n.kind === 'attrChanged'),
+    // Primary change = items filtered OUT of view (removed <li>), NOT merely a nav-link flip.
+    primaryCaptured: (d) => d.nodes.some((n) => n.kind === 'removed' && n.tag === 'li'),
     // Legit: the items filtered OUT of view (removed) + the nav links' selected-state flips.
     expected: (n) =>
       (n.kind === 'removed' && n.tag === 'li') || (n.kind === 'attrChanged' && n.role === 'link'),
@@ -172,7 +195,7 @@ async function measureDelta(
   const delta = await actAndObserve(page, ix.action, { label: ix.name });
   const wallMs = performance.now() - t0;
   const { text } = render(delta);
-  const spurious = delta.nodes.filter((n) => !ix.expected(n)).map(nodeLabel);
+  const spurious = delta.nodes.filter((n) => !ix.expected(n, delta.nodes)).map(nodeLabel);
   const s: DeltaSample = {
     tokens: await counter.count(text),
     lite: await counter.count(minimalDeltaText(delta)),
