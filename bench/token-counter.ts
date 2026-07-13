@@ -19,12 +19,13 @@
 //
 // The counter is selectable by which deployment key is present:
 //
-//   DEFAULT — OpenAI's tokenizer OFFLINE (cl100k via gpt-tokenizer; src `tokenCount`). No
-//     network, no key, deterministic. This is the REAL deployment counter for OpenAI
-//     (GPT-4 / 3.5-class) targets, and a close cross-model PROXY for the rest — ratios cancel
-//     most tokenizer-vocabulary differences, so the go/no-go DIRECTION holds regardless. It
-//     counts RAW text; a real API counter additionally includes that provider's small
-//     per-message framing, so absolute numbers differ slightly across modes.
+//   DEFAULT — OpenAI's tokenizer OFFLINE (gpt-tokenizer; no network, no key, deterministic).
+//     cl100k by default (EXACT for GPT-4 / 3.5-class targets); set OPENAI_ENCODING=o200k for the
+//     current OpenAI generation (GPT-4o / 4.1 / o-series / GPT-5), which is EXACT for those. For
+//     a NON-OpenAI target either encoding is a close cross-model PROXY — ratios cancel most
+//     tokenizer-vocabulary differences, so the go/no-go DIRECTION holds regardless (an offline
+//     Claude estimate is ~15-45% off absolute, fine for measurement, not billing). It counts RAW
+//     text; a real API counter additionally includes that provider's small per-message framing.
 //
 //   OPT-IN (deployment counters) — the real tokenizer of the target model, used when its key
 //     is set. ANTHROPIC_API_KEY → Anthropic `POST /v1/messages/count_tokens`; else
@@ -45,8 +46,10 @@
 // This module lives in bench/ ONLY — the published package stays offline + dep-free; no
 // network tokenizer ships in the library.
 import { tokenCount as cl100kProxy } from '../src/index';
+import { encode as encodeO200k } from 'gpt-tokenizer/encoding/o200k_base';
 
-export type CounterName = 'cl100k-proxy' | 'anthropic-count_tokens' | 'gemini-count_tokens';
+export type CounterName =
+  'cl100k-proxy' | 'o200k-openai' | 'anthropic-count_tokens' | 'gemini-count_tokens';
 
 export interface TokenCounter {
   /** Machine name of the active counter (printed in the results header). */
@@ -58,12 +61,23 @@ export interface TokenCounter {
   count(text: string): Promise<number>;
 }
 
-const proxyCounter: TokenCounter = {
+// OpenAI offline counters (gpt-tokenizer, no key, no network). Each is the EXACT tokenizer for
+// its model family, and a raw-text PROXY for other providers. cl100k is the default; set
+// OPENAI_ENCODING=o200k to count with o200k_base (the current OpenAI generation).
+const cl100kCounter: TokenCounter = {
   name: 'cl100k-proxy',
   isDeploymentCounter: false,
   label:
-    'OpenAI cl100k OFFLINE (gpt-tokenizer, raw-text) — exact for GPT-4/3.5-class targets, a proxy for GPT-4o/5 (o200k) and other models; set ANTHROPIC_API_KEY or GEMINI_API_KEY for a deployment counter',
+    'OpenAI cl100k OFFLINE (gpt-tokenizer, raw-text) — EXACT for GPT-4/3.5-class targets, a proxy for GPT-4o/5 (o200k) and other models; OPENAI_ENCODING=o200k for the newer OpenAI models, or ANTHROPIC_API_KEY / GEMINI_API_KEY for a live deployment counter',
   count: (text) => Promise.resolve(cl100kProxy(text)),
+};
+
+const o200kCounter: TokenCounter = {
+  name: 'o200k-openai',
+  isDeploymentCounter: false,
+  label:
+    'OpenAI o200k OFFLINE (gpt-tokenizer, raw-text) — EXACT for GPT-4o / GPT-4.1 / o-series / GPT-5-class targets, a proxy for other models; unset OPENAI_ENCODING for cl100k, or ANTHROPIC_API_KEY / GEMINI_API_KEY for a live deployment counter',
+  count: (text) => Promise.resolve(encodeO200k(text).length),
 };
 
 // Transient statuses worth retrying (rate-limit + server/overload). 4xx caller errors
@@ -203,5 +217,8 @@ export function selectCounter(env: NodeJS.ProcessEnv = process.env): TokenCounte
     const model = env.GEMINI_TOKENIZER_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
     return geminiCounter(geminiKey, model);
   }
-  return proxyCounter;
+  // Offline: OpenAI cl100k by default; o200k for the newer OpenAI generation.
+  const enc = env.OPENAI_ENCODING?.trim().toLowerCase();
+  if (enc === 'o200k' || enc === 'o200k_base') return o200kCounter;
+  return cl100kCounter;
 }
