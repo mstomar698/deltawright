@@ -323,7 +323,7 @@ async function main() {
     );
   }
   console.log(
-    `\nlegend (counter=${counter.name}${counter.isDeploymentCounter ? ' — the real deployment tokenizer' : ' — a PROXY, not the deployment tokenizer'}):` +
+    `\nlegend (counter=${counter.name}; see the "token counter:" line above for exact-vs-proxy scope):` +
       '\n  deterministic corpus => structural counts (lite/struct-diff/resnapshot) exact; the full' +
       '\n    delta_tokens column wobbles a little sub-pixel with geometry rects — take the median.' +
       '\n  lite_vs_structdiff <1 => delta more compact than a STRUCTURE-AWARE diff at info-parity.' +
@@ -332,8 +332,8 @@ async function main() {
       '\n  precision = trials with ZERO over-report — every reported node matched a hand-labeled' +
       '\n    expected consequence of the action (catches padding the token ratio alone cannot).' +
       '\n  capability axis (not tokens): delta also carries geometry + actionability the diff lacks.' +
-      '\n  NOTE: the OpenAI/cl100k proxy (raw text) and a real API counter (message-framed) are' +
-      '\n    DIFFERENT metrics — within a' +
+      '\n  NOTE: an OpenAI offline counter (cl100k/o200k, raw text) and a real API counter' +
+      '\n    (message-framed) are DIFFERENT metrics — within a' +
       '\n    run all columns share one counter so ratio DIRECTION holds, but absolute numbers/ratios' +
       '\n    are not directly comparable across the two counter modes.',
   );

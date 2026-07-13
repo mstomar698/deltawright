@@ -38,6 +38,27 @@ test('a blank/whitespace key falls back to the proxy (no accidental network mode
   expect(selectCounter({ ANTHROPIC_API_KEY: undefined }).name).toBe('cl100k-proxy');
 });
 
+test('OPENAI_ENCODING=o200k selects the o200k offline counter (exact for GPT-4o/4.1/o-series/GPT-5)', async () => {
+  const c = selectCounter({ OPENAI_ENCODING: 'o200k' });
+  expect(c.name).toBe('o200k-openai');
+  expect(c.isDeploymentCounter).toBe(false);
+  expect(c.label).toContain('o200k');
+  expect(await c.count('')).toBe(0);
+  expect(await c.count('the quick brown fox jumps over the lazy dog')).toBeGreaterThan(0);
+  // default (unset) stays cl100k; the `o200k_base` spelling also works
+  expect(selectCounter({}).name).toBe('cl100k-proxy');
+  expect(selectCounter({ OPENAI_ENCODING: 'o200k_base' }).name).toBe('o200k-openai');
+});
+
+test('a live API key takes precedence over OPENAI_ENCODING', async () => {
+  expect(selectCounter({ ANTHROPIC_API_KEY: 'sk', OPENAI_ENCODING: 'o200k' }).name).toBe(
+    'anthropic-count_tokens',
+  );
+  expect(selectCounter({ GEMINI_API_KEY: 'g', OPENAI_ENCODING: 'o200k' }).name).toBe(
+    'gemini-count_tokens',
+  );
+});
+
 test('Anthropic counter: empty text short-circuits to 0 with NO network call', async () => {
   const orig = globalThis.fetch;
   let calls = 0;
