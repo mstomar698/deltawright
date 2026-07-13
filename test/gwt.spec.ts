@@ -58,7 +58,8 @@ test('B/C: glass coverage is surfaced (agreeing with Playwright); a disabled Con
   // Refresh went inert => a changed node; geometry reports it covered by the glass, and
   // Playwright AGREES (covered) — a compact structured coverage fact, no [geom] tension.
   // DIAGNOSTIC + latency, explicitly NOT a correctness win: Playwright's own click already
-  // refuses; Deltawright turns a post-hoc 30s hang into a sub-second labeled fact.
+  // refuses; Deltawright turns a post-hoc click-hang (30s default, up to a real portal's
+  // configured 120s — see the calibration findings doc) into a sub-second labeled fact.
   const refresh = delta.nodes.find((n) => n.name === 'Refresh balance');
   expect(refresh, 'the covered refresh trigger is reported as a changed node').toBeTruthy();
   expect(refresh!.geometry?.coveredBy).toContain('gwt-PopupPanelGlass');
