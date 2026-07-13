@@ -55,8 +55,10 @@ const WARMUP = 1;
 const counter = selectCounter();
 const snapshot = (p: Page) => p.locator('body').ariaSnapshot();
 const median = (xs: number[]) => {
+  if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)] ?? 0;
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
 };
 
 function loc(page: Page, s: LocSpec): Locator {
@@ -105,11 +107,9 @@ async function freshPage(browser: Browser, t: Target) {
 }
 
 async function main() {
-  let cfg: { targets: Target[] };
+  let raw: string;
   try {
-    cfg = JSON.parse(
-      readFileSync(fileURLToPath(new URL('./live-targets.json', import.meta.url)), 'utf8'),
-    );
+    raw = readFileSync(fileURLToPath(new URL('./live-targets.json', import.meta.url)), 'utf8');
   } catch {
     console.log(
       'No bench/live-targets.json found (it is gitignored). Copy bench/live-targets.example.json,\n' +
@@ -117,6 +117,13 @@ async function main() {
         'nothing site-specific.',
     );
     return;
+  }
+  let cfg: { targets: Target[] };
+  try {
+    cfg = JSON.parse(raw); // present but malformed → fail loud, not "not found" (names no content)
+  } catch (e) {
+    console.error(`bench/live-targets.json is present but not valid JSON: ${(e as Error).message}`);
+    process.exit(1);
   }
 
   const browser = await chromium.launch({ headless: true });
