@@ -62,7 +62,7 @@ const proxyCounter: TokenCounter = {
   name: 'cl100k-proxy',
   isDeploymentCounter: false,
   label:
-    'OpenAI cl100k OFFLINE (gpt-tokenizer, raw-text) — exact for OpenAI targets, a proxy otherwise; set ANTHROPIC_API_KEY or GEMINI_API_KEY for another model',
+    'OpenAI cl100k OFFLINE (gpt-tokenizer, raw-text) — exact for GPT-4/3.5-class targets, a proxy for GPT-4o/5 (o200k) and other models; set ANTHROPIC_API_KEY or GEMINI_API_KEY for a deployment counter',
   count: (text) => Promise.resolve(cl100kProxy(text)),
 };
 
@@ -196,7 +196,9 @@ export function selectCounter(env: NodeJS.ProcessEnv = process.env): TokenCounte
     const model = env.ANTHROPIC_TOKENIZER_MODEL?.trim() || DEFAULT_ANTHROPIC_MODEL;
     return anthropicCounter(anthropicKey, model);
   }
-  const geminiKey = (env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY)?.trim();
+  // Trim each var independently so a blank GEMINI_API_KEY can't shadow a valid GOOGLE_API_KEY
+  // (`??` before `.trim()` would let '' win the coalesce and silently fall to the proxy).
+  const geminiKey = env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim();
   if (geminiKey) {
     const model = env.GEMINI_TOKENIZER_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
     return geminiCounter(geminiKey, model);

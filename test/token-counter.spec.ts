@@ -162,6 +162,17 @@ test('with GEMINI_API_KEY (and no Anthropic key), selects the Gemini deployment 
   ).toContain('gemini-2.5-pro');
 });
 
+test('a blank GEMINI_API_KEY does not shadow a valid GOOGLE_API_KEY (no silent proxy fallback)', async () => {
+  expect(selectCounter({ GEMINI_API_KEY: '', GOOGLE_API_KEY: 'g-real' }).name).toBe(
+    'gemini-count_tokens',
+  );
+  expect(selectCounter({ GEMINI_API_KEY: '   ', GOOGLE_API_KEY: 'g-real' }).name).toBe(
+    'gemini-count_tokens',
+  );
+  // both blank → offline proxy
+  expect(selectCounter({ GEMINI_API_KEY: '  ', GOOGLE_API_KEY: '' }).name).toBe('cl100k-proxy');
+});
+
 test('Anthropic takes precedence when both an Anthropic and a Gemini key are present', async () => {
   const c = selectCounter({ ANTHROPIC_API_KEY: 'sk-test', GEMINI_API_KEY: 'g-test' });
   expect(c.name).toBe('anthropic-count_tokens');
