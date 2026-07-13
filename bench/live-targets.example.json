@@ -1,0 +1,46 @@
+{
+  "//": "Template for bench/run-live.ts (issue #25 Tier-2). Copy to bench/live-targets.json (GITIGNORED),",
+  "//2": "point it at your OWN apps, and set the credential env vars. Nothing here is committed with real",
+  "//3": "sites/creds. A locator spec is {role,name,exact} OR {role,nameRe} (regex) OR {css}.",
+  "targets": [
+    {
+      "name": "next-marketing",
+      "url": "https://your-public-site.example/",
+      "waitMs": 2500,
+      "ready": { "role": "button", "name": "Pricing", "exact": true },
+      "login": null,
+      "interactions": [
+        {
+          "name": "tab-swap",
+          "quadrant": "content-swap",
+          "click": { "role": "button", "name": "Pricing", "exact": true }
+        },
+        {
+          "name": "nav-overlay",
+          "quadrant": "OVERLAY (menu)",
+          "click": { "role": "button", "name": "Products", "exact": true }
+        }
+      ]
+    },
+    {
+      "name": "react-app",
+      "url": "https://your-app.example/",
+      "login": {
+        "user": { "role": "textbox", "nameRe": "user" },
+        "pass": { "css": "input[type=password]" },
+        "submit": { "role": "button", "nameRe": "sign ?in" },
+        "userEnv": "APP_USER",
+        "passEnv": "APP_PASS",
+        "successGoneCss": "input[type=password]"
+      },
+      "ready": { "role": "button", "nameRe": "dashboard" },
+      "interactions": [
+        {
+          "name": "nav-swap",
+          "quadrant": "view-switch",
+          "click": { "role": "button", "name": "Settings", "exact": true }
+        }
+      ]
+    }
+  ]
+}

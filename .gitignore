@@ -9,3 +9,6 @@ playwright-report/
 .env
 .env.*
 !.env.example
+
+# Live-benchmark targets point at real sites + credentials — keep them local
+bench/live-targets.json
