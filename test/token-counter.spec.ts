@@ -2,9 +2,10 @@ import { test, expect } from '@playwright/test';
 import { selectCounter } from '../bench/token-counter';
 import { tokenCount } from '../src/index';
 
-// The admissible-benchmark (#25) pluggable token counter: offline cl100k proxy by
-// default, real Anthropic count_tokens when ANTHROPIC_API_KEY is set. All the selection +
-// integrity logic is exercised here WITHOUT real network by stubbing globalThis.fetch.
+// The admissible-benchmark (#25) pluggable token counter: OpenAI cl100k offline by default,
+// real Anthropic count_tokens (ANTHROPIC_API_KEY) or Gemini countTokens (GEMINI_API_KEY /
+// GOOGLE_API_KEY) as the deployment counter. All the selection + integrity logic is exercised
+// here WITHOUT real network by stubbing globalThis.fetch.
 
 test('with no key, selects the OFFLINE cl100k proxy (not the deployment counter)', async () => {
   const c = selectCounter({});
@@ -127,7 +128,7 @@ test('Anthropic counter: retries a transient 429 with backoff, then succeeds', a
   }
 });
 
-test('Anthropic counter: throws if input_tokens is missing (malformed response)', async () => {
+test('Anthropic counter: throws on a malformed (no token count) response', async () => {
   const orig = globalThis.fetch;
   globalThis.fetch = (async () =>
     ({
@@ -138,7 +139,73 @@ test('Anthropic counter: throws if input_tokens is missing (malformed response)'
     }) as Response) as typeof fetch;
   try {
     const c = selectCounter({ ANTHROPIC_API_KEY: 'sk-test' });
-    await expect(c.count('x')).rejects.toThrow(/no input_tokens field/);
+    await expect(c.count('x')).rejects.toThrow(
+      /Anthropic count_tokens returned no valid token count/,
+    );
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+// --- Gemini deployment counter ---------------------------------------------------------
+
+test('with GEMINI_API_KEY (and no Anthropic key), selects the Gemini deployment counter', async () => {
+  const def = selectCounter({ GEMINI_API_KEY: 'g-test' });
+  expect(def.name).toBe('gemini-count_tokens');
+  expect(def.isDeploymentCounter).toBe(true);
+  expect(def.label).toContain('gemini-2.5-flash'); // default model
+  // GOOGLE_API_KEY is an accepted alias.
+  expect(selectCounter({ GOOGLE_API_KEY: 'g-test' }).name).toBe('gemini-count_tokens');
+  // model override
+  expect(
+    selectCounter({ GEMINI_API_KEY: 'g-test', GEMINI_TOKENIZER_MODEL: 'gemini-2.5-pro' }).label,
+  ).toContain('gemini-2.5-pro');
+});
+
+test('Anthropic takes precedence when both an Anthropic and a Gemini key are present', async () => {
+  const c = selectCounter({ ANTHROPIC_API_KEY: 'sk-test', GEMINI_API_KEY: 'g-test' });
+  expect(c.name).toBe('anthropic-count_tokens');
+});
+
+test('Gemini counter: parses totalTokens and MEMOIZES; empty text is 0 with no network', async () => {
+  const orig = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ totalTokens: 55 }),
+      text: async () => '',
+    } as Response;
+  }) as typeof fetch;
+  try {
+    const c = selectCounter({ GEMINI_API_KEY: 'g-test' });
+    expect(await c.count('')).toBe(0);
+    expect(calls).toBe(0); // empty short-circuits, no request
+    expect(await c.count('hello')).toBe(55);
+    expect(await c.count('hello')).toBe(55); // memo hit
+    expect(calls).toBe(1);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test('Gemini counter: FAILS LOUD on a non-retryable 401 (never silently falls back)', async () => {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    ({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+      text: async () => 'API key not valid',
+    }) as Response) as typeof fetch;
+  try {
+    const c = selectCounter({ GEMINI_API_KEY: 'g-bad' });
+    await expect(c.count('some delta text')).rejects.toThrow(
+      /Gemini countTokens failed \(HTTP 401\)/,
+    );
+    await expect(c.count('some delta text')).rejects.toThrow(/Refusing to silently fall back/);
   } finally {
     globalThis.fetch = orig;
   }
