@@ -2,27 +2,24 @@
 //   npx tsx bench/run-admissible.ts
 //
 // Removes #23's two biggest admissibility gaps:
-//   1. AUTHOR BIAS — the app under test is a real, unmodified, third-party app
-//      (vendored TodoMVC React, pinned; see bench/corpus/CORPUS.md), not one we wrote.
+//   1. AUTHOR BIAS — the apps under test are real, unmodified, third-party apps
+//      (vendored TodoMVC React + Vue, pinned; see bench/corpus/CORPUS.md), not ones we wrote.
 //   2. RIGOR — pre-registered interactions (incl. a NAVIGATION), a structure-aware
 //      order-insensitive incumbent diff, primary-change capture (recall), and N>=30
 //      reps with a discarded warm-up. The corpus is deterministic (fresh context per
 //      run), so token counts are exact and only wall-time carries variance.
 //
-// What it still does NOT cover (tracked in #25): a second framework (Vue), Tier-2
-// production sites via HAR replay, and Anthropic's tokenizer as the primary counter.
+// The token counter is PLUGGABLE (bench/token-counter.ts): the offline cl100k proxy by
+// default, or the real Anthropic count_tokens DEPLOYMENT counter when ANTHROPIC_API_KEY is
+// set. What it still does NOT cover (tracked in #25): Tier-2 production sites via HAR
+// replay, precision vs a hand-labeled change set, and covered/disabled + keyed-reorder
+// interactions.
 import { chromium, type Browser, type Page } from '@playwright/test';
-import {
-  actAndObserve,
-  render,
-  tokenCount,
-  ensureInjected,
-  DEFAULT_SETTLE,
-  type Delta,
-} from '../src/index';
+import { actAndObserve, render, ensureInjected, DEFAULT_SETTLE, type Delta } from '../src/index';
 import { structuralDiff } from './structural-diff';
 import { minimalDeltaText } from './delta-lite';
 import { startCorpusServer } from './static-server';
+import { selectCounter, type TokenCounter } from './token-counter';
 
 const VIEWPORT = { width: 1280, height: 720 };
 const N = 30; // measured reps per interaction
@@ -120,16 +117,21 @@ interface DeltaSample {
   wallMs: number;
 }
 
-async function measureDelta(browser: Browser, ix: Interaction, url: string): Promise<DeltaSample> {
+async function measureDelta(
+  browser: Browser,
+  ix: Interaction,
+  url: string,
+  counter: TokenCounter,
+): Promise<DeltaSample> {
   const { page, close } = await freshApp(browser, url);
   await ix.setup(page);
   const t0 = performance.now();
   const delta = await actAndObserve(page, ix.action, { label: ix.name });
   const wallMs = performance.now() - t0;
-  const { tokens } = render(delta);
+  const { text } = render(delta);
   const s: DeltaSample = {
-    tokens,
-    lite: tokenCount(minimalDeltaText(delta)),
+    tokens: await counter.count(text),
+    lite: await counter.count(minimalDeltaText(delta)),
     nodes: delta.nodes.length,
     settleMs: delta.stats.settleMs,
     capped: delta.stats.hitMaxWait,
@@ -150,6 +152,7 @@ async function measureIncumbent(
   browser: Browser,
   ix: Interaction,
   url: string,
+  counter: TokenCounter,
 ): Promise<IncumbentSample> {
   const { page, close } = await freshApp(browser, url);
   await ix.setup(page);
@@ -162,8 +165,8 @@ async function measureIncumbent(
   const after = await snapshot(page);
   const wallMs = performance.now() - t0;
   const s: IncumbentSample = {
-    structDiffTokens: tokenCount(structuralDiff(before, after)),
-    resnapshotTokens: tokenCount(after),
+    structDiffTokens: await counter.count(structuralDiff(before, after)),
+    resnapshotTokens: await counter.count(after),
     wallMs,
   };
   await close();
@@ -177,6 +180,7 @@ const pct = (xs: number[], p: number) => {
 const median = (xs: number[]) => pct(xs, 0.5);
 
 async function main() {
+  const counter = selectCounter();
   const browser = await chromium.launch({ headless: true });
   const server = await startCorpusServer();
   const rows: Record<string, unknown>[] = [];
@@ -188,8 +192,8 @@ async function main() {
       const dS: DeltaSample[] = [];
       const iS: IncumbentSample[] = [];
       for (let t = 0; t < N + WARMUP; t++) {
-        const d = await measureDelta(browser, ix, url);
-        const i = await measureIncumbent(browser, ix, url);
+        const d = await measureDelta(browser, ix, url, counter);
+        const i = await measureIncumbent(browser, ix, url, counter);
         if (t >= WARMUP) {
           dS.push(d);
           iS.push(i);
@@ -228,9 +232,10 @@ async function main() {
   console.log(
     `\n\n=== ADMISSIBLE RESULTS (real TodoMVC React + Vue, N=${N}, ${WARMUP} warm-up discarded) ===\n`,
   );
+  console.log(`token counter: ${counter.label}\n`);
   console.table(rows);
   console.log(
-    '\nlegend (deterministic corpus => token counts exact; only time varies):' +
+    `\nlegend (counter=${counter.name}${counter.isDeploymentCounter ? ' — the real deployment tokenizer' : ' — a PROXY, not the deployment tokenizer'}; deterministic corpus => token counts exact, only time varies):` +
       '\n  lite_vs_structdiff <1 => delta more compact than a STRUCTURE-AWARE diff at info-parity.' +
       '\n  delta_vs_resnapshot <1 => delta smaller than re-dumping the full a11y tree.' +
       '\n  capture = trials where the delta captured the primary intended change (recall).' +
