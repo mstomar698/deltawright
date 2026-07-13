@@ -58,7 +58,8 @@ test('B/C: glass coverage is surfaced (agreeing with Playwright); a disabled Con
   // Refresh went inert => a changed node; geometry reports it covered by the glass, and
   // Playwright AGREES (covered) — a compact structured coverage fact, no [geom] tension.
   // DIAGNOSTIC + latency, explicitly NOT a correctness win: Playwright's own click already
-  // refuses; Deltawright turns a post-hoc 30s hang into a sub-second labeled fact.
+  // refuses; Deltawright turns a post-hoc click-hang (30s default, up to a real portal's
+  // configured 120s — see the calibration findings doc) into a sub-second labeled fact.
   const refresh = delta.nodes.find((n) => n.name === 'Refresh balance');
   expect(refresh, 'the covered refresh trigger is reported as a changed node').toBeTruthy();
   expect(refresh!.geometry?.coveredBy).toContain('gwt-PopupPanelGlass');
@@ -79,6 +80,41 @@ test('B/C: glass coverage is surfaced (agreeing with Playwright); a disabled Con
 
   // Reality check: the covered refresh genuinely cannot be clicked (glass intercepts) —
   // Deltawright's NOT-actionable(covered) matched reality.
+  let clickFailed = false;
+  await page
+    .locator('[data-cmd=refresh]')
+    .click({ timeout: 1200 })
+    .catch(() => {
+      clickFailed = true;
+    });
+  expect(clickFailed, 'the covered refresh cannot actually be clicked').toBe(true);
+});
+
+test('B2 (calibrated to a real portal): an OBFUSCATED-class glass is still surfaced as coveredBy + covered NOT-actionable', async ({
+  page,
+}) => {
+  // Real-portal correction: production GWT overlays frequently carry OBFUSCATED CssResource
+  // classes (+ a newer materialPaper widget set), NOT the stable gwt-PopupPanelGlass. The
+  // single largest stable actionability flake in the calibrated portal's suite was exactly
+  // this — an obfuscated-class glass intercepting a click for 120s. DW's coverage surfacing
+  // reads whatever class covers the target, so Case B is class-AGNOSTIC: the covered verdict
+  // is unchanged, only the reported class differs.
+  await page.goto(GWT_FIXTURE_URL);
+  const delta = await actAndObserve(page, (p) => p.click('[data-cmd=open-obf]'), {
+    label: 'open obfuscated-glass dialog',
+  });
+
+  const refresh = delta.nodes.find((n) => n.name === 'Refresh balance');
+  expect(refresh, 'the covered refresh trigger is reported as a changed node').toBeTruthy();
+  // coveredBy carries the OBFUSCATED class verbatim (not a gwt-* theme class)...
+  expect(refresh!.geometry?.coveredBy).toContain('kx7Qa2');
+  expect(refresh!.geometry?.coveredBy).not.toContain('gwt-PopupPanelGlass');
+  // ...and the verdict + agreement are identical to the stable-class case.
+  expect(refresh!.actionability.verdict).toBe('NOT-actionable');
+  expect(refresh!.actionability.agreed, 'geometry and Playwright agree it is covered').toBe(true);
+
+  // Reality check: the covered refresh genuinely cannot be clicked (the obfuscated glass
+  // intercepts), so DW's NOT-actionable(covered) matched reality here too.
   let clickFailed = false;
   await page
     .locator('[data-cmd=refresh]')

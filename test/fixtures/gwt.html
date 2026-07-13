@@ -11,11 +11,17 @@
         classes (letter + >=5 alnum, no hyphen) and NO ARIA — like production GWT output.
       - Scheduler-style DEFERRED commands (queueMicrotask -> setTimeout(0) -> rAF, no
         network) so DOM lands AFTER the click promise resolves.
-      - PopupPanel GLASS overlay using the STABLE framework class gwt-PopupPanelGlass
-        (GWT does not obfuscate theme classes), which intercepts pointer events.
+      - TWO PopupPanel GLASS overlays, both intercepting pointer events: one with the STABLE
+        framework class gwt-PopupPanelGlass, and one with an OBFUSCATED CssResource class
+        (kx7Qa2) + a materialPaper dialog. Real production GWT portals emit BOTH — calibrated
+        2026-07 against a real portal's regression suite, whose single largest STABLE
+        actionability failure cluster was an obfuscated-class glass intercepting a click for
+        120s. DW's coverage surfacing reads whatever class covers the target, so it stays
+        class-agnostic; only the checksum tokenizes the obfuscated class (a gwt-* one is kept).
       - DialogBox self-reposition (JS-timer vs CSS-transition variants).
-    Honest caveat: calibrate timings/class names to a real portal trace before treating
-    any golden checksum as evidence about a specific GWT app. See docs findings.
+    Honest caveat: all class names here are SYNTHETIC (not any real app's); calibrate the real
+    Scheduler primitive + timings to a portal trace before treating a golden checksum as
+    evidence about a specific GWT app. See docs findings.
   -->
   <style>
     body { font-family: system-ui, sans-serif; margin: 24px; }
@@ -45,6 +51,7 @@
     <!-- app widgets: hashed CssResource-style classes, delegated dispatch, no ARIA -->
     <div class="trigger G7Q2XM" data-cmd="approve" tabindex="0">Approve payment</div>
     <div class="trigger G7Q2XM" data-cmd="open" tabindex="0">Open dialog (glass)</div>
+    <div class="trigger G7Q2XM" data-cmd="open-obf" tabindex="0">Open dialog (obfuscated glass)</div>
     <div class="trigger G7Q2XM" data-cmd="refresh" tabindex="0">Refresh balance</div>
     <div class="trigger G7Q2XM" data-cmd="twowave" tabindex="0">Two-wave load</div>
     <div class="trigger G7Q2XM" data-cmd="recenter-js" tabindex="0">Dialog (JS recenter)</div>
@@ -102,6 +109,27 @@
       },
 
       refresh() { /* covered by glass once open; used as the covered target */ },
+
+      // B2) Calibrated real-portal variant: the glass carries an OBFUSCATED CssResource class
+      //     (kx7Qa2), NOT gwt-PopupPanelGlass, with a newer materialPaper dialog above it —
+      //     the real portal's #1 stable actionability flake was exactly this (an obfuscated
+      //     glass intercepting a click for 120s). DW reads coveredBy=<whatever class covers>,
+      //     so the covered NOT-actionable verdict is unchanged; only the checksum tokenizes
+      //     the obfuscated glass class (a stable gwt-* one would be kept verbatim).
+      'open-obf'() {
+        setTimeout(() => {
+          const glass = el('div', 'kx7Qa2');
+          glass.style.cssText = 'position:fixed;inset:0;background:#000;opacity:.3;z-index:1000';
+          const dlg = el('div', 'materialPaper Zb9Wq7');
+          dlg.style.cssText =
+            'position:absolute;z-index:1001;left:340px;top:180px;width:260px;padding:14px;background:#fff;border:1px solid #333';
+          const ok = el('button', 'gwt-Button GX91KD'); ok.textContent = 'OK';
+          dlg.appendChild(ok);
+          app.appendChild(glass);
+          app.appendChild(dlg);
+          document.querySelector('[data-cmd=refresh]').classList.add('inert');
+        }, 20);
+      },
 
       // E) Two-wave: wave1 at ~30ms, a 370ms gap (> quietMs 120), wave2 at ~400ms. Settle
       //    resolves on wave1's structural quiet and SILENTLY misses wave2 (honest gap).
