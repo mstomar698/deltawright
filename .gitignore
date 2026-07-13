@@ -4,3 +4,8 @@ test-results/
 playwright-report/
 .DS_Store
 *.log
+
+# Local env / secrets — NEVER commit API keys
+.env
+.env.*
+!.env.example
