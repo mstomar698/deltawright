@@ -6,13 +6,18 @@
 // (the listener LIFETIME is the window — no timestamp math), so it yields on the LIVE path even when a
 // trace would be silent.
 //
-// The honesty rules are the SAME as the offline arm (DW-03):
+// The honesty rules follow the offline arm (DW-03), but the live network channel is deliberately WIDER
+// than the offline harness channel — disclosed here and in the ADR so it is never mistaken for parity:
 //  • CO-OCCURRENCE, NEVER CAUSATION. An event that fired during the window is a candidate the agent
 //    weighs, never "the cause". A client-side echo cannot prove a backend/app fault caused the failure.
 //  • Only an uncaught `pageerror` (a real JS exception) may flip `suspectedNotDomCause`, and only when
 //    Deltawright named NO DOM actionability cause. A `console.error` is surfaced as context but never
 //    upgraded to a verdict — legacy apps log them constantly, so console-alone would cry wolf.
-//  • A 4xx/5xx response OR a `requestfailed` flips `suspectedBackendCause` → route to backend/infra.
+//  • A page-wide status ≥ 400 response OR a `requestfailed` flips `suspectedBackendCause` — but a
+//    CLIENT-ABORT requestfailed (`net::ERR_ABORTED`) is EXCLUDED (the page cancelled its own request,
+//    not a backend fault). This channel is page-wide + ALL-ORIGIN (it can see a third-party analytics
+//    404/429), UNLIKE the offline arm, which reads only curated harness backend-error log lines. So the
+//    backend hint is framed as a co-occurrence signal to WEIGH, never a directive "route to backend".
 //  • LIST-AND-CLAMP. Signals are capped and the true in-window count is reported, so a noisy legacy
 //    console is summarized honestly, never silently truncated.
 //  • It emits NO taxonomy code and touches NO verdict — routing is adjacent metadata, not a diagnosis.
@@ -83,7 +88,8 @@ export interface LiveRoutingReport {
   windowCount: number;
   /** Uncaught pageerror(s) in the window (the strong signal that flips the in-page hint). */
   pageErrorCount: number;
-  /** 4xx/5xx responses + failed requests in the window (the signal that flips the backend hint). */
+  /** Status-≥400 responses + failed requests (EXCLUDING client aborts) in the window — page-wide,
+   *  all-origin. The signal that flips the backend hint. */
   backendCount: number;
   /**
    * SUSPECTED "not a DOM-actionability cause": a real JS exception co-occurred AND Deltawright named
@@ -91,8 +97,9 @@ export interface LiveRoutingReport {
    */
   suspectedNotDomCause: boolean;
   /**
-   * SUSPECTED backend/infra cause: a 4xx/5xx response or a failed request co-occurred AND Deltawright
-   * named no DOM cause → route to backend/infra. Co-occurrence only (never a cause).
+   * SUSPECTED backend/infra cause: a status-≥400 response or a non-abort failed request co-occurred
+   * (page-wide, all-origin) AND Deltawright named no DOM cause → a signal to WEIGH toward backend/infra.
+   * Co-occurrence only, never a cause — and wider than the offline arm's curated-log channel.
    */
   suspectedBackendCause: boolean;
   /** One-line routing recommendation, or '' when there is nothing to route. */
@@ -161,8 +168,12 @@ export function buildLiveRouting(
   // phrasing style as the offline arm.
   const routes: string[] = [];
   if (suspectedBackendCause) {
+    // Honest CO-OCCURRENCE, not a directive: the backend channel is page-wide + all-origin (it also
+    // sees third-party responses), so "N HTTP errors co-occurred" is a signal to WEIGH, never proof
+    // that a backend fault caused THIS failure. (The offline harness arm reads curated backend-error
+    // log lines and is narrower — see the ADR disclosure.)
     routes.push(
-      `route to BACKEND/INFRA — ${backendCount} backend response/request-failure(s) (4xx/5xx or a failed request) co-occurred in the action window`,
+      `${backendCount} HTTP error response(s)/failed request(s) co-occurred in the window (observed page-wide, all origins) — WEIGH as a possible backend/infra signal, not a cause`,
     );
   }
   if (suspectedNotDomCause) {
@@ -206,7 +217,14 @@ export function attachLiveRouting(page: Page): LiveRoutingCollector {
     if (status >= 400) raw.push({ kind: 'response', status, url: res.url() });
   };
   const onRequestFailed = (req: Request): void => {
-    raw.push({ kind: 'requestfailed', url: req.url(), text: req.failure()?.errorText });
+    const errorText = req.failure()?.errorText;
+    // EXCLUDE a client-side cancellation. `net::ERR_ABORTED` (and any "aborted" failure text) is the
+    // page/test cancelling its OWN request — a superseded fetch, an abandoned navigation, an
+    // AbortController — NOT a backend/infra fault. Counting it would flip the backend hint on a healthy
+    // page merely because a cancel co-occurred in the settle window. Genuine failures
+    // (ERR_CONNECTION_REFUSED, ERR_NAME_NOT_RESOLVED, ERR_TIMED_OUT, …) are kept.
+    if (errorText && /ERR_ABORTED|aborted/i.test(errorText)) return;
+    raw.push({ kind: 'requestfailed', url: req.url(), text: errorText });
   };
   const onPageError = (err: Error): void => {
     raw.push({ kind: 'pageerror', text: err.message });

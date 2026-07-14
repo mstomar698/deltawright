@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { actAndObserve } from '../src/index';
-import { buildLiveRouting, MAX_SIGNALS, SNIPPET_MAX } from '../src/host/live-routing';
+import {
+  attachLiveRouting,
+  buildLiveRouting,
+  MAX_SIGNALS,
+  SNIPPET_MAX,
+} from '../src/host/live-routing';
 import type { RawLiveSignal } from '../src/host/live-routing';
 import { fixtureUrl } from './helpers';
 
@@ -49,7 +54,10 @@ test('captures a co-occurring 500 response AND an uncaught pageerror, and routes
   expect(r.suspectedBackendCause).toBe(true);
   expect(r.suspectedNotDomCause).toBe(true);
   expect(r.recommendation).toContain('not-a-DOM-cause');
-  expect(r.recommendation).toContain('BACKEND');
+  // The backend route is CO-OCCURRENCE-framed, not a bare "route to BACKEND/INFRA" directive.
+  expect(r.recommendation).toContain('WEIGH as a possible backend/infra signal');
+  expect(r.recommendation).not.toContain('route to BACKEND/INFRA');
+  expect(r.recommendation).toContain('Co-occurrence, not proof.');
   expect(r.recommendation).toContain('APP OWNER');
 
   // PRIVACY: the query string is stripped, the pageerror snippet is surfaced but not the raw object.
@@ -179,13 +187,60 @@ test('buildLiveRouting: a 4xx/5xx response OR a requestfailed flips suspectedBac
     const r = buildLiveRouting({ raw: [backend] }, { domCauseNamed: false });
     expect(r.backendCount).toBe(1);
     expect(r.suspectedBackendCause).toBe(true);
-    expect(r.recommendation).toContain('BACKEND');
+    // Co-occurrence framing, not a bare directive.
+    expect(r.recommendation).toContain('WEIGH as a possible backend/infra signal');
+    expect(r.recommendation).not.toContain('route to BACKEND/INFRA');
+    expect(r.recommendation).toContain('Co-occurrence, not proof.');
   }
   // A 2xx/3xx response is NOT a backend signal (the collector only keeps ≥400, but the builder must
   // also not count one if it slips through — count is over the response/requestfailed KINDS only).
   const ok = buildLiveRouting({ raw: [response(200, 'http://api/ok')] }, { domCauseNamed: false });
   expect(ok.backendCount).toBe(1); // a surfaced response kind is always a backend co-event
   expect(ok.suspectedBackendCause).toBe(true);
+});
+
+// --- Backend channel: client aborts are noise, not a backend fault (the FIX-1 narrowing) -----------
+
+// The abort exclusion lives in the IMPURE collector (`attachLiveRouting.onRequestFailed`), so drive it
+// by emitting synthetic `requestfailed` events on the page's EventEmitter — a fake Request carrying the
+// two methods the handler reads (`url()`, `failure()`). No navigation, so nothing else fires.
+const emitOn = (page: Page, event: string, arg: unknown): void =>
+  (page as unknown as { emit(e: string, a: unknown): void }).emit(event, arg);
+const fakeRequest = (url: string, errorText?: string): unknown => ({
+  url: () => url,
+  failure: () => (errorText ? { errorText } : null),
+});
+
+test('a co-occurring client-abort (net::ERR_ABORTED) requestfailed is NOT counted or routed; a genuine failure still is', async ({
+  page,
+}) => {
+  const collector = attachLiveRouting(page);
+  // The page cancelled its own request — must be dropped (defensively, any "aborted" text too).
+  emitOn(page, 'requestfailed', fakeRequest('http://dw.test/api/cancelled', 'net::ERR_ABORTED'));
+  emitOn(page, 'requestfailed', fakeRequest('http://dw.test/analytics', 'net::ERR_Aborted'));
+  // A genuine connection failure — must be kept.
+  emitOn(
+    page,
+    'requestfailed',
+    fakeRequest('http://dw.test/api/down', 'net::ERR_CONNECTION_REFUSED'),
+  );
+  const collected = collector.detach();
+
+  // No aborted request reached the raw stream.
+  expect(collected.raw.some((e) => /aborted/i.test(e.text ?? ''))).toBe(false);
+
+  const r = buildLiveRouting(collected, { domCauseNamed: false });
+  expect(r.backendCount).toBe(1); // only the genuine ERR_CONNECTION_REFUSED
+  expect(r.suspectedBackendCause).toBe(true); // a real failure STILL flips it
+});
+
+test('a requestfailed with no failure text is kept (a genuine failure is the safe default)', async ({
+  page,
+}) => {
+  const collector = attachLiveRouting(page);
+  emitOn(page, 'requestfailed', fakeRequest('http://dw.test/api/down')); // no errorText
+  const r = buildLiveRouting(collector.detach(), { domCauseNamed: false });
+  expect(r.backendCount).toBe(1);
 });
 
 test('buildLiveRouting: a console.error alone never flips the hint', () => {

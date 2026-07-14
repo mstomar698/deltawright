@@ -5,8 +5,9 @@ playwright-report/
 .DS_Store
 *.log
 
-# Claude Code local working dir (agent worktrees / config) — never committed
-.claude/
+# Claude Code ephemeral agent worktrees — never committed. Scoped to worktrees/ so an intentionally
+# committed .claude/settings.json (shared config) is still allowed.
+.claude/worktrees/
 
 # Local env / secrets — NEVER commit API keys
 .env

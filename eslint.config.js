@@ -12,7 +12,7 @@ export default tseslint.config(
       'test-results/',
       'playwright-report/',
       'bench/corpus/**',
-      '.claude/',
+      '.claude/worktrees/',
     ],
   },
   js.configs.recommended,
