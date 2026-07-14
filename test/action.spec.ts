@@ -35,7 +35,7 @@ test('action_degrades_to_nothing_and_gates_the_comment_and_artifact_on_findings'
 });
 
 test('action_uses_first_party_actions_and_gh_not_a_third_party_comment_action', () => {
-  expect(actionYml).toContain('actions/upload-artifact@v4'); // first-party
+  expect(actionYml).toContain('actions/upload-artifact@v7'); // first-party, pinned major
   // House rule: gh + built-in token over a third-party comment action.
   expect(actionYml).toMatch(/gh api/);
   expect(actionYml).not.toMatch(/marocchino|peter-evans|thollander/i);

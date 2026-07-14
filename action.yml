@@ -64,7 +64,7 @@ runs:
 
     - name: Upload flake dashboard artifact
       if: steps.agg.outputs.found == 'true' && inputs.dashboard-artifact != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.dashboard-artifact }}
         path: deltawright-dashboard.html
