@@ -176,17 +176,27 @@ export function renderTraceReport(d: TraceDiagnosis): string {
     lines.push(`cause: ${d.cause} (${d.confidence})`);
   }
 
-  // Move 2 routing — additive: only rendered when in-page errors co-occurred, so a clean trace's
-  // report is byte-unchanged. Framed as co-occurrence, never causation (DW-03).
-  if (d.routing.signals.length > 0) {
-    lines.push(
-      '',
-      'Co-occurring in-page signals in the action window (co-occurrence, NOT proof of cause):',
-    );
-    for (const s of d.routing.signals) lines.push(`  · [${s.kind}] ${s.text}`);
-    const hidden = d.routing.windowCount - d.routing.signals.length;
-    if (hidden > 0) lines.push(`  … and ${hidden} more (capped)`);
-    if (d.routing.recommendation) lines.push('', `routing: ${d.routing.recommendation}`);
+  // Move 2 routing — additive: only rendered when in-page and/or harness errors were found, so a
+  // clean trace's report is byte-unchanged. Framed as co-occurrence, never causation (DW-03).
+  const r = d.routing;
+  if (r.signals.length > 0 || r.harnessSignals.length > 0) {
+    if (r.signals.length > 0) {
+      lines.push(
+        '',
+        'Co-occurring in-page signals in the action window (co-occurrence, NOT proof of cause):',
+      );
+      for (const s of r.signals) lines.push(`  · [${s.kind}] ${s.text}`);
+      const hidden = r.windowCount - r.signals.length;
+      if (hidden > 0) lines.push(`  … and ${hidden} more (capped)`);
+    }
+    if (r.harnessSignals.length > 0) {
+      lines.push(
+        '',
+        'Backend/infra errors logged by the test-runner during this run (test-scoped, NOT proof of cause):',
+      );
+      for (const h of r.harnessSignals) lines.push(`  · [${h.source}:${h.bucket}] ${h.text}`);
+    }
+    if (r.recommendation) lines.push('', `routing: ${r.recommendation}`);
   }
 
   lines.push(

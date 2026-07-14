@@ -1,6 +1,11 @@
-// Move 2 — honest ownership-routing (offline arm). PURE: given a parsed trace, correlate the
-// in-page console/pageError co-events to the failing action's time window and produce a ROUTING
-// hint — "this failure may not be Deltawright's DOM-actionability class; route it elsewhere."
+// Move 2 — honest ownership-routing (offline arm). PURE: given a parsed trace, produce a ROUTING hint
+// — "this failure may not be Deltawright's DOM-actionability class; route it elsewhere." Two channels:
+//   • IN-PAGE (console/pageError) — window-correlated to the failing action; a pageError flips
+//     `suspectedNotDomCause` → route to the app owner. Empty on a legacy app that swallows its JS errors.
+//   • HARNESS (test.trace stdout/stderr backend errors) — TEST-SCOPED (a different clock), where a
+//     backend-dominated portal actually logs its gateway 5xx / refused connection → flips
+//     `suspectedBackendCause` → route to backend/infra. This is the channel that yields on real
+//     legacy-enterprise corpora, where the DOM timeout is a symptom of a backend fault.
 //
 // The honesty rules are the whole point (DW-03):
 //  • CO-OCCURRENCE, NEVER CAUSATION. An error that fired during the window is a candidate the agent
@@ -12,7 +17,7 @@
 //    console is summarized honestly, never silently truncated.
 //  • It emits NO taxonomy code and touches NO verdict — routing is adjacent metadata, not a diagnosis.
 
-import type { TraceCoEvent, TraceInfo } from './read-trace';
+import type { HarnessSignal, TraceCoEvent, TraceInfo } from './read-trace';
 
 export type RoutingSignal = TraceCoEvent;
 
@@ -21,14 +26,23 @@ export interface RoutingReport {
   signals: RoutingSignal[];
   /** Total co-events in the window BEFORE the cap — so truncation is visible, not hidden. */
   windowCount: number;
-  /** Uncaught pageError(s) in the window (the strong signal that flips the hint). */
+  /** Uncaught pageError(s) in the window (the strong signal that flips the in-page hint). */
   pageErrorCount: number;
+  /** Backend/infra error lines from the test-runner's output (test-scoped; deduped + capped). */
+  harnessSignals: HarnessSignal[];
   /**
    * SUSPECTED "not a DOM-actionability cause": a real JS exception co-occurred AND Deltawright did
    * not name a DOM cause (it was unsure, or the failure was not an actionability error). A hint the
    * agent routes on — never an assertion of the cause.
    */
   suspectedNotDomCause: boolean;
+  /**
+   * SUSPECTED backend/infra cause: the test-runner logged a backend HTTP/connection error during the
+   * run AND Deltawright named no DOM cause → route to backend/infra. TEST-SCOPED (stdout/stderr carry
+   * a wall-clock timestamp, not the action-window clock), so it is a weaker, run-level co-occurrence
+   * than the window-correlated in-page hint — never a cause.
+   */
+  suspectedBackendCause: boolean;
   /** One-line routing recommendation, or '' when there is nothing to route. */
   recommendation: string;
 }
@@ -54,11 +68,15 @@ export function deriveRouting(info: TraceInfo, opts: { domCauseNamed: boolean })
     signals: [],
     windowCount: 0,
     pageErrorCount: 0,
+    harnessSignals: [],
     suspectedNotDomCause: false,
+    suspectedBackendCause: false,
     recommendation: '',
   };
   const chosen = info.chosenFailure;
-  if (!chosen || info.coEvents.length === 0) return empty;
+  // A backend error in the harness output is a routing signal even with no in-page co-events, so we
+  // proceed when EITHER channel has something (the empty short-circuit needs both to be empty).
+  if (!chosen || (info.coEvents.length === 0 && info.harnessSignals.length === 0)) return empty;
 
   // The failing action's window is [startTime, rightEdge]. The right edge is the action's own
   // endTime; on an edge trace that lacks one it falls back to the NEXT action's start (actions are
@@ -71,13 +89,11 @@ export function deriveRouting(info: TraceInfo, opts: { domCauseNamed: boolean })
     idx >= 0 && idx + 1 < info.actions.length ? info.actions[idx + 1]!.startTime : undefined;
   const rightEdge = chosen.endTime ?? nextStart;
 
+  // --- In-page channel: window-correlated console/pageError ---
   const inScope = info.coEvents.filter((e) => inWindow(e.time, chosen.startTime, rightEdge));
-  if (inScope.length === 0) return empty;
-
   const pageErrorCount = inScope.filter((e) => e.kind === 'pageerror').length;
   // The hint requires a BOUNDED window (a real co-occurrence), never an open-ended [startTime, ∞).
   const suspectedNotDomCause = pageErrorCount > 0 && !opts.domCauseNamed && rightEdge !== undefined;
-
   // Keep the pageError(s) in the capped list FIRST — they are the evidence the recommendation cites,
   // so the clamp must never slice out the very signal that flipped the hint. Re-sort by time so the
   // displayed order is still chronological; windowCount stays the true pre-cap total.
@@ -88,19 +104,34 @@ export function deriveRouting(info: TraceInfo, opts: { domCauseNamed: boolean })
     .slice(0, MAX_SIGNALS)
     .sort((a, b) => a.time - b.time);
 
-  let recommendation = '';
-  if (suspectedNotDomCause) {
-    recommendation =
-      `SUSPECTED not-a-DOM-cause: ${pageErrorCount} uncaught JS error(s) co-occurred in the ` +
-      'action window and Deltawright named no actionability cause — consider routing to the app ' +
-      'owner (a code/app fault) rather than self-healing the selector. Co-occurrence, not proof.';
+  // --- Harness channel: test-scoped backend/infra errors from the runner's stdout/stderr ---
+  const harnessSignals = info.harnessSignals;
+  const suspectedBackendCause = harnessSignals.length > 0 && !opts.domCauseNamed;
+
+  // --- Recommendation: name whichever route(s) fired; backend and app-JS are distinct routes. ---
+  const routes: string[] = [];
+  if (suspectedBackendCause) {
+    const buckets = [...new Set(harnessSignals.map((h) => h.bucket))].sort().join(', ');
+    routes.push(
+      `route to BACKEND/INFRA — the test-runner logged ${harnessSignals.length} backend error line(s) [${buckets}] during this run (test-scoped)`,
+    );
   }
+  if (suspectedNotDomCause) {
+    routes.push(
+      `route to the APP OWNER — ${pageErrorCount} uncaught JS error(s) co-occurred in the action window`,
+    );
+  }
+  const recommendation = routes.length
+    ? `SUSPECTED not-a-DOM-cause (Deltawright named no actionability cause): ${routes.join('; also ')} — prefer routing over self-healing the selector. Co-occurrence, not proof.`
+    : '';
 
   return {
     signals,
     windowCount: inScope.length,
     pageErrorCount,
+    harnessSignals,
     suspectedNotDomCause,
+    suspectedBackendCause,
     recommendation,
   };
 }

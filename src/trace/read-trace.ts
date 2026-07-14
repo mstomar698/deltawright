@@ -49,6 +49,44 @@ export interface TraceCoEvent {
   time: number;
 }
 
+/**
+ * A BACKEND/infra error line found in the test-runner's own output (`test.trace` stdout/stderr, or the
+ * test-level `error` event) — Move 2 harness routing. On a backend-dominated legacy portal the fault
+ * (a gateway 5xx, a refused connection) is logged HERE, not in the browser console. UNLIKE the in-page
+ * co-events, stdout/stderr carry a wall-clock `timestamp` (not the action-relative `time`), so these
+ * are TEST-SCOPED — "logged during this test run", not correlated to the failing action's window. A
+ * routing candidate, never a cause (DW-03).
+ */
+export interface HarnessSignal {
+  source: 'stdout' | 'stderr' | 'error';
+  /** Generic infra bucket — `5xx/gateway`, `4xx`, or `conn/network`. Never an app-specific identifier. */
+  bucket: string;
+  /** The matched line (single line, capped). */
+  text: string;
+}
+
+// A backend/infra error shape in harness output. Every alternative requires an HTTP/status/connection
+// CONTEXT — never a bare 3-digit number, which would false-match a stack frame (`app.js:504:12`), a
+// latency (`503 ms`), a count/ID (`processed 500 records`), a coordinate, or a failed-assertion literal
+// (`Expected: 504`). It also EXCLUDES a bare "timeout" (the test's OWN failure — circular). So only
+// "a request to the backend failed" survives, distinct from the DOM timeout (precision over recall).
+const BACKEND_ERROR =
+  /responded with a status of (?:4\d\d|5\d\d)|\bbad gateway\b|\bservice unavailable\b|\bgateway time-?out\b|\binternal server error\b|\b(?:status(?:\s*code)?|http)\b[:/ =]{0,4}(?:4\d\d|5\d\d)\b|\b(?:4\d\d|5\d\d)\s+(?:internal server error|bad gateway|service unavailable|gateway time-?out|too many requests|not found|forbidden|unauthorized|request timeout)\b|\bhttp[/ ]?\d(?:\.\d)?\s*(?:4\d\d|5\d\d)\b|\beconn(?:refused|reset|aborted)\b|\bsocket hang up\b|\benotfound\b|\bnetwork error\b/i;
+
+// Classify an ALREADY-MATCHED backend line into a generic infra bucket (never app-specific). Order:
+// connection → 5xx → 4xx (the line already matched BACKEND_ERROR, so a non-conn, non-5xx line is 4xx).
+function harnessBucket(line: string): string {
+  if (
+    /\beconn(?:refused|reset|aborted)\b|\bsocket hang up\b|\benotfound\b|\bnetwork error\b/i.test(
+      line,
+    )
+  )
+    return 'conn/network';
+  if (/bad gateway|service unavailable|gateway time|internal server error|\b5\d\d\b/i.test(line))
+    return '5xx/gateway';
+  return '4xx';
+}
+
 export interface TraceAction {
   callId: string;
   /** click / fill / press / … (or `action` when the trace did not name it). */
@@ -91,6 +129,8 @@ export interface TraceInfo {
   failed: TraceAction[];
   /** In-page console error/warning + uncaught pageError events, in time order (Move 2 routing). */
   coEvents: TraceCoEvent[];
+  /** Backend/infra error lines from the test-runner's own output (test-scoped; Move 2 harness routing). */
+  harnessSignals: HarnessSignal[];
   /**
    * The failure to diagnose: the LAST failed action. In a normal test, execution stops at the
    * first unhandled throw, so there is exactly one; when soft assertions / try-catch produce
@@ -135,6 +175,23 @@ function capText(s: string): string {
   return firstLine.length > 200 ? firstLine.slice(0, 197) + '…' : firstLine;
 }
 
+/** Cap on how many harness lines we scan-keep before dedup — a chatty harness must not run away. */
+const HARNESS_SCAN_CAP = 200;
+
+/**
+ * Scan one stdout/stderr/error blob for BACKEND-error lines and append them (capped). A blob can be
+ * multi-line; we keep only the lines that match {@link BACKEND_ERROR} (not every log line), each
+ * classified into a generic infra bucket. Text is capped single-line; the raw blob is never retained.
+ */
+function scanHarness(blob: string, source: HarnessSignal['source'], out: HarnessSignal[]): void {
+  for (const raw of blob.split('\n')) {
+    if (out.length >= HARNESS_SCAN_CAP) return;
+    const line = raw.trim();
+    if (!line || !BACKEND_ERROR.test(line)) continue;
+    out.push({ source, bucket: harnessBucket(line), text: capText(line) });
+  }
+}
+
 /** The concise grounding error: terse message + the concrete cause line (no repeated call-log). */
 function buildErrorText(
   method: string,
@@ -172,6 +229,7 @@ export function parseTraceEvents(text: string): TraceInfo {
   >();
   const logs = new Map<string, Array<{ time: number; message: string }>>();
   const coEvents: TraceCoEvent[] = [];
+  const harnessRaw: HarnessSignal[] = [];
 
   for (const line of text.split('\n')) {
     const s = line.trim();
@@ -236,6 +294,20 @@ export function parseTraceEvents(text: string): TraceInfo {
         }
         break;
       }
+      // Move 2 harness routing: the test-runner's own stdout/stderr (and the top-level test `error`)
+      // in `test.trace` — where a backend-dominated portal logs the gateway 5xx / refused connection
+      // that the browser console never sees. Only BACKEND-error lines are kept (see scanHarness).
+      case 'stdout':
+      case 'stderr': {
+        const txt = (e as { text?: unknown }).text;
+        if (typeof txt === 'string') scanHarness(txt, e.type, harnessRaw);
+        break;
+      }
+      case 'error': {
+        const message = (e as { message?: unknown }).message;
+        if (typeof message === 'string') scanHarness(message, 'error', harnessRaw);
+        break;
+      }
     }
   }
 
@@ -284,6 +356,17 @@ export function parseTraceEvents(text: string): TraceInfo {
   const actions = built.map((b) => b.action);
   const failed = actions.filter((a) => a.failed);
   coEvents.sort((a, b) => a.time - b.time);
+  // A backend error is usually logged many times (per retry / per request); dedup by content and cap
+  // so the report shows the DISTINCT backend faults, not N copies.
+  const seen = new Set<string>();
+  const harnessSignals: HarnessSignal[] = [];
+  for (const h of harnessRaw) {
+    const key = `${h.source}|${h.bucket}|${h.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    harnessSignals.push(h);
+    if (harnessSignals.length >= 12) break;
+  }
   return {
     traceVersion,
     playwrightVersion: pickString(ctxs, 'playwrightVersion'),
@@ -292,6 +375,7 @@ export function parseTraceEvents(text: string): TraceInfo {
     actions,
     failed,
     coEvents,
+    harnessSignals,
     chosenFailure: failed.length ? failed[failed.length - 1]! : null,
   };
 }
