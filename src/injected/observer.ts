@@ -83,6 +83,79 @@ declare global {
   // changes appear in the delta. Reset per arm; observer.disconnect() clears them. (#19)
   let observedRoots = new Set<ShadowRoot>();
 
+  // --- Network-idle quiescence (v0.9 Move 3, opt-in) ----------------------
+  // A framework-agnostic IN-FLIGHT request counter: monkey-patch XHR + fetch (once, idempotent) so
+  // isQuiescent() reflects requests made THROUGH the patched globals — an accurate count of those, not
+  // a heuristic (NOT a guess for what it sees; it does not see a fetch called via a reference captured
+  // before the patch, or a child frame's own globals). NON-INTERFERENCE: the patch is installed ONLY
+  // when the caller opts in (`enableQuiescence()`, invoked by the host before the action) — so a
+  // default, non-opt-in run leaves window.fetch / XMLHttpRequest.prototype.send genuinely native.
+  // Read-only — never blocks/alters a request. GWT-RPC / ExtJS / JSF all issue XHR/fetch, so this
+  // catches their in-flight work; GWT's zero-network Scheduler waves are not network (that is #49).
+  let inFlight = 0;
+  function patchNetwork(): void {
+    try {
+      const proto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+      if (proto && !(proto as unknown as { __dwPatched?: boolean }).__dwPatched) {
+        const origSend = proto.send;
+        proto.send = function (this: XMLHttpRequest, ...args: unknown[]): void {
+          // Call through FIRST: a synchronous throw (e.g. send() before open() → InvalidStateError)
+          // must propagate untouched and NOT increment, or the count would leak and wedge isQuiescent
+          // stuck-false for the page's life. send() dispatches asynchronously, so loadend cannot have
+          // fired before apply returns — attaching the decrement after a successful apply is race-free.
+          const ret = (origSend as (...a: unknown[]) => void).apply(this, args);
+          inFlight++;
+          this.addEventListener('loadend', () => (inFlight = Math.max(0, inFlight - 1)), {
+            once: true,
+          });
+          return ret;
+        };
+        (proto as unknown as { __dwPatched?: boolean }).__dwPatched = true;
+      }
+    } catch {
+      /* a locked-down XHR — skip; quiescence degrades to fetch + framework hooks */
+    }
+    try {
+      const orig = window.fetch as (typeof window.fetch & { __dwPatched?: boolean }) | undefined;
+      if (typeof orig === 'function' && !orig.__dwPatched) {
+        const patched = function (this: unknown, ...args: unknown[]): Promise<Response> {
+          // Call through FIRST for the same reason (a non-spec fetch that throws synchronously must
+          // not leak); a spec fetch rejects the promise, so .finally still decrements.
+          const p = (orig as (...a: unknown[]) => Promise<Response>).apply(this, args);
+          inFlight++;
+          return p.finally(() => (inFlight = Math.max(0, inFlight - 1)));
+        } as typeof window.fetch & { __dwPatched?: boolean };
+        patched.__dwPatched = true;
+        window.fetch = patched;
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  // Best-effort framework idle hook — used ONLY when the framework global is present, so a page
+  // without it is unaffected. ExtJS exposes `Ext.Ajax.isLoading()`; others can be added here.
+  function frameworkBusy(): boolean {
+    try {
+      const ext = (window as unknown as { Ext?: { Ajax?: { isLoading?: () => boolean } } }).Ext;
+      if (ext?.Ajax?.isLoading && ext.Ajax.isLoading()) return true;
+    } catch {
+      /* a framework global that throws on read — treat as not-busy */
+    }
+    return false;
+  }
+
+  /** Read-only: is the app network-idle (no in-flight XHR/fetch and no framework hook busy)? */
+  function isQuiescent(): boolean {
+    return inFlight <= 0 && !frameworkBusy();
+  }
+
+  /** Opt-in (Move 3): install the in-flight counter. The host calls this BEFORE the action ONLY when
+   *  `awaitQuiescence` is set, so a default run never patches the page's native fetch/XHR. Idempotent. */
+  function enableQuiescence(): void {
+    patchNetwork();
+  }
+
   const isElement = (n: Node): n is Element => n.nodeType === 1;
   const isText = (n: Node): n is Text => n.nodeType === 3;
 
@@ -268,14 +341,20 @@ declare global {
     const start = performance.now();
     const deadline = start + opts.maxWaitMs;
     const lateWatchMs = opts.lateWatchMs ?? 0;
+    // Move 3 (opt-in): also require the app to be network-idle before resolving (still capped).
+    const awaitQ = opts.awaitQuiescence === true;
     return new Promise<SettleResult>((resolve) => {
       const check = () => {
         const now = performance.now();
         const structuralQuiet =
           sawStructural && lastStructuralAt !== null && now - lastStructuralAt >= opts.quietMs;
         const anyQuiet = lastMutationAt !== null && now - lastMutationAt >= opts.quietMs;
+        const domQuiet = structuralQuiet || anyQuiet;
         const capped = now >= deadline;
-        if (structuralQuiet || anyQuiet || capped) {
+        // When awaiting quiescence, the DOM-quiet gate must ALSO see the app network-idle. When not
+        // (default), `ready` === `domQuiet`, so the resolve condition and hitMaxWait are unchanged.
+        const ready = awaitQ ? domQuiet && isQuiescent() : domQuiet;
+        if (ready || capped) {
           // Gap-E (#49): begin watching for a late structural wave FROM the settle point with a
           // SEPARATE observer. It is read later via lateResult(); it never touches `records`.
           // Crucially, waitForSettle still resolves NOW (not after the window), so the host's
@@ -285,7 +364,10 @@ declare global {
           if (lateWatchMs > 0) startLateWatch(now + lateWatchMs);
           resolve({
             settleMs: Math.round(now - armStart),
-            hitMaxWait: capped && !structuralQuiet && !anyQuiet,
+            hitMaxWait: capped && !ready,
+            // Present only when awaiting quiescence (else the default result is byte-unchanged): the
+            // network-idle state at resolve. `false` at a cap = the app was still requesting.
+            ...(awaitQ ? { quiescent: isQuiescent() } : {}),
           });
           return;
         }
@@ -894,6 +976,11 @@ declare global {
     // annotation. Reuses the SAME readGeometry as collect (one source of truth for geometry); it
     // never touches observer/arm/collect state, so it is safe to call standalone.
     probeGeometry: readGeometry,
+    // Move 3 (opt-in): the host calls enableQuiescence() before the action when awaitQuiescence is set
+    // (so the default path never patches native fetch/XHR); isQuiescent() is the read-only probe the
+    // settle path reads. Neither issues a request or changes a verdict.
+    enableQuiescence,
+    isQuiescent,
   };
 })();
 

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Network-idle quiescence — opt-in `awaitQuiescence` (v0.9 Move 3, the live-path pivot).** The
+  observer monkey-patches `XMLHttpRequest`/`fetch` to keep a real in-flight request count (the app's
+  own network state, not a guess); with `awaitQuiescence`, `waitForSettle` resolves only once the DOM
+  is quiet **and** the app is network-idle (still bounded by `maxWaitMs`), and reports `quiescent`
+  (`false` at a cap = the app was still requesting). Framework idle hooks (`Ext.Ajax.isLoading`) ride
+  on top best-effort. Read-only — never fires events or forces loads; default off → the settle path is
+  byte-unchanged. Improves the observe-consequences niche on RPC-driven legacy apps; does **not** catch
+  GWT's zero-network `Scheduler` waves (that is `lateWatchMs`) and does not change actionability
+  verdicts. See ADR 2026-07-14.
+
 ## [0.9.0] - 2026-07-14
 
 The v0.9 reframe: Deltawright as the honest cross-class cause **classifier/router** for agents — it

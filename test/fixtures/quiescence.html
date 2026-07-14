@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>quiescence fixture (v0.9 Move 3)</title></head>
+<body>
+  <button id="go">go</button>
+  <div id="app"></div>
+  <script>
+    // On click: append a marker NOW (a structural mutation, so the DOM goes quiet quickly), then fire
+    // an async request that does NOT touch the DOM. Without awaitQuiescence, settle resolves on the
+    // DOM going quiet — before the request finishes; with it, settle waits for network idle. The test
+    // delays the response via page.route so the in-flight window is deterministic.
+    // An absolute http URL (not a file:// relative one) so page.route reliably intercepts both the
+    // fetch and the XHR and controls the in-flight window deterministically.
+    var SLOW = 'http://dw.test/dw-slow-endpoint';
+    document.getElementById('go').addEventListener('click', () => {
+      const marker = document.createElement('span');
+      marker.textContent = 'started';
+      document.getElementById('app').appendChild(marker);
+      fetch(SLOW).catch(() => {});
+    });
+
+    // A field that loads via XHR (a GWT-RPC-style request), for the XHR path of the counter.
+    document.getElementById('go').addEventListener('dblclick', () => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', SLOW);
+      xhr.send();
+    });
+  </script>
+</body>
+</html>
