@@ -33,6 +33,7 @@ export type {
 } from './host/taxonomy';
 export { assessConfidence, atLeastAsConfident, CONFIDENCE_ORDER } from './host/confidence';
 export type { Confidence, EvidenceSource, Evidence } from './host/confidence';
+export { classifyInput, LOSS_SHAPES } from './host/input-integrity';
 export type {
   Delta,
   DeltaNode,
@@ -46,6 +47,8 @@ export type {
   Diagnosis,
   DiagnosedDelta,
   ChangeKind,
+  InputShape,
+  InputIntegrityStat,
   SettleOptions,
   SettleResult,
   CollectResult,

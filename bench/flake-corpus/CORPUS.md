@@ -30,7 +30,7 @@ Ground truth is never a stored Deltawright output (the `CorpusCase` schema has n
 cases feed a hand-built `Delta` for causes not cleanly reproducible live this cycle (honesty-
 stamped, weaker reality anchor).
 
-## Coverage (18/18 codes; 36 cases: 24 live, 12 delta)
+## Coverage (19/19 codes; 38 cases: 24 live, 14 delta)
 
 Each code has **1 positive + 1 confuser**. The **engine behavior** column records what
 `diagnose()` *actually* emits today, discovered by live probe — the corpus labels the **true**
@@ -46,6 +46,7 @@ cause and #52 measures the engine against it, so the gaps below are visible, not
 | `read-only` | live (readonly input) | ✅ `read-only` / confirmed (#71 — same geometry-blind recovery as `disabled`) |
 | `unstable-animating` | delta | ✅ `unstable-animating` / confirmed (#71 recovery; delta — live CSS-animation reproduction is future work) |
 | `geom-disagreement` | live (covered fillable input) | ✅ `geom-disagreement` / suspected (a GENUINE disagreement on a geometry-VISIBLE cause: Playwright can `fill` a covered input, geometry sees the cover — NOT recovered, unlike the geometry-blind class) |
+| `input-not-committed` | delta (`stats.inputIntegrity` loss shape) | ✅ `input-not-committed` / suspected (v0.9 Move 1 — a `fill`/`type` PW reported ACTIONABLE, but the committed value is a strict subsequence of intent; a `transformed` value/mask is the confuser and stays unsure) |
 | `background-churn` | delta (dominant `droppedBackground`, OR in-window `recurringInsert` + `hitMaxWait`) | ✅ `background-churn` / suspected |
 | `detached-re-render` | live (target removed + replaced) | ✅ `detached-re-render` / suspected (#71 fix #3 — the observer counts a freshly-added subtree detached in-window; the original nets out but the transience is surfaced as a delta-level note) |
 | `settle-timeout` | live (churning page, low `maxWaitMs`) | ✅ `settle-timeout` / suspected |
@@ -98,9 +99,9 @@ fixes have now shipped** (each with an independent adversarial review before mer
 
 **All #71 diagnosis gaps are now closed.** No taxonomy code is a silent miss on this seed.
 
-**Net: the engine now emits all 18 codes** (the four geometry-visible blocking codes, the three
-geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, `detached-re-render`,
-the two capture-integrity codes, and the five delta/stats-level codes). That is exactly why
+**Net: the engine now emits all 19 codes** (the four geometry-visible blocking codes, the three
+geometry-blind blocking codes, `pixel-region-fallback`, `geom-disagreement`, `input-not-committed`,
+`detached-re-render`, the two capture-integrity codes, and the five delta/stats-level codes). That is exactly why
 diagnosis capabilities are **gated** behind the harness floor (#52): the corpus made every gap
 measurable, and each closed with an independent adversarial review before shipping. With recall at
 100% / silent-miss at 0%, the precision + silent-miss floors have been **ratcheted from reported to
@@ -120,13 +121,13 @@ self-consistency (never gated). Latest run:
 
 ```
 verdict-vs-reality LIVE (DW-02 gate):    100.0%  (16/16)  PASS
-verdict self-consistency (delta):        100.0%  (10/10)  [authored, not reality]
+verdict self-consistency (delta):        100.0%  (14/14)  [authored, not reality]
 confirmed-band precision (gate ≥95%):    100.0%  (8 correct / 0 wrong)  PASS
-recall (labeled cause emitted):          100.0%  (18/18)
-silent-miss rate (gate ≤5%):               0.0%  (0/18)  PASS
+recall (labeled cause emitted):          100.0%  (20/20)
+silent-miss rate (gate ≤5%):               0.0%  (0/20)  PASS
 ```
 
-All 18 codes emit and all three floors pass with headroom. `test/accuracy.spec.ts` guards the scorer
+All 19 codes emit and all three floors pass with headroom. `test/accuracy.spec.ts` guards the scorer
 contract + the ratcheted gate (a precision/silent-miss regression test) + live smokes (the
 detached-re-render background-quarantine regression, the CSP injection-blocked degrade, and the
 uninjectable-child-frame cross-boundary path). The floors are **corpus-relative** — they keep the

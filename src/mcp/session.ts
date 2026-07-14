@@ -18,6 +18,10 @@ import type { RootCauseCategory, RootCauseCode } from '../host/taxonomy';
 export type McpAction =
   | { kind: 'click'; selector: string }
   | { kind: 'fill'; selector: string; value: string }
+  // Char-by-char typing (v0.9 Move 1): `pressSequentially` dispatches a real key event per
+  // character, so it exercises per-keystroke widgets (a GWT SuggestBox) that a bulk `.value` set
+  // from `fill` bypasses. Threaded through the same input-integrity check as `fill`.
+  | { kind: 'type'; selector: string; value: string }
   | { kind: 'select'; selector: string; value: string }
   | { kind: 'check'; selector: string }
   | { kind: 'press'; selector: string; key: string };
@@ -86,8 +90,14 @@ export interface DiagnoseReport {
 
 function describe(action: McpAction): string {
   switch (action.kind) {
+    // fill/type carry a FREE-TEXT value that may be a password or PII. It becomes `delta.action`,
+    // which render()/serialize print — so, consistent with the input-integrity stat storing only
+    // lengths, the label REDACTS the value to its length rather than echoing plaintext (privacy).
     case 'fill':
-      return `fill "${action.selector}" = ${JSON.stringify(action.value)}`;
+      return `fill "${action.selector}" = <${action.value.length} chars>`;
+    case 'type':
+      return `type "${action.selector}" = <${action.value.length} chars>`;
+    // A select value is a bounded, DOM-visible option identifier (not a typed secret), so it is kept.
     case 'select':
       return `select "${action.selector}" = ${JSON.stringify(action.value)}`;
     case 'press':
@@ -95,6 +105,28 @@ function describe(action: McpAction): string {
     default:
       return `${action.kind} "${action.selector}"`;
   }
+}
+
+/**
+ * Read a field's committed value after the settle window (v0.9 Move 1). Handles standard form
+ * controls (`value`) and contenteditable/rich widgets (`textContent`), so a GWT rich-text field is
+ * covered too. Best-effort with a short timeout; the caller treats a throw as "could not read".
+ */
+async function readCommittedValue(page: Page, selector: string): Promise<string> {
+  return page.locator(selector).evaluate((el) => {
+    const input = el as HTMLInputElement;
+    if (typeof input.value === 'string') return input.value;
+    return el.textContent ?? '';
+  });
+}
+
+/** The input-integrity option for a value-bearing action (fill/type), else undefined (v0.9 Move 1). */
+function inputIntegrityFor(action: McpAction) {
+  if (action.kind !== 'fill' && action.kind !== 'type') return undefined;
+  return {
+    intended: action.value,
+    readCommitted: (page: Page) => readCommittedValue(page, action.selector),
+  };
 }
 
 async function perform(page: Page, action: McpAction): Promise<void> {
@@ -105,6 +137,9 @@ async function perform(page: Page, action: McpAction): Promise<void> {
       break;
     case 'fill':
       await locator.fill(action.value);
+      break;
+    case 'type':
+      await locator.pressSequentially(action.value);
       break;
     case 'select':
       await locator.selectOption(action.value);
@@ -143,7 +178,10 @@ export class DeltawrightSession {
    */
   async act(action: McpAction): Promise<string> {
     const page = await this.ensurePage();
-    const delta = await actAndObserve(page, (p) => perform(p, action), { label: describe(action) });
+    const delta = await actAndObserve(page, (p) => perform(p, action), {
+      label: describe(action),
+      inputIntegrity: inputIntegrityFor(action),
+    });
     const { text, tokens } = render(delta);
     const dropped = delta.stats.droppedBackground
       ? `, ${delta.stats.droppedBackground} background changes filtered`
@@ -201,6 +239,7 @@ export class DeltawrightSession {
       const page = await this.ensurePage();
       const delta = await actAndObserve(page, (p) => perform(p, action), {
         label: describe(action),
+        inputIntegrity: inputIntegrityFor(action),
       });
       const { text } = render(diagnose(delta), { diagnostics: true });
       return `${text}\n\n(${LIVE_REPRODUCE_NOTE})`;
@@ -217,6 +256,7 @@ export class DeltawrightSession {
       const page = await this.ensurePage();
       const delta = await actAndObserve(page, (p) => perform(p, action), {
         label: describe(action),
+        inputIntegrity: inputIntegrityFor(action),
       });
       const summary = summarizeDiagnoses(diagnose(delta).diagnoses);
       // The Playwright-authoritative verdict the NAMED cause is grounded in: the changed node carrying

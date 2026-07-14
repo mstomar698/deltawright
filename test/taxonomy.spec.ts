@@ -19,6 +19,7 @@ const CATEGORIES: readonly RootCauseCategory[] = [
   'actionability-blocking',
   'verdict-disagreement',
   'membership-attribution',
+  'outcome-integrity',
   'capture-integrity',
   'fallback',
   'unknown',
@@ -72,7 +73,7 @@ test('should_require_an_adr_and_corpus_relabel_to_add_or_rename_a_code', () => {
   // or renamed a code — which per DW-04 requires, IN ORDER: (1) an ADR, (2) a corpus
   // relabel (bench/flake-corpus, #51), (3) an accuracy-harness re-run (#52). Updating this
   // constant is the DELIBERATE LAST step, not a quick fix to make the test green.
-  const FROZEN_TAXONOMY_SHA = '5b74394545f5e8716e55d9574ec5b421cb2d6b04c37809885852dc31a4fe1756';
+  const FROZEN_TAXONOMY_SHA = '85bd78cca9ce6463729c456335b0fe784d951dbfc89e9d76d9b62dbadafaf2d8';
   const sorted = [...ROOT_CAUSE_CODES].sort();
   const sha = createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
   expect(sha, 'taxonomy code set changed — see DW-04 before updating this lock').toBe(

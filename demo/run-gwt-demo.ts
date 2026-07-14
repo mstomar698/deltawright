@@ -9,9 +9,11 @@
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { actAndObserve, render } from '../src/index';
+import { actAndObserve, render, diagnose } from '../src/index';
+import { summarizeDiagnoses } from '../src/host/summarize';
 
 const fixture = pathToFileURL(resolve('test/fixtures/gwt.html')).href;
+const inputFixture = pathToFileURL(resolve('test/fixtures/input-drop.html')).href;
 const rule = (c = '─') => console.log(c.repeat(72));
 
 async function fresh(browser: Browser): Promise<Page> {
@@ -144,11 +146,62 @@ rule('═');
   await page.close();
 }
 
+// ── WIN G: post-settle input-integrity (v0.9 Move 1) ────────────────────────
+// A GWT SuggestBox whose async RPC returns and CLEARS the field, and a length-limited field that
+// truncates — both AFTER Playwright's fill/type reports success. A synchronous post-fill check
+// cannot see it; DW re-reads the committed value at the post-settle point and labels the drop.
+{
+  const INTENDED = 'acetaminophen500';
+  const readValue = (sel: string) => (p: Page) => p.locator(sel).inputValue();
+  // Playwright's pressSequentially reports success on all these fields (never throws — confirmed by
+  // the Move 1 kill-hypothesis); DW re-reads the committed value at the post-settle point.
+  const typeInto = async (sel: string) => {
+    const page = await browser.newPage();
+    await page.goto(inputFixture);
+    const delta = await actAndObserve(
+      page,
+      async (p) => {
+        await p.locator(sel).click();
+        await p.locator(sel).pressSequentially(INTENDED);
+      },
+      {
+        label: `type ${sel}`,
+        inputIntegrity: { intended: INTENDED, readCommitted: readValue(sel) },
+      },
+    );
+    await page.close();
+    return delta;
+  };
+
+  const clear = await typeInto('#debounce-clear');
+  const mask = await typeInto('#mask-upper');
+  const clearCause = summarizeDiagnoses(diagnose(clear).diagnoses).cause;
+  const maskCause = summarizeDiagnoses(diagnose(mask).diagnoses).cause;
+
+  console.log('\n[WIN] G — post-settle input-integrity (a class DW scored zero on before v0.9)');
+  console.log(
+    `  SuggestBox (debounce-then-clear): Playwright pressSequentially reported success; ` +
+      `field committed ${clear.stats.inputIntegrity?.committedLen}/${INTENDED.length} chars`,
+  );
+  console.log(
+    `  deltawright:  ${clearCause} (${clear.stats.inputIntegrity?.shape}) — the async clear a synchronous post-fill check cannot see`,
+  );
+  console.log(
+    `  formatting mask (uppercase): committed value differs too, but DW labels it "${maskCause}" — a transform is NOT a loss (DW-03 false-positive guard).`,
+  );
+  console.log(
+    '  claim: value-comparison only (no role/name/text) → language- and obfuscation-independent; suspected, never a fix.',
+  );
+}
+
 rule('═');
 console.log('VERDICT: GO as "a better MOMENT (locator-free settle for observe), a stable HANDLE,');
-console.log('and an independent coverage/disagreement SECOND-OPINION". NO-GO as "DW fixes');
-console.log('Playwright\'s GWT actionability" — idiomatic Playwright already handles most of it,');
-console.log('and DW has its own silent gaps (E, F). Fixture is synthetic; calibrate to a real');
-console.log('portal trace before any framework-specific claim.');
+console.log('an independent coverage/disagreement SECOND-OPINION, and (v0.9) a post-settle');
+console.log('INPUT-INTEGRITY verdict (G) — the async keystroke-drop no other tool detects". NO-GO');
+console.log('as "DW fixes Playwright\'s GWT actionability" — idiomatic Playwright already handles');
+console.log(
+  'most of it, DW never fixes/retries, and it has its own silent gaps (E, F). Fixture is',
+);
+console.log('synthetic; calibrate to a real portal trace before any framework-specific claim.');
 rule('═');
 await browser.close();

@@ -338,6 +338,57 @@ export const CORPUS: CorpusCase[] = [
     note: 'Geometry and Playwright agree (actionable) — no disagreement to flag.',
   },
 
+  // ===== outcome-integrity (v0.9 Move 1: action succeeded, committed value is wrong) =======
+  {
+    id: 'input-not-committed-pos',
+    code: 'input-not-committed',
+    confidence: 'suspected',
+    confuser: false,
+    kind: 'delta',
+    delta: nodeDelta(
+      {
+        tag: 'input',
+        role: 'textbox',
+        name: 'q',
+        actionability: {
+          verdict: 'ACTIONABLE',
+          reason: null,
+          geometryVerdict: 'ACTIONABLE',
+          playwright: { actionable: true },
+          agreed: true,
+        },
+      },
+      { inputIntegrity: { shape: 'truncated', intendedLen: 16, committedLen: 8 } },
+    ),
+    verdict: 'ACTIONABLE',
+    note: "A fill/type Playwright reported ACTIONABLE (it succeeded), but the field committed only 8 of 16 typed chars (a prefix) — a deferred truncate/clear the synchronous post-fill check cannot see. diagnose() maps stats.inputIntegrity (a loss shape) → input-not-committed/suspected. Never confirmed: it compares intent, it does not override PW's success (DW-02/03).",
+  },
+  {
+    id: 'input-not-committed-confuser',
+    code: 'unknown',
+    confidence: 'unknown',
+    confuser: true,
+    confusesWith: 'input-not-committed',
+    kind: 'delta',
+    delta: nodeDelta(
+      {
+        tag: 'input',
+        role: 'textbox',
+        name: 'q',
+        actionability: {
+          verdict: 'ACTIONABLE',
+          reason: null,
+          geometryVerdict: 'ACTIONABLE',
+          playwright: { actionable: true },
+          agreed: true,
+        },
+      },
+      { inputIntegrity: { shape: 'transformed', intendedLen: 16, committedLen: 16 } },
+    ),
+    verdict: 'ACTIONABLE',
+    note: 'The committed value differs from the intent but is NOT a subsequence of it (a case/format MASK — an intended reformat). This is the make-or-break false-positive: a naive "committed != intended" would flag it. The engine must stay unsure — a transform is indistinguishable from corruption (DW-03), so `transformed` grounds NO code.',
+  },
+
   // ===== membership-attribution (delta/stats level, from real fixtures) ===================
   {
     id: 'settle-timeout-pos',

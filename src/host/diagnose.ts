@@ -25,6 +25,7 @@
 
 import type { DeltaNode, Delta, DiagnosedDelta, Diagnosis } from './types';
 import { assessConfidence, type Confidence } from './confidence';
+import { LOSS_SHAPES } from './input-integrity';
 import type { RootCauseCode } from './taxonomy';
 
 // A background-churn flag fires only when dropped churn is both substantial and dominant,
@@ -192,6 +193,24 @@ function diagnoseNode(node: DeltaNode): Diagnosis | null {
 function diagnoseDelta(delta: Delta): Diagnosis[] {
   const out: Diagnosis[] = [];
   const { stats, nodes } = delta;
+
+  // v0.9 Move 1: a value-bearing action reported success but the field committed a strict
+  // subsequence of what was typed (characters lost after the action — the async debounce-then-clear
+  // a synchronous post-fill check cannot see). Pushed FIRST so this specific outcome cause wins a
+  // same-confidence tie over the generic settle-timeout below. SUSPECTED by design: it compares the
+  // caller's intended value to the committed value — a hypothesis about intent, never an override of
+  // Playwright's success (DW-02) and never asserted as a bug (DW-03). A `transformed` value (a mask)
+  // is intentionally left unflagged upstream, so only the three loss shapes reach here.
+  const ii = stats.inputIntegrity;
+  if (ii && LOSS_SHAPES.has(ii.shape)) {
+    const detail =
+      ii.shape === 'never-committed'
+        ? `a value-bearing action reported success but the field committed no value (typed ${ii.intendedLen} chars, the field is empty) — suspected input-drop; an async widget may have cleared it after the action`
+        : ii.shape === 'truncated'
+          ? `the field committed a prefix of what was typed (${ii.committedLen} of ${ii.intendedLen} chars) — suspected truncation after the action`
+          : `the field committed a subsequence of what was typed (${ii.committedLen} of ${ii.intendedLen} chars — characters were dropped) — suspected dropped-keystrokes`;
+    out.push({ code: 'input-not-committed', confidence: 'suspected', scope: 'delta', detail });
+  }
 
   if (nodes.length === 0 && stats.hitMaxWait) {
     // Empty AND the cap was hit: a true no-op OR a missed effect — genuinely ambiguous, so

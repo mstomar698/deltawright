@@ -1,14 +1,14 @@
 Deltawright accuracy harness (#52) — CORPUS-RELATIVE, gated
 ========================================================================
 
-cases: 38  (specific-cause: 19, unsure-label: 19)
+cases: 40  (specific-cause: 20, unsure-label: 20)
 
 HEADLINE  (all three gates now hard-fail the run; recall is informational)
   verdict-vs-reality LIVE (DW-02 gate):    100.0%  (16/16)  PASS
-  verdict self-consistency (delta):        100.0%  (12/12)  [authored, not reality]
+  verdict self-consistency (delta):        100.0%  (14/14)  [authored, not reality]
   confirmed-band precision (gate ≥95%):    100.0%  (8 correct / 0 wrong)  PASS
-  recall (labeled cause emitted):          100.0%  (19/19)
-  silent-miss rate (gate ≤5%):             0.0%  (0/19)  PASS
+  recall (labeled cause emitted):          100.0%  (20/20)
+  silent-miss rate (gate ≤5%):             0.0%  (0/20)  PASS
   confidence-band accuracy (on hits):      100.0%
 
 OUTCOMES BY CASE
@@ -28,6 +28,8 @@ OUTCOMES BY CASE
   ✓ unsure     unstable-animating-confuser  [unknown]
   ✓ hit        geom-disagreement-pos        [geom-disagreement] → geom-disagreement suspected
   ✓ unsure     geom-disagreement-confuser   [unknown]
+  ✓ hit        input-not-committed-pos      [input-not-committed] → input-not-committed suspected
+  ✓ unsure     input-not-committed-confuser [unknown]
   ✓ hit        settle-timeout-pos           [settle-timeout] → settle-timeout suspected  +background-churn/suspected
   ✓ unsure     settle-timeout-confuser      [unknown]
   ✓ hit        suspected-miss-empty-pos     [suspected-miss-empty] → suspected-miss-empty unknown
@@ -57,6 +59,6 @@ HONESTY STAMP
   self-consistency, reported separately, never gated (F1).
   Precision is per-emitted-confirmed-diagnosis (a confident non-label code counts wrong, F2);
   recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).
-  All 18 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision
+  All 19 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision
   (≥95%), and silent-miss (≤5%) floors are all GATED now — a regression in any hard-fails CI.
   Corpus-relative floors: they guarantee the engine keeps pace with the corpus, not real prod.

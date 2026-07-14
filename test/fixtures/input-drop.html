@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deltawright input-integrity fixture (v0.9 Move 1)</title>
+  <!--
+    SYNTHETIC reproduction of the input-integrity pathologies Move 1 detects — NOT a real app and
+    NOT compiled GWT. Each field ends up holding a value DIFFERENT from what was typed, while
+    Playwright's fill()/pressSequentially() report success. The deferred fields (debounce-clear,
+    truncate-deferred) mutate the value on a Scheduler-style deferral (queueMicrotask -> setTimeout),
+    i.e. AFTER the action's promise resolves — which a synchronous post-fill check cannot see.
+
+    Each active field also renders a small "results" node on first input (a structural mutation),
+    faithfully modelling a widget that repaints — so DW's settle resolves by structural quiescence
+    (not the maxWait cap) and the post-settle value read happens after the deferred mutation lands.
+    See docs/decisions/2026-07-14 (input-not-committed).
+  -->
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    label { display: block; margin: 12px 0 2px; font-size: 13px; }
+    input { padding: 6px 8px; width: 320px; }
+    .results { margin: 4px 0 8px; font-size: 12px; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>input-integrity fixture</h1>
+
+  <label for="clean">clean control (no handlers)</label>
+  <input id="clean" type="text" />
+
+  <label for="debounce-clear">debounce-clear (SuggestBox: async RPC returns and clears the field)</label>
+  <input id="debounce-clear" type="text" autocomplete="off" />
+
+  <label for="truncate-deferred">truncate-deferred (deferred slice to 8 chars)</label>
+  <input id="truncate-deferred" type="text" />
+
+  <label for="mask-upper">mask-upper (formatting mask: uppercase + strip spaces — a transform, NOT a loss)</label>
+  <input id="mask-upper" type="text" />
+
+  <label for="strip-spaces">strip-spaces (card field removes spaces — a SUBTRACTIVE mask, still NOT a loss)</label>
+  <input id="strip-spaces" type="text" />
+
+  <script>
+    // GWT Scheduler-style deferral (no network): a stack-unwind microtask -> setTimeout, so the
+    // mutation lands AFTER the caller's action promise resolved.
+    function scheduleDeferred(fn, extraMs) {
+      queueMicrotask(() => setTimeout(fn, extraMs || 0));
+    }
+
+    // Render a small "results" node once (a structural mutation → a repainting widget).
+    function repaintOnce(field, text) {
+      if (field.nextElementSibling && field.nextElementSibling.className === 'results') return;
+      const r = document.createElement('div');
+      r.className = 'results';
+      r.textContent = text;
+      field.insertAdjacentElement('afterend', r);
+    }
+
+    // debounce-clear: on each input, an async "RPC" (deferred ~50ms) returns and repaints the
+    // widget, resetting the field to empty — the #41 SuggestBox pathology.
+    (function () {
+      const f = document.getElementById('debounce-clear');
+      let timer = null;
+      f.addEventListener('input', () => {
+        repaintOnce(f, 'searching…');
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => { f.value = ''; }, 50);
+      });
+    })();
+
+    // truncate-deferred: a deferred handler slices to the first 8 chars (a length-limited backend
+    // field that re-renders after the fill).
+    (function () {
+      const f = document.getElementById('truncate-deferred');
+      f.addEventListener('input', () => {
+        repaintOnce(f, 'validating…');
+        scheduleDeferred(() => { if (f.value.length > 8) f.value = f.value.slice(0, 8); }, 40);
+      });
+    })();
+
+    // mask-upper: a formatting mask (uppercase, strip spaces). INTENDED behaviour — the committed
+    // value is NOT a subsequence of the intent (case changes), so DW must NOT flag it.
+    (function () {
+      const f = document.getElementById('mask-upper');
+      f.addEventListener('input', () => {
+        repaintOnce(f, 'formatted');
+        const masked = f.value.toUpperCase().replace(/\s+/g, '');
+        if (masked !== f.value) f.value = masked;
+      });
+    })();
+
+    // strip-spaces: a card/account field that removes spaces. The committed value IS a shorter
+    // subsequence of the intent, but only whitespace was dropped — an intended reformat, NOT a
+    // character loss. This is the make-or-break false-positive DW must NOT flag.
+    (function () {
+      const f = document.getElementById('strip-spaces');
+      f.addEventListener('input', () => {
+        repaintOnce(f, 'formatted');
+        const stripped = f.value.replace(/\s+/g, '');
+        if (stripped !== f.value) f.value = stripped;
+      });
+    })();
+  </script>
+</body>
+</html>
