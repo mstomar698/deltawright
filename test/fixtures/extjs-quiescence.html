@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ExtJS framework-quiescence fixture (v0.9 Move 3 follow-up)</title>
+  </head>
+  <body>
+    <button id="go">go</button>
+    <div id="app"></div>
+    <script>
+      // SYNTHETIC ExtJS mock — NOT the real framework. It exposes the same public shape the observer's
+      // frameworkBusy() hook reads: `Ext.Ajax.isLoading()`. On click we append a marker (a structural
+      // mutation, so the DOM goes quiet within ~quietMs), then report BUSY for a controlled window
+      // WITHOUT making any network request. So the ONLY thing that can hold settle past DOM-quiet is
+      // the framework hook — proving isQuiescent() factors in Ext.Ajax.isLoading, not just the counter.
+      var busy = false;
+      // `probes` counts how many times isLoading() is consulted, so a test can prove the DEFAULT path
+      // (no awaitQuiescence) never probes the framework, and the opt-in path does.
+      window.__extProbes = 0;
+      window.Ext = {
+        Ajax: {
+          isLoading: function () {
+            window.__extProbes++;
+            return busy;
+          },
+        },
+      };
+
+      document.getElementById('go').addEventListener('click', () => {
+        const marker = document.createElement('span');
+        marker.textContent = 'started';
+        document.getElementById('app').appendChild(marker);
+        // Report busy for BUSY_MS, then clear — no XHR/fetch is issued, so the in-flight counter
+        // stays 0 the whole time and the framework hook is the sole gate on quiescence.
+        busy = true;
+        const BUSY_MS = 250;
+        setTimeout(() => {
+          busy = false;
+        }, BUSY_MS);
+      });
+    </script>
+  </body>
+</html>

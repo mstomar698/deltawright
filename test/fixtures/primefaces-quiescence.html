@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>JSF/PrimeFaces framework-quiescence fixture (v0.9 Move 3 follow-up)</title>
+  </head>
+  <body>
+    <button id="go">go</button>
+    <div id="app"></div>
+    <script>
+      // SYNTHETIC JSF/PrimeFaces mock — NOT the real framework. It exposes the same public shape the
+      // observer's frameworkBusy() hook reads: `PrimeFaces.ajax.Queue`, non-empty while requests are
+      // queued/in flight. Two shapes are supported so BOTH branches of the hook are exercised:
+      //   - default:            Queue.isEmpty() (the primary predicate path).
+      //   - window.__pfMode==='requests':  a Queue WITHOUT isEmpty, only a raw `.requests` array
+      //                         (the fallback path for builds that don't expose isEmpty).
+      // A test sets __pfMode via page.addInitScript (runs BEFORE this script). On click we append a
+      // marker (DOM goes quiet quickly), enqueue a request, and drain it after a controlled window —
+      // WITHOUT any real network request, so the framework hook is the sole gate on quiescence.
+      var requests = [];
+      var Queue =
+        window.__pfMode === 'requests'
+          ? { requests: requests } // fallback build: no isEmpty(), only the raw array
+          : {
+              requests: requests,
+              isEmpty: function () {
+                return requests.length === 0;
+              },
+            };
+      window.PrimeFaces = { ajax: { Queue: Queue } };
+
+      document.getElementById('go').addEventListener('click', () => {
+        const marker = document.createElement('span');
+        marker.textContent = 'started';
+        document.getElementById('app').appendChild(marker);
+        // Enqueue a pending request, then drain it after BUSY_MS — no XHR/fetch is issued, so the
+        // in-flight counter stays 0 and the queue is the sole gate on quiescence.
+        requests.push({ id: 1 });
+        const BUSY_MS = 250;
+        setTimeout(() => {
+          requests.length = 0;
+        }, BUSY_MS);
+      });
+    </script>
+  </body>
+</html>

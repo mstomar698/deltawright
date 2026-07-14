@@ -281,7 +281,8 @@ export interface DeltawrightApi {
    *  (non-interference). Idempotent. */
   enableQuiescence(): void;
   /** Move 3: read-only network-idle probe — true when no XHR/fetch is in flight and no framework
-   *  idle hook (e.g. `Ext.Ajax.isLoading`) is busy. The settle path reads it when `awaitQuiescence`. */
+   *  idle hook (e.g. ExtJS `Ext.Ajax.isLoading`, JSF/PrimeFaces `PrimeFaces.ajax.Queue`) is busy. The
+   *  settle path reads it when `awaitQuiescence`. */
   isQuiescent(): boolean;
   reset(): void;
 }
@@ -305,8 +306,9 @@ export interface SettleOptions {
    * only once the DOM is quiet AND the app's in-flight request count is zero (a monkey-patched
    * XHR/fetch counter — an accurate count of requests made through the patched globals, not a
    * heuristic; it does not see a fetch called via a reference captured before the patch, or a child
-   * frame's own globals), plus any framework idle hook (`Ext.Ajax.isLoading`). Still bounded by
-   * `maxWaitMs` (a cap always resolves). Read-only: it never
+   * frame's own globals), plus any best-effort framework idle hook (ExtJS `Ext.Ajax.isLoading`,
+   * JSF/PrimeFaces `PrimeFaces.ajax.Queue`; plain JSF has no stable idle API and falls back to the
+   * network counter). Still bounded by `maxWaitMs` (a cap always resolves). Read-only: it never
    * fires events or forces loads. This is "act/observe when the app is actually ready" for RPC-driven
    * legacy apps — improving the observe-consequences niche. Default false = the settle logic is
    * byte-unchanged. NOTE: GWT's zero-network `Scheduler` deferred waves are NOT network, so this does
