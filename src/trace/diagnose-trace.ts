@@ -23,6 +23,7 @@ import { render } from '../host/serialize';
 import type { DiagnosedDelta, Diagnosis } from '../host/types';
 import type { RootCauseCode } from '../host/taxonomy';
 import { readTraceZip, type TraceInfo } from './read-trace';
+import { deriveRouting, type RoutingReport } from './routing';
 
 export interface TraceDiagnosis {
   /** The trace file path (for the report header), when read from disk. */
@@ -43,6 +44,8 @@ export interface TraceDiagnosis {
   detached: boolean;
   /** The clamped, diagnosed synthetic delta (input to `render`). */
   diagnosed: DiagnosedDelta;
+  /** Move 2 routing: co-occurring in-page errors + a route-elsewhere hint (co-occurrence, not cause). */
+  routing: RoutingReport;
   /** Why the result is `unsure`, when it is (else empty). */
   note: string;
 }
@@ -74,6 +77,7 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
       confidence: 'unknown',
       detached: false,
       diagnosed: empty as DiagnosedDelta,
+      routing: deriveRouting(info, { domCauseNamed: false }),
       note: 'no failed action found in the trace — nothing to diagnose',
     };
   }
@@ -104,6 +108,9 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
   const diagnosed: DiagnosedDelta = { ...delta, diagnoses };
 
   const summary = summarizeDiagnoses(diagnoses, { detached });
+  // Move 2: when Deltawright named a cause, the failure is its own class and co-events are context;
+  // when it stayed unsure, a co-occurring uncaught JS error becomes a route-elsewhere hint.
+  const routing = deriveRouting(info, { domCauseNamed: summary.cause !== 'unsure' });
   return {
     ...base,
     action: { method: chosen.method, selector: chosen.selector },
@@ -111,6 +118,7 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
     confidence: summary.confidence,
     detached,
     diagnosed,
+    routing,
     note: summary.cause === 'unsure' && !note ? 'no cause crossed the confidence threshold' : note,
   };
 }
@@ -166,6 +174,19 @@ export function renderTraceReport(d: TraceDiagnosis): string {
     lines.push(`cause: unsure — ${d.note}`);
   } else {
     lines.push(`cause: ${d.cause} (${d.confidence})`);
+  }
+
+  // Move 2 routing — additive: only rendered when in-page errors co-occurred, so a clean trace's
+  // report is byte-unchanged. Framed as co-occurrence, never causation (DW-03).
+  if (d.routing.signals.length > 0) {
+    lines.push(
+      '',
+      'Co-occurring in-page signals in the action window (co-occurrence, NOT proof of cause):',
+    );
+    for (const s of d.routing.signals) lines.push(`  · [${s.kind}] ${s.text}`);
+    const hidden = d.routing.windowCount - d.routing.signals.length;
+    if (hidden > 0) lines.push(`  … and ${hidden} more (capped)`);
+    if (d.routing.recommendation) lines.push('', `routing: ${d.routing.recommendation}`);
   }
 
   lines.push(
