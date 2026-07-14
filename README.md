@@ -243,6 +243,38 @@ subdir config), `version` (npm version to run, default `latest`), `comment` (def
 third-party action, no bespoke secret). The report text is HTML-escaped into the comment, so a
 malicious test name can't inject Markdown.
 
+## Diagnose a failing trace, offline
+
+Already have a `trace.zip` from a failed CI run? Explain the failing action **without re-running it**
+— no browser, no flake, no reproduction:
+
+```bash
+deltawright diagnose-trace test-results/**/trace.zip
+```
+
+It reads the trace's failing action + its retry call-log, runs the **same** `diagnose()` engine, and
+prints a root cause:
+
+```
+deltawright diagnose-trace — trace.zip
+trace v8 · playwright 1.61.1 · chromium · OFFLINE reconstruction (no re-run, no browser)
+failed action: click #submit
+────────────────────────────────────────────────────────────────────────
+after click #submit:
+  ~ element [e1] NOT-actionable (unknown)
+diagnostics:
+  [e1] covered-by-overlay (suspected) — Playwright NOT-actionable (… <div class="modal-glass"> intercepts pointer events)
+────────────────────────────────────────────────────────────────────────
+cause: covered-by-overlay (suspected)
+```
+
+**Honest by construction.** Every offline cause is **`suspected`, never `confirmed`** — it is
+reconstructed from the trace's error string, not observed live, so geometry, the live verdict, and the
+observer stats are simply not available. A failure that is not a recognized Playwright *actionability*
+error (an assertion diff, an app error) or whose locator never resolved stays **`unsure`** — a cause is
+never fabricated. An unrecognized trace `version` fails loud rather than mis-parsing. It reads standard
+`@playwright/test` traces (v8); it never re-runs, retries, or changes anything.
+
 ## How it works
 
 ```

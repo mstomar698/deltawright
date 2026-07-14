@@ -13,6 +13,8 @@ Usage:
                                          Read-only: rank flaky tests from triage side-cars (#55) —
                                          JSONL by default, --report for a ranked summary, --html for
                                          a self-contained dashboard (redirect: > flakes.html)
+  deltawright diagnose-trace <trace.zip> Read a Playwright trace OFFLINE (no re-run, no browser) and
+                                         explain the failing action's root cause (suspected-only)
   deltawright --version, -v              Print the installed version
   deltawright --help, -h                 Show this help
 
@@ -96,6 +98,28 @@ async function main(argv: string[]): Promise<number> {
           : toJSONL(records);
       console.log(out);
       return 0;
+    }
+    case 'diagnose-trace': {
+      // Offline root-cause of a Playwright trace.zip (#9). Read-only: reads the trace's error +
+      // call-log and runs the shared diagnose() engine, clamped to `suspected` (reconstructed, not
+      // live-probed). Never re-runs the test. Lazy-import so the base CLI stays lean.
+      const file = argv.slice(1).find((a) => !a.startsWith('-'));
+      if (!file) {
+        console.error('usage: deltawright diagnose-trace <trace.zip>\n');
+        console.error('  reads a Playwright trace offline and explains the failing action');
+        return 1;
+      }
+      const { diagnoseTraceFile, renderTraceReport } = await import(
+        new URL('./trace/diagnose-trace.js', import.meta.url).href
+      );
+      try {
+        const result = await diagnoseTraceFile(file);
+        console.log(renderTraceReport(result));
+        return 0;
+      } catch (err) {
+        console.error(`deltawright diagnose-trace: ${(err as Error).message}`);
+        return 1;
+      }
     }
     case '-v':
     case '--version':

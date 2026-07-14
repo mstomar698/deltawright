@@ -1,0 +1,178 @@
+// #9 — the v0.8 flagship. Read a Playwright `trace.zip` OFFLINE (no re-run, no browser) and
+// explain why the failing action failed, using the SAME shared `diagnose()` engine the live
+// primitive and the reporter use. "The agent reads your failing run."
+//
+// Honesty is the whole point (DW-02/03):
+//  • Reconstructed, not live-probed → every cause is CLAMPED to `suspected`. The engine yields
+//    `confirmed` for an authoritative PW error (the same path the live reporter trusts), but here
+//    the delta was rebuilt from a trace, so we must never claim `confirmed`. The clamp is
+//    load-bearing and separately tested.
+//  • Never fabricate → we reuse the reporter's exact classification (`isActionabilityError` /
+//    `looksDetached`). A non-actionability failure (assertion, app error) or a gone locator yields
+//    an honest "no attributable cause", not a borrowed one.
+//  • Only the error string survives offline. Geometry, the Playwright verdict beyond the error,
+//    and every observer stat are LIVE artifacts absent from a trace, so the geometry-grounded
+//    codes and stats codes are out of reach — by design, not omission.
+
+import { readFile } from 'node:fs/promises';
+import { diagnose } from '../host/diagnose';
+import { capConfidence, type Confidence } from '../host/confidence';
+import { summarizeDiagnoses } from '../host/summarize';
+import { isActionabilityError, looksDetached, syntheticDelta } from '../host/synthetic-delta';
+import { render } from '../host/serialize';
+import type { DiagnosedDelta, Diagnosis } from '../host/types';
+import type { RootCauseCode } from '../host/taxonomy';
+import { readTraceZip, type TraceInfo } from './read-trace';
+
+export interface TraceDiagnosis {
+  /** The trace file path (for the report header), when read from disk. */
+  file?: string;
+  traceVersion: number;
+  playwrightVersion?: string;
+  browserName?: string;
+  /** The failed action being explained, or null when the trace has no failed action. */
+  action: { method: string; selector?: string } | null;
+  actionCount: number;
+  failedCount: number;
+  /** The gated single cause (or `unsure`), after the suspected-clamp. */
+  cause: RootCauseCode | 'unsure';
+  confidence: Confidence;
+  /** True when the failure error explicitly named a detached / closed / never-matched target (a
+   *  gone locator). NOT every unresolved locator: a bare `waiting for locator … Timeout` that names
+   *  no cause stays `unsure` with this false — we only flag what Playwright explicitly reported. */
+  detached: boolean;
+  /** The clamped, diagnosed synthetic delta (input to `render`). */
+  diagnosed: DiagnosedDelta;
+  /** Why the result is `unsure`, when it is (else empty). */
+  note: string;
+}
+
+/** A short human label for the failed action, used as the delta's `action` (render header). */
+function actionLabel(a: { method: string; selector?: string }): string {
+  return a.selector ? `${a.method} ${a.selector}` : a.method;
+}
+
+/** Diagnose an already-read {@link TraceInfo}. Split out so tests can drive it without a zip. */
+export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosis {
+  const base = {
+    file,
+    traceVersion: info.traceVersion,
+    playwrightVersion: info.playwrightVersion,
+    browserName: info.browserName,
+    actionCount: info.actions.length,
+    failedCount: info.failed.length,
+  };
+
+  const chosen = info.chosenFailure;
+  if (!chosen) {
+    // Nothing failed in the trace — an honest, non-fabricated no-cause result.
+    const empty = { ...syntheticDelta('(no failed action)'), nodes: [], diagnoses: [] };
+    return {
+      ...base,
+      action: null,
+      cause: 'unsure',
+      confidence: 'unknown',
+      detached: false,
+      diagnosed: empty as DiagnosedDelta,
+      note: 'no failed action found in the trace — nothing to diagnose',
+    };
+  }
+
+  const err = chosen.errorText;
+  const detached = looksDetached(err);
+
+  // Mirror the reporter's passive classification EXACTLY (shared guards): only a genuine
+  // actionability error is diagnosed; a detached locator or an unrelated failure stays unsure.
+  let rawDiagnoses: Diagnosis[] = [];
+  let note = '';
+  if (detached) {
+    note =
+      'the failing locator did not resolve to an element (detached / never rendered) — no cause fabricated';
+  } else if (!isActionabilityError(err)) {
+    note = 'the failure was not a recognized Playwright actionability error — no cause inferred';
+  } else {
+    rawDiagnoses = diagnose(syntheticDelta(err)).diagnoses;
+  }
+
+  // The honesty clamp — reconstructed, not live-probed → nothing may claim `confirmed`.
+  const diagnoses: Diagnosis[] = rawDiagnoses.map((d) => ({
+    ...d,
+    confidence: capConfidence(d.confidence, 'suspected'),
+  }));
+
+  const delta = { ...syntheticDelta(err), action: actionLabel(chosen) };
+  const diagnosed: DiagnosedDelta = { ...delta, diagnoses };
+
+  const summary = summarizeDiagnoses(diagnoses, { detached });
+  return {
+    ...base,
+    action: { method: chosen.method, selector: chosen.selector },
+    cause: summary.cause,
+    confidence: summary.confidence,
+    detached,
+    diagnosed,
+    note: summary.cause === 'unsure' && !note ? 'no cause crossed the confidence threshold' : note,
+  };
+}
+
+/** Diagnose a `trace.zip` buffer. Throws for a malformed / unsupported trace (see read-trace). */
+export function diagnoseTraceBuffer(zip: Buffer, file?: string): TraceDiagnosis {
+  return diagnoseTraceInfo(readTraceZip(zip), file);
+}
+
+/** Diagnose a `trace.zip` file on disk. */
+export async function diagnoseTraceFile(path: string): Promise<TraceDiagnosis> {
+  const buf = await readFile(path);
+  return diagnoseTraceBuffer(buf, path);
+}
+
+const RULE = '─'.repeat(72);
+
+/** Render a {@link TraceDiagnosis} as the human-readable CLI report. */
+export function renderTraceReport(d: TraceDiagnosis): string {
+  const lines: string[] = [];
+  lines.push(`deltawright diagnose-trace${d.file ? ` — ${d.file}` : ''}`);
+  const meta = [`trace v${d.traceVersion}`];
+  if (d.playwrightVersion) meta.push(`playwright ${d.playwrightVersion}`);
+  if (d.browserName) meta.push(d.browserName);
+  meta.push('OFFLINE reconstruction (no re-run, no browser)');
+  lines.push(meta.join(' · '));
+
+  if (d.action) {
+    const sel = d.action.selector ? ` ${d.action.selector}` : '';
+    lines.push(
+      `failed action: ${d.action.method}${sel}` +
+        (d.failedCount > 1 ? `   [${d.failedCount} failed of ${d.actionCount} actions]` : ''),
+    );
+  } else {
+    lines.push(`${d.actionCount} action(s), 0 failed`);
+  }
+
+  lines.push(RULE);
+  // Render the reconstructed delta + diagnostics ONLY when a cause was actually attributed. With no
+  // diagnosis the synthetic node's placeholder `NOT-actionable` verdict is not something Playwright
+  // issued — printing it would fabricate a verdict, exactly what this tool must never do. So a
+  // non-attributed failure shows the honest one-liner instead.
+  if (d.diagnosed.diagnoses.length > 0) {
+    lines.push(render(d.diagnosed, { diagnostics: true }).text);
+  } else if (d.action) {
+    lines.push('(no root cause reconstructed from the trace — see below)');
+  } else {
+    lines.push('(no failed action in this trace)');
+  }
+  lines.push(RULE);
+
+  if (d.cause === 'unsure') {
+    lines.push(`cause: unsure — ${d.note}`);
+  } else {
+    lines.push(`cause: ${d.cause} (${d.confidence})`);
+  }
+
+  lines.push(
+    '',
+    "Note: this is an OFFLINE reconstruction from the trace's error + call-log. Every cause is a",
+    'SUSPECTED hypothesis, never `confirmed` — geometry, the live verdict, and observer stats are',
+    'not present in a trace. Deltawright neither re-ran nor changed anything (DW-02/03).',
+  );
+  return lines.join('\n');
+}
