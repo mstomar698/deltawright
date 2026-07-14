@@ -6,7 +6,14 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/', 'dist/', 'test-results/', 'playwright-report/', 'bench/corpus/**'],
+    ignores: [
+      'node_modules/',
+      'dist/',
+      'test-results/',
+      'playwright-report/',
+      'bench/corpus/**',
+      '.claude/',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

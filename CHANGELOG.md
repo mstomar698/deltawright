@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Live ownership-routing — opt-in `routeSignals` (v0.9 Move 2, live arm).** The live half of Move 2,
+  the parallel of the offline `diagnose-trace` routing arm. When opted in, `actAndObserve` attaches four
+  page-level listeners — `response` (status ≥ 400 only), `requestfailed`, `pageerror`, and `console`
+  (error/warning only) — that bracket the action + settle (the listener **lifetime is the window**, so no
+  timestamp math), and surfaces a `stats.routing` **`LiveRoutingReport`**: a "this failure may not be
+  Deltawright's DOM-actionability class; route it elsewhere" hint. **Co-occurrence, never causation**
+  (DW-03): a co-occurring uncaught `pageerror` flips `suspectedNotDomCause` (route to the app owner); a
+  4xx/5xx response or a failed request flips `suspectedBackendCause` (route to backend/infra); a
+  `console.error` is context, never a verdict-flip. It emits **no** taxonomy code and never overrides
+  Playwright's action outcome (DW-02). Catches signals a trace would miss — the live arm yields on the
+  LIVE path even when a legacy app that swallows its JS errors leaves an offline trace empty (see the
+  offline-ceiling assessment). **Additive + opt-in:** off by default → ZERO listeners are attached and
+  `stats.routing` is absent, so the default path is byte-unchanged; listeners are detached in a `finally`
+  (via named refs + `page.off`) even when the action throws, so `page.listenerCount(...)` returns to
+  baseline. **Privacy:** the report carries no raw URL or full console text — only a status, a
+  query-stripped URL path, and a length-capped snippet. New exports `buildLiveRouting` (pure) +
+  `LiveRoutingReport`/`LiveRoutingSignal`/`LiveSignalKind`/`CollectedLiveSignals`/`RawLiveSignal`. See
+  ADR 2026-07-15.
+
 ## [0.9.1] - 2026-07-14
 
 The v0.9 live-path pivot — after the offline arms (0.9.0) were measured at only +1 point on a real

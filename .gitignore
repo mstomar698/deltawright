@@ -5,6 +5,9 @@ playwright-report/
 .DS_Store
 *.log
 
+# Claude Code local working dir (agent worktrees / config) — never committed
+.claude/
+
 # Local env / secrets — NEVER commit API keys
 .env
 .env.*
