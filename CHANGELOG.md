@@ -6,6 +6,43 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-14
+
+The v0.9 reframe: Deltawright as the honest cross-class cause **classifier/router** for agents — it
+names which failures are its DOM-actionability class, and, just as valuably, which are not.
+
+### Added
+
+- **Post-settle input-integrity — `input-not-committed` (Move 1).** After a value-bearing action
+  (`fill`/`type`) that Playwright reports as **success**, Deltawright re-reads the field's committed
+  value at the existing post-settle read point and flags a silent character loss — the async
+  debounce-then-clear a synchronous post-fill check structurally cannot see (e.g. a GWT SuggestBox that
+  clears the field after its RPC returns). A loss requires a dropped **letter or number** (Unicode-aware,
+  for non-English targets); a case/reorder mask or a subtractive separator/whitespace mask
+  (`4111 1111` → `41111111`) is deliberately **not** flagged (the false-positive guard). New taxonomy
+  code `input-not-committed` (new `outcome-integrity` category), always `suspected` (a value comparison,
+  never an override of Playwright's success — DW-02/03). Opt-in `inputIntegrity` on `actAndObserve`
+  (~zero added latency) + a new char-by-char `type` MCP action. **Privacy:** only lengths + shape are
+  stored, never the raw value.
+- **Offline ownership-routing (Move 2).** `diagnose-trace` now reads the trace's own error signals and
+  surfaces them as **routing hints** — co-occurrence, never causation (no taxonomy code, no verdict):
+  - **In-page:** window-correlated `console`/`pageError`; an uncaught JS error with no DOM cause →
+    `suspectedNotDomCause` (route to the app owner).
+  - **Harness:** test-scoped backend-error lines from the runner's `stdout`/`stderr` (context-anchored
+    HTTP 4xx/5xx / gateway / `ECONN*`, not a bare number) → `suspectedBackendCause` (route to
+    backend/infra).
+  Both are additive (a trace with no such events renders a byte-unchanged report) and suppressed when
+  Deltawright names a DOM cause. **Honest scope:** on a corpus whose failures don't carry these signals
+  (e.g. legacy apps that swallow their JS errors and don't log backend faults as HTTP-status lines),
+  offline routing adds little — it is a correct, general capability whose yield is corpus-dependent, not
+  a universal win.
+
+### Changed
+
+- The root-cause taxonomy grows to **19 codes** (`input-not-committed` under the new `outcome-integrity`
+  category). The frozen DW-04 lock, the canonical spec, and the accuracy corpus were updated in
+  lock-step; the three accuracy floors (DW-02 100%, confirmed-precision ≥95%, silent-miss ≤5%) stay green.
+
 ## [0.8.0] - 2026-07-14
 
 ### Added
@@ -555,6 +592,8 @@ pointer/click-actionability (role-aware probes are v0.5); settle is a simple lab
 heuristic; mutation-noise filtering is untested; and the token win is unproven on the
 tiny controlled fixture.
 
-[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/mstomar698/deltawright/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/mstomar698/deltawright/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/mstomar698/deltawright/compare/v0.1.0...v0.6.0
 [0.1.0]: https://github.com/mstomar698/deltawright/releases/tag/v0.1.0
