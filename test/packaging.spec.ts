@@ -22,6 +22,7 @@ const distMatchers = resolve(root, 'dist/matchers/index.js');
 const distReporter = resolve(root, 'dist/reporter/index.js');
 const distWait = resolve(root, 'dist/wait/index.js');
 const distAggregate = resolve(root, 'dist/aggregate/index.js');
+const distCli = resolve(root, 'dist/cli.js');
 
 // Build once if dist/ is missing so the suite is runnable standalone. CI builds
 // explicitly before the tests, so this is a no-op there.
@@ -121,6 +122,37 @@ test('should_import_aggregate_subpath_from_dist', () => {
     encoding: 'utf8',
   });
   expect(out.trim()).toBe('OK');
+});
+
+test('should_run_diagnose_trace_from_the_built_cli', () => {
+  // The v0.8 flagship (#9) runs from the INSTALLED artifact: the CLI lazy-imports
+  // dist/trace/diagnose-trace.js (a separate build entry) and prints a suspected-only offline
+  // diagnosis of a real trace.zip fixture — no re-run, no browser.
+  expect(existsSync(resolve(root, 'dist/trace/diagnose-trace.js'))).toBe(true);
+  const out = execFileSync(
+    'node',
+    [distCli, 'diagnose-trace', 'test/fixtures/traces/covered.trace.zip'],
+    { cwd: root, encoding: 'utf8' },
+  );
+  expect(out).toContain('OFFLINE reconstruction');
+  expect(out).toContain('covered-by-overlay (suspected)');
+});
+
+test('should_exit_nonzero_on_an_unsupported_trace_version_from_the_cli', () => {
+  // The version guard is user-facing: an unsupported trace fails loud (exit 1 + a clear message),
+  // never a silent mis-parse.
+  try {
+    execFileSync(
+      'node',
+      [distCli, 'diagnose-trace', 'test/fixtures/traces/bad-version.trace.zip'],
+      { cwd: root, encoding: 'utf8', stdio: 'pipe' },
+    );
+    throw new Error('expected a non-zero exit');
+  } catch (err) {
+    const e = err as { status?: number; stderr?: string };
+    expect(e.status).toBe(1);
+    expect(String(e.stderr)).toContain('unsupported Playwright trace version');
+  }
 });
 
 test('should_run_mcp_bin_from_dist', async () => {

@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-14
+
+### Added
+
+- **`deltawright diagnose-trace <trace.zip>`** (the v0.8 flagship, #9): read a Playwright trace
+  **offline** — no re-run, no browser — and explain the failing action's root cause. It extracts the
+  failed action's method/selector, terse error, and retry **call-log** (where Playwright records the
+  actionability cause, e.g. `intercepts pointer events` / `element is not enabled`), reconstructs a
+  synthetic delta, and runs the **same shared `diagnose()` engine** the live primitive and the reporter
+  use. "The agent reads your failing run."
+  - **Honest by construction (DW-02/03).** Everything is reconstructed, not live-probed, so every
+    offline cause is **clamped to `suspected`** — never `confirmed` (a dedicated, load-bearing test
+    asserts no `confirmed` escapes). A non-actionability failure (assertion / app error) or an
+    unresolved locator stays **`unsure`** — a cause is never fabricated (it reuses the reporter's exact
+    classification, so the offline diagnosis and the live reporter can't drift).
+  - **Dependency-free trace reading.** The `trace.zip` is unzipped with only Node's built-in `zlib`
+    (its output checked byte-for-byte against system `unzip` during development); no new runtime
+    dependency, and `playwright-core` internals
+    are never imported. Merges the `test.trace` + `0-trace.trace` split that `@playwright/test` traces
+    use. A **version guard** hard-refuses any trace `version` outside the validated set (v8) rather
+    than mis-parsing a shifted format.
+  - Scope: the error-string-grounded path only. Geometry, the live verdict, and observer stats are
+    live artifacts absent from a trace, so the geometry-grounded codes and stats codes are out of
+    reach by design — DOM-snapshot / geometry reconstruction is a deferred follow-up.
+  - Reuse-only, engine untouched: the accuracy floors (DW-02 / confirmed-precision / silent-miss) are
+    unchanged and still gated. Adds a shared `capConfidence` primitive and extracts the
+    error→synthetic-delta helper (`syntheticDelta` + the actionability/detached guards) into
+    `src/host/synthetic-delta.ts` so the reporter and the trace reader share one classification.
+
 ## [0.7.5] - 2026-07-11
 
 ### Added

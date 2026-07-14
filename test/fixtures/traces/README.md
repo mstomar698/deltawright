@@ -1,0 +1,27 @@
+# trace fixtures (`diagnose-trace`, #9)
+
+Golden Playwright **trace v8** archives for the offline `deltawright diagnose-trace` reader/tests.
+All are self-generated and carry no PII or external identifiers.
+
+| fixture | provenance | expected outcome |
+|---|---|---|
+| `covered.trace.zip` | real trace of a transparent-glass overlay intercepting a click | `covered-by-overlay` (suspected) |
+| `covered-testrunner.trace.zip` | a genuine `@playwright/test` (`trace: 'on'`) archive of the same overlay — split into `test.trace` + `0-trace.trace` | `covered-by-overlay` (suspected) |
+| `disabled.trace.zip` | real trace of clicking a `disabled` button | `disabled` (suspected) |
+| `unresolved.trace.zip` | real trace of a locator that never resolved (timeout, no named cause) | `unsure` |
+| `assertion.trace.zip` | hand-authored `expect.toHaveText` mismatch | `unsure` (not an actionability error) |
+| `detached.trace.zip` | hand-authored element-detached-mid-action | `unsure` + `detached` |
+| `bad-version.trace.zip` | `covered` with `context-options.version` bumped to `99` | refused (version guard) |
+
+**Real** fixtures were produced with `context.tracing.start({snapshots:true}) → failing action →
+tracing.stop({path})` (and, for `covered-testrunner`, `@playwright/test` with `trace: 'on'`), then
+**sanitized** for a public repo: local filesystem paths rewritten to `/repo`, and the `*.stacks` +
+`resources/` members (which the reader never consumes and which carried local source paths) dropped.
+Only the `*.trace` members + an empty `*.network` remain.
+
+**Hand-authored** fixtures are minimal, faithful v8 JSONL (the exact event shapes — `context-options`,
+`before`, `log`, `after` — captured from real traces) so the honesty branches are exercised
+deterministically.
+
+Regenerate with a local generator (kept out of the repo — it needs local Playwright browsers). The
+reader's output was checked byte-for-byte against system `unzip` on a real archive during development.

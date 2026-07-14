@@ -1,7 +1,8 @@
 import { diagnose } from '../host/diagnose';
 import { type Confidence } from '../host/confidence';
 import { summarizeDiagnoses, DEFAULT_MIN_CONFIDENCE } from '../host/summarize';
-import type { Delta, DeltaNode, Diagnosis } from '../host/types';
+import { isActionabilityError, looksDetached, syntheticDelta } from '../host/synthetic-delta';
+import type { Delta, Diagnosis } from '../host/types';
 import type { RootCauseCode } from '../host/taxonomy';
 
 // Flake-triage side-car core (#55). PURE + browser-free: given a failed test's error/attachments it
@@ -53,67 +54,9 @@ export interface Sidecar {
 
 const FAIL_STATUSES = new Set(['failed', 'timedOut']);
 
-/** A locator/timeout that never resolved to an element — degrade to detached, never fabricate. */
-function looksDetached(message: string): boolean {
-  const m = message.toLowerCase();
-  return (
-    m.includes('not attached to the dom') ||
-    m.includes('element is not attached') ||
-    m.includes('was detached from the dom') || // auto-waiting locator retry (a re-render swap)
-    m.includes('no element matching') ||
-    m.includes('has been closed') // target page / context / browser closed
-  );
-}
-
-/**
- * Is this a genuine Playwright ACTIONABILITY / timeout failure whose error names a real cause — as
- * opposed to an assertion diff, an app error, or a stack trace that merely CONTAINS a taxonomy word?
- * The passive path only diagnoses these; everything else stays `unsure` (never fabricate). Matches the
- * structured Playwright phrasings, not a bare keyword anywhere in the text.
- */
-function isActionabilityError(message: string): boolean {
-  const m = message.toLowerCase();
-  return (
-    /element is not (visible|enabled|stable|editable|attached)/.test(m) ||
-    m.includes('intercepts pointer events') ||
-    m.includes('outside of the viewport') ||
-    looksDetached(m)
-  );
-}
-
-/** A minimal synthetic Delta carrying the failure's Playwright error, for diagnose() (passive). */
-function syntheticDelta(errorMessage: string): Delta {
-  const node: DeltaNode = {
-    ref: 'e1',
-    kind: 'attrChanged',
-    tag: 'element',
-    role: null,
-    name: null,
-    interactive: true,
-    parentRef: null,
-    geometry: null,
-    actionability: {
-      verdict: 'NOT-actionable',
-      reason: null,
-      geometryVerdict: 'n/a',
-      // The failed action's own Playwright error IS an authoritative actionability signal, the same
-      // source diagnose() treats as authoritative from a trial probe — pass it through verbatim.
-      playwright: { actionable: false, error: errorMessage },
-      agreed: true,
-    },
-  };
-  return {
-    action: 'failed action',
-    nodes: [node],
-    stats: {
-      rawRecords: 0,
-      settleMs: 0,
-      hitMaxWait: false,
-      animationsAwaited: 0,
-      droppedBackground: 0,
-    },
-  };
-}
+// `isActionabilityError`, `looksDetached`, and `syntheticDelta` moved to `../host/synthetic-delta`
+// so the offline `diagnose-trace` (#9) reconstructs the SAME synthetic delta from the SAME error
+// string this passive path does — one shared classification, no drift.
 
 /** Parse a `deltawright-delta` attachment body into a Delta, or null if absent/unparseable. */
 function deltaFromAttachments(atts: TriageInput['attachments']): Delta | null {

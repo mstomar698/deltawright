@@ -64,3 +64,13 @@ export function assessConfidence(evidence: Evidence): Confidence {
 export function atLeastAsConfident(a: Confidence, b: Confidence): boolean {
   return CONFIDENCE_ORDER.indexOf(a) <= CONFIDENCE_ORDER.indexOf(b);
 }
+
+/**
+ * Cap a confidence at `max`, never upgrading it (`confirmed`→`suspected` when max is `suspected`;
+ * a weaker input is left untouched). The honest downgrade for a RECONSTRUCTED-only surface — e.g.
+ * offline `diagnose-trace` (#9), where the cause is rebuilt from a trace's error string, not
+ * live-probed, so it must never claim `confirmed` even though the shared engine would (DW-03).
+ */
+export function capConfidence(c: Confidence, max: Confidence): Confidence {
+  return atLeastAsConfident(c, max) ? max : c;
+}
