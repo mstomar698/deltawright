@@ -87,12 +87,52 @@ function harnessBucket(line: string): string {
   return '4xx';
 }
 
+/**
+ * One value-bearing form field extracted from a `frame-snapshot`'s serialized DOM (v0.9 Move 1
+ * offline arm). Playwright's snapshotter records a live field's committed value as the frozen
+ * `__playwright_value_` attribute and stamps the action's target with `__playwright_target__`; this
+ * is the OFFLINE analogue of the live arm's post-settle `el.value` read. PRIVACY: `value` can be a
+ * password / PII — it is compared in-memory (never printed); only lengths + shape reach any output.
+ */
+export interface SnapshotField {
+  /** The element's `id` attribute, when present (for selector-key matching). */
+  id?: string;
+  /** The element's `name` attribute, when present (for selector-key matching). */
+  name?: string;
+  /** True when the snapshotter stamped `__playwright_target__` (this was the action's target). */
+  isTarget: boolean;
+  /** The committed value from `__playwright_value_` (may be an empty string = never-committed). */
+  value: string;
+}
+
+/**
+ * The value-bearing fields extracted from one `frame-snapshot` (v0.9 Move 1 offline arm). Only
+ * `after@…` / `input@…` snapshots (the committed / mid-action states) are kept; the `before@…`
+ * pre-action state is skipped. Fields inside a REFERENCE subtree (`[[n,m]]`, an incremental
+ * back-reference to an earlier snapshot) are not resolved — that node is skipped, so an unresolved
+ * target yields no field and the derive stays honestly silent (never a guess).
+ */
+export interface FrameSnapshotFields {
+  /** e.g. `after@call@10` — correlates a snapshot to its action's callId + phase. */
+  snapshotName?: string;
+  /** The action callId this snapshot belongs to (e.g. `call@10`). */
+  callId?: string;
+  /** The value-bearing fields found in this snapshot's serialized DOM. */
+  fields: SnapshotField[];
+}
+
 export interface TraceAction {
   callId: string;
   /** click / fill / press / … (or `action` when the trace did not name it). */
   method: string;
   /** The action's target selector, when it had one. */
   selector?: string;
+  /**
+   * The INTENDED value of a value-bearing action (v0.9 Move 1 offline arm): `params.value` (fill) or
+   * `params.text` (type). Present only when the action carried one; the offline input-integrity arm
+   * compares it to the field's committed value in the after-snapshot. Held in-memory only (privacy).
+   */
+  value?: string;
   /** Action start time (ms), from the `before` event — the left edge of its window. */
   startTime?: number;
   /** Action end time (ms), from the matched `after` event — the right edge of its window. */
@@ -131,6 +171,8 @@ export interface TraceInfo {
   coEvents: TraceCoEvent[];
   /** Backend/infra error lines from the test-runner's own output (test-scoped; Move 2 harness routing). */
   harnessSignals: HarnessSignal[];
+  /** Value-bearing fields per `after@…`/`input@…` frame-snapshot (v0.9 Move 1 offline input-integrity). */
+  frameSnapshots: FrameSnapshotFields[];
   /**
    * The failure to diagnose: the LAST failed action. In a normal test, execution stops at the
    * first unhandled throw, so there is exactly one; when soft assertions / try-catch produce
@@ -207,7 +249,51 @@ function buildErrorText(
 interface BeforeEvent {
   startTime?: number;
   method?: string;
-  params?: { selector?: unknown };
+  params?: { selector?: unknown; value?: unknown; text?: unknown };
+}
+
+/** The intended value a value-bearing action typed: `params.value` (fill) or `params.text` (type). */
+function pickActionValue(params: BeforeEvent['params']): string | undefined {
+  if (!params) return undefined;
+  if (typeof params.value === 'string') return params.value;
+  if (typeof params.text === 'string') return params.text;
+  return undefined;
+}
+
+// The frozen attribute Playwright's snapshotter writes for a form field's committed value, and the
+// one it stamps on an action's target element. Version-stable across trace v8 (PW 1.4x–1.6x).
+const PW_VALUE_ATTR = '__playwright_value_';
+const PW_TARGET_ATTR = '__playwright_target__';
+// A guard on snapshot-tree recursion depth — a real DOM is shallow, but a hostile/oversized trace
+// must never blow the stack. Beyond this the subtree is skipped (honest silence, never a crash).
+const MAX_SNAPSHOT_DEPTH = 1000;
+
+/**
+ * Walk a Playwright DOM `frame-snapshot` tree and collect the value-bearing form fields (v0.9 Move 1
+ * offline arm). A node is one of: a string (text — ignored); an ELEMENT `[TAG, attrs?, ...children]`
+ * (tags are UPPERCASE, `attrs` is a plain object only when present); or a REFERENCE `[[n,m]]` whose
+ * head is an ARRAY (a back-reference to an earlier snapshot). We read a field only from a MATERIALIZED
+ * element carrying `__playwright_value_`; a reference node is skipped (its value lives in another
+ * snapshot we do not resolve) — so an unresolved target simply yields no field, never a fabricated one.
+ */
+function collectSnapshotFields(node: unknown, out: SnapshotField[], depth = 0): void {
+  if (depth > MAX_SNAPSHOT_DEPTH || !Array.isArray(node)) return;
+  const head = node[0];
+  if (typeof head !== 'string') return; // reference node ([[n,m]]) or malformed — skip this subtree
+  // Element: an attributes object is present only when node[1] is a plain (non-array) object.
+  const hasAttrs = node[1] != null && typeof node[1] === 'object' && !Array.isArray(node[1]);
+  const attrs = (hasAttrs ? node[1] : {}) as Record<string, unknown>;
+  const childStart = hasAttrs ? 2 : 1;
+  const valueKey = Object.keys(attrs).find((k) => k.startsWith(PW_VALUE_ATTR));
+  if (valueKey !== undefined && typeof attrs[valueKey] === 'string') {
+    out.push({
+      id: typeof attrs.id === 'string' ? attrs.id : undefined,
+      name: typeof attrs.name === 'string' ? attrs.name : undefined,
+      isTarget: PW_TARGET_ATTR in attrs,
+      value: attrs[valueKey] as string,
+    });
+  }
+  for (let i = childStart; i < node.length; i++) collectSnapshotFields(node[i], out, depth + 1);
 }
 
 /** First value of `key` across the context-options events that is a string. */
@@ -230,6 +316,7 @@ export function parseTraceEvents(text: string): TraceInfo {
   const logs = new Map<string, Array<{ time: number; message: string }>>();
   const coEvents: TraceCoEvent[] = [];
   const harnessRaw: HarnessSignal[] = [];
+  const frameSnapshots: FrameSnapshotFields[] = [];
 
   for (const line of text.split('\n')) {
     const s = line.trim();
@@ -308,6 +395,31 @@ export function parseTraceEvents(text: string): TraceInfo {
         if (typeof message === 'string') scanHarness(message, 'error', harnessRaw);
         break;
       }
+      // v0.9 Move 1 offline arm: a DOM snapshot Playwright captured for an action's before/input/after
+      // phase. We keep only the value-bearing fields of the COMMITTED (`after@`) / mid-action (`input@`)
+      // states — the pre-action `before@` state is never the committed value, so it is skipped.
+      case 'frame-snapshot': {
+        const snap = (e as { snapshot?: unknown }).snapshot;
+        if (snap && typeof snap === 'object') {
+          const s = snap as { snapshotName?: unknown; callId?: unknown; html?: unknown };
+          const snapshotName = typeof s.snapshotName === 'string' ? s.snapshotName : undefined;
+          if (
+            snapshotName &&
+            (snapshotName.startsWith('after@') || snapshotName.startsWith('input@'))
+          ) {
+            const fields: SnapshotField[] = [];
+            collectSnapshotFields(s.html, fields);
+            if (fields.length > 0) {
+              frameSnapshots.push({
+                snapshotName,
+                callId: typeof s.callId === 'string' ? s.callId : undefined,
+                fields,
+              });
+            }
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -333,6 +445,7 @@ export function parseTraceEvents(text: string): TraceInfo {
         : undefined;
     const method = typeof before.method === 'string' ? before.method : 'action';
     const selector = before.params?.selector != null ? String(before.params.selector) : undefined;
+    const value = pickActionValue(before.params);
     const causeLine = extractCauseLine(callLog);
     const startTime = typeof before.startTime === 'number' ? before.startTime : 0;
     const endTime = typeof after?.endTime === 'number' ? after.endTime : undefined;
@@ -342,6 +455,7 @@ export function parseTraceEvents(text: string): TraceInfo {
         callId,
         method,
         selector,
+        value,
         startTime,
         endTime,
         error,
@@ -376,6 +490,7 @@ export function parseTraceEvents(text: string): TraceInfo {
     failed,
     coEvents,
     harnessSignals,
+    frameSnapshots,
     chosenFailure: failed.length ? failed[failed.length - 1]! : null,
   };
 }
