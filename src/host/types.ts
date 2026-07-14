@@ -175,6 +175,13 @@ export interface DeltaStats {
    * (suspected). PRIVACY: no raw values — see `InputIntegrityStat`.
    */
   inputIntegrity?: InputIntegrityStat;
+  /**
+   * Move 3 flag (opt-in via `awaitQuiescence`): whether the app was network-idle (no in-flight
+   * XHR/fetch, no framework hook busy) at the settle point. Present ONLY when `awaitQuiescence` ran,
+   * so the default stats object is byte-unchanged. `false` alongside `hitMaxWait` means the app was
+   * still making requests when the cap was hit — a genuinely-not-ready signal.
+   */
+  quiescent?: boolean;
 }
 
 export interface RawDelta {
@@ -269,6 +276,13 @@ export interface DeltawrightApi {
    * `locator.evaluate(el => window.__deltawright.probeGeometry(el))`.
    */
   probeGeometry(el: Element): GeometryRead;
+  /** Move 3 (opt-in): install the in-flight XHR/fetch counter. The host calls this BEFORE the action
+   *  ONLY when `awaitQuiescence` is set, so a default run leaves the page's native fetch/XHR untouched
+   *  (non-interference). Idempotent. */
+  enableQuiescence(): void;
+  /** Move 3: read-only network-idle probe — true when no XHR/fetch is in flight and no framework
+   *  idle hook (e.g. `Ext.Ajax.isLoading`) is busy. The settle path reads it when `awaitQuiescence`. */
+  isQuiescent(): boolean;
   reset(): void;
 }
 
@@ -286,11 +300,31 @@ export interface SettleOptions {
    * the window sets `SettleResult.lateStructural`. Default 0 = off = byte-unchanged.
    */
   lateWatchMs?: number;
+  /**
+   * Framework-agnostic network-idle quiescence (v0.9 Move 3, opt-in). When true, settle resolves
+   * only once the DOM is quiet AND the app's in-flight request count is zero (a monkey-patched
+   * XHR/fetch counter — an accurate count of requests made through the patched globals, not a
+   * heuristic; it does not see a fetch called via a reference captured before the patch, or a child
+   * frame's own globals), plus any framework idle hook (`Ext.Ajax.isLoading`). Still bounded by
+   * `maxWaitMs` (a cap always resolves). Read-only: it never
+   * fires events or forces loads. This is "act/observe when the app is actually ready" for RPC-driven
+   * legacy apps — improving the observe-consequences niche. Default false = the settle logic is
+   * byte-unchanged. NOTE: GWT's zero-network `Scheduler` deferred waves are NOT network, so this does
+   * not catch them (that is `#49`'s late-watch); it catches XHR/fetch/GWT-RPC in-flight work.
+   */
+  awaitQuiescence?: boolean;
 }
 
 export interface SettleResult {
   settleMs: number;
   hitMaxWait: boolean;
+  /**
+   * Move 3: present ONLY when `awaitQuiescence` was set — whether the app was network-idle
+   * (in-flight count 0, no framework hook busy) at the settle point. `false` at a `maxWaitMs` cap
+   * means the app was STILL making requests when we gave up (a genuinely-not-ready signal). Absent
+   * on the default path, so the default `SettleResult` is byte-unchanged.
+   */
+  quiescent?: boolean;
 }
 
 /**

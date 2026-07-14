@@ -257,6 +257,7 @@ export async function actAndObserve(
     maxWaitMs: opts.maxWaitMs ?? DEFAULT_SETTLE.maxWaitMs,
     animMaxMs: opts.animMaxMs ?? DEFAULT_SETTLE.animMaxMs,
     lateWatchMs: opts.lateWatchMs ?? 0,
+    awaitQuiescence: opts.awaitQuiescence === true,
   };
 
   // Capture-integrity degraded path (#71 fix #4b): if the observer can't be injected — a strict
@@ -309,6 +310,13 @@ export async function actAndObserve(
     (iwr) => (window as unknown as DwWindow).__deltawright!.arm(iwr),
     opts.inWindowRecurrence === true,
   );
+
+  // Move 3 (opt-in): install the in-flight XHR/fetch counter NOW — before the action, so its requests
+  // are counted — and ONLY when awaiting quiescence, so a default run leaves the page's native
+  // fetch/XHR untouched (non-interference).
+  if (settle.awaitQuiescence) {
+    await page.evaluate(() => (window as unknown as DwWindow).__deltawright!.enableQuiescence());
+  }
 
   // Same-origin iframe traversal (#34, opt-in): arm child frames too, before the action.
   // `framesSkipped` counts the ones we could NOT observe (cross-origin/uninjectable) → grounds
@@ -475,6 +483,9 @@ export async function actAndObserve(
       // v0.9 Move 1: present ONLY when the opt-in inputIntegrity read ran AND the value drifted, so
       // every action that did not opt in keeps a byte-unchanged stats object.
       ...(inputIntegrity ? { inputIntegrity } : {}),
+      // v0.9 Move 3: the network-idle state at settle — present ONLY when awaitQuiescence ran, so the
+      // default stats object is byte-unchanged.
+      ...(settleResult.quiescent !== undefined ? { quiescent: settleResult.quiescent } : {}),
     },
   };
 }
