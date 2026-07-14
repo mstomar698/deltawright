@@ -36,12 +36,29 @@ export class TraceParseError extends Error {
   }
 }
 
+/**
+ * A co-occurring event in the trace that is NOT a Playwright action — an in-page `console` error/
+ * warning or an uncaught `pageError` (Move 2 routing). It is surfaced as a ROUTING SIGNAL only:
+ * co-occurrence is not causation (DW-03), so it never becomes a taxonomy code or a verdict.
+ */
+export interface TraceCoEvent {
+  kind: 'pageerror' | 'console-error' | 'console-warning';
+  /** The message text (single line, trimmed + capped). */
+  text: string;
+  /** Trace-relative time (ms) the event fired — for correlating to the failing action's window. */
+  time: number;
+}
+
 export interface TraceAction {
   callId: string;
   /** click / fill / press / … (or `action` when the trace did not name it). */
   method: string;
   /** The action's target selector, when it had one. */
   selector?: string;
+  /** Action start time (ms), from the `before` event — the left edge of its window. */
+  startTime?: number;
+  /** Action end time (ms), from the matched `after` event — the right edge of its window. */
+  endTime?: number;
   /** The action's terse error (`{ message, name }`), present only on a failed action. */
   error?: { message: string; name?: string };
   /** The full retry call-log messages, in time order — where the actionability cause is recorded. */
@@ -72,6 +89,8 @@ export interface TraceInfo {
   actions: TraceAction[];
   /** The subset that failed, in start-time order. */
   failed: TraceAction[];
+  /** In-page console error/warning + uncaught pageError events, in time order (Move 2 routing). */
+  coEvents: TraceCoEvent[];
   /**
    * The failure to diagnose: the LAST failed action. In a normal test, execution stops at the
    * first unhandled throw, so there is exactly one; when soft assertions / try-catch produce
@@ -110,6 +129,12 @@ function extractCauseLine(callLog: string[]): string | undefined {
   return cause;
 }
 
+/** First line of a co-event message, trimmed and capped — never a multi-line stack or a novel. */
+function capText(s: string): string {
+  const firstLine = s.split('\n')[0]!.trim();
+  return firstLine.length > 200 ? firstLine.slice(0, 197) + '…' : firstLine;
+}
+
 /** The concise grounding error: terse message + the concrete cause line (no repeated call-log). */
 function buildErrorText(
   method: string,
@@ -141,8 +166,12 @@ export function parseTraceEvents(text: string): TraceInfo {
   // all of them and take the first defined value of each rather than trusting whichever came first.
   const ctxs: Record<string, unknown>[] = [];
   const befores = new Map<string, BeforeEvent>();
-  const afters = new Map<string, { error?: { message?: unknown; name?: string } }>();
+  const afters = new Map<
+    string,
+    { error?: { message?: unknown; name?: string }; endTime?: number }
+  >();
   const logs = new Map<string, Array<{ time: number; message: string }>>();
+  const coEvents: TraceCoEvent[] = [];
 
   for (const line of text.split('\n')) {
     const s = line.trim();
@@ -165,7 +194,7 @@ export function parseTraceEvents(text: string): TraceInfo {
         break;
       case 'after':
         if (typeof e.callId === 'string')
-          afters.set(e.callId, e as { error?: { message?: unknown } });
+          afters.set(e.callId, e as { error?: { message?: unknown }; endTime?: number });
         break;
       case 'log':
         if (typeof e.callId === 'string' && typeof e.message === 'string') {
@@ -174,6 +203,39 @@ export function parseTraceEvents(text: string): TraceInfo {
           logs.set(e.callId, arr);
         }
         break;
+      // Move 2 routing co-events. `console` carries an in-page console message; the browser also
+      // logs a failed request as a console error, so this channel catches those too. We keep only
+      // error/warning levels (log/info/debug is pure noise on a legacy app).
+      case 'console': {
+        const level = (e as { messageType?: unknown }).messageType;
+        const text = (e as { text?: unknown }).text;
+        if ((level === 'error' || level === 'warning') && typeof text === 'string') {
+          coEvents.push({
+            kind: level === 'error' ? 'console-error' : 'console-warning',
+            text: capText(text),
+            time: typeof e.time === 'number' ? e.time : 0,
+          });
+        }
+        break;
+      }
+      // An uncaught JS exception is a BrowserContext `pageError` event (NOT a `console` type).
+      case 'event': {
+        const ev = e as {
+          method?: unknown;
+          params?: { error?: { error?: { message?: unknown } } };
+        };
+        if (ev.method === 'pageError') {
+          const message = ev.params?.error?.error?.message;
+          if (typeof message === 'string') {
+            coEvents.push({
+              kind: 'pageerror',
+              text: capText(message),
+              time: typeof e.time === 'number' ? e.time : 0,
+            });
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -200,12 +262,16 @@ export function parseTraceEvents(text: string): TraceInfo {
     const method = typeof before.method === 'string' ? before.method : 'action';
     const selector = before.params?.selector != null ? String(before.params.selector) : undefined;
     const causeLine = extractCauseLine(callLog);
+    const startTime = typeof before.startTime === 'number' ? before.startTime : 0;
+    const endTime = typeof after?.endTime === 'number' ? after.endTime : undefined;
     built.push({
-      startTime: typeof before.startTime === 'number' ? before.startTime : 0,
+      startTime,
       action: {
         callId,
         method,
         selector,
+        startTime,
+        endTime,
         error,
         callLog,
         causeLine,
@@ -217,6 +283,7 @@ export function parseTraceEvents(text: string): TraceInfo {
   built.sort((a, b) => a.startTime - b.startTime);
   const actions = built.map((b) => b.action);
   const failed = actions.filter((a) => a.failed);
+  coEvents.sort((a, b) => a.time - b.time);
   return {
     traceVersion,
     playwrightVersion: pickString(ctxs, 'playwrightVersion'),
@@ -224,6 +291,7 @@ export function parseTraceEvents(text: string): TraceInfo {
     sdkLanguage: pickString(ctxs, 'sdkLanguage'),
     actions,
     failed,
+    coEvents,
     chosenFailure: failed.length ? failed[failed.length - 1]! : null,
   };
 }
