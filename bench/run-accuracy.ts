@@ -150,7 +150,7 @@ function report(scores: CaseScore[], m: Metrics): string {
     '  recall/verdict targeting is positional on this single-target-per-fixture seed (F3/F4).',
   );
   L.push(
-    '  All 18 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision',
+    '  All 19 taxonomy codes emit (recall 100% / silent-miss 0% on this seed). The DW-02, precision',
   );
   L.push(
     '  (≥95%), and silent-miss (≤5%) floors are all GATED now — a regression in any hard-fails CI.',

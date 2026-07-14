@@ -18,7 +18,7 @@ const session = new DeltawrightSession();
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
 function buildAction(
-  action: 'click' | 'fill' | 'select' | 'check' | 'press',
+  action: 'click' | 'fill' | 'type' | 'select' | 'check' | 'press',
   selector: string,
   value?: string,
   key?: string,
@@ -26,6 +26,8 @@ function buildAction(
   switch (action) {
     case 'fill':
       return { kind: 'fill', selector, value: value ?? '' };
+    case 'type':
+      return { kind: 'type', selector, value: value ?? '' };
     case 'select':
       return { kind: 'select', selector, value: value ?? '' };
     case 'press':
@@ -58,9 +60,9 @@ server.registerTool(
       'where it is, and whether each changed element is actionable. Use this instead of ' +
       're-snapshotting the whole page after an action.',
     inputSchema: {
-      action: z.enum(['click', 'fill', 'select', 'check', 'press']),
+      action: z.enum(['click', 'fill', 'type', 'select', 'check', 'press']),
       selector: z.string().describe('CSS selector, or [data-dw-ref="eN"] from a prior delta'),
-      value: z.string().optional().describe('Value for fill/select'),
+      value: z.string().optional().describe('Value for fill/type/select'),
       key: z.string().optional().describe('Key for press, e.g. "Enter"'),
     },
   },
@@ -83,9 +85,9 @@ server.registerTool(
 // your live Playwright test run (the session has no handle on it), and NONE mutates a test or
 // "fixes" a flake — they only observe and explain. The action tools share act_and_observe's schema.
 const actionSchema = {
-  action: z.enum(['click', 'fill', 'select', 'check', 'press']),
+  action: z.enum(['click', 'fill', 'type', 'select', 'check', 'press']),
   selector: z.string().describe('CSS selector, or [data-dw-ref="eN"] from a prior delta'),
-  value: z.string().optional().describe('Value for fill/select'),
+  value: z.string().optional().describe('Value for fill/type/select'),
   key: z.string().optional().describe('Key for press, e.g. "Enter"'),
 };
 

@@ -87,6 +87,34 @@ export interface RawNode {
   geometry: GeometryRead | null;
 }
 
+/**
+ * The relationship between a value-bearing action's INTENDED value and the field's COMMITTED value,
+ * read after the settle window (v0.9 Move 1). Language- and obfuscation-independent — a pure
+ * string comparison, no role/name/text. The three LOSS shapes (committed is a shorter subsequence of
+ * intent AND a letter/number was dropped) ground `input-not-committed`; `transformed` is deliberately
+ * NOT flagged (an intended mask is indistinguishable from corruption — DW-03); `clean` means equal.
+ */
+export type InputShape =
+  | 'clean' // committed === intended
+  | 'never-committed' // committed is empty while intent had content (an async widget cleared it)
+  | 'truncated' // committed is a proper prefix of intent (a length-limited field)
+  | 'dropped' // committed is a non-prefix subsequence of intent with a letter/number dropped
+  | 'transformed'; // a case/reorder mask, OR only separators/whitespace removed — NOT flagged
+
+/**
+ * Post-settle input-integrity fact (v0.9 Move 1). Present on `DeltaStats` ONLY when the opt-in
+ * `inputIntegrity` read ran AND the committed value drifted (shape !== 'clean'), so the default
+ * path is byte-unchanged. PRIVACY: it carries only the shape + the two LENGTHS — never the raw
+ * intended/committed strings (which can be a password or PII). Grounds `input-not-committed`.
+ */
+export interface InputIntegrityStat {
+  shape: Exclude<InputShape, 'clean'>;
+  /** Length of the value the caller intended to enter. */
+  intendedLen: number;
+  /** Length of the value the field actually committed after settle. */
+  committedLen: number;
+}
+
 export interface DeltaStats {
   /** Raw MutationRecords seen before coalescing (compression evidence). */
   rawRecords: number;
@@ -139,6 +167,14 @@ export interface DeltaStats {
    * `injection-blocked` (confirmed — the injection failure was authoritatively observed).
    */
   injectionBlocked?: boolean;
+  /**
+   * Post-settle input-integrity (v0.9 Move 1, opt-in via `actAndObserve`'s `inputIntegrity`). Set
+   * ONLY when the option ran AND the committed value drifted from the intended value (a loss shape
+   * OR a transform); absent on every action that did not opt in (or committed cleanly), so the
+   * default path is byte-unchanged. `diagnose()` maps its loss shapes → `input-not-committed`
+   * (suspected). PRIVACY: no raw values — see `InputIntegrityStat`.
+   */
+  inputIntegrity?: InputIntegrityStat;
 }
 
 export interface RawDelta {

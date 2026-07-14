@@ -2,6 +2,7 @@ import type { Frame, Page } from '@playwright/test';
 import { ensureInjected, InjectionBlockedError } from './inject';
 import { annotateActionability, geometryVerdict } from './actionability';
 import { RECUR_MIN } from './diagnose';
+import { classifyInput } from './input-integrity';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import { DEFAULT_SETTLE } from './types';
 import type {
@@ -10,6 +11,7 @@ import type {
   Delta,
   DeltaNode,
   DeltawrightApi,
+  InputIntegrityStat,
   SettleOptions,
   SettleResult,
 } from './types';
@@ -96,6 +98,21 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
   screenshotFallback?: boolean;
   pixelThreshold?: number;
   minPixels?: number;
+  /**
+   * Post-settle input-integrity (v0.9 Move 1, opt-in). For a value-bearing action (`fill`/`type`),
+   * pass the `intended` value the caller entered plus a `readCommitted` reader; after the settle
+   * window (at the existing post-probe read point, ~zero added latency) DW re-reads the field's
+   * committed value and, if it drifted, records the shape in `stats.inputIntegrity` — which
+   * `diagnose()` maps to `input-not-committed` (suspected) for a loss shape. Read-and-compare only:
+   * DW never re-types or corrects, and Playwright's success verdict is untouched (DW-02/03). Off by
+   * default, so the delta/stats are byte-unchanged when absent. PRIVACY: only lengths + shape are
+   * stored, never the raw value.
+   */
+  inputIntegrity?: {
+    intended: string;
+    /** Read the target's committed value after settle (e.g. `locator.inputValue()`). */
+    readCommitted: (page: Page) => Promise<string>;
+  };
 }
 
 // Canonical re-export for the delta path + the main entry; the value lives on the side-effect-free
@@ -404,6 +421,32 @@ export async function actAndObserve(
     }
   }
 
+  // v0.9 Move 1 (opt-in): after the authoritative probe above, re-read the value-bearing target's
+  // COMMITTED value and compare it to the intended value. This is the post-settle read point — a
+  // deferred debounce-then-clear (the #41 SuggestBox) lands here, after Playwright's fill/type
+  // reported success. Read-and-compare only; if the read fails (the field detached/re-rendered — a
+  // different signal `detached-re-render` already owns) we skip rather than fabricate. Only a
+  // drifted (non-clean) shape is recorded, and only lengths + shape — never the raw value.
+  let inputIntegrity: InputIntegrityStat | undefined;
+  if (opts.inputIntegrity) {
+    let committed: string | null = null;
+    try {
+      committed = await opts.inputIntegrity.readCommitted(page);
+    } catch {
+      // could not read the committed value — leave inputIntegrity unset (honest silence).
+    }
+    if (committed !== null) {
+      const shape = classifyInput(opts.inputIntegrity.intended, committed);
+      if (shape !== 'clean') {
+        inputIntegrity = {
+          shape,
+          intendedLen: opts.inputIntegrity.intended.length,
+          committedLen: committed.length,
+        };
+      }
+    }
+  }
+
   return {
     action: opts.label ?? 'action',
     nodes,
@@ -429,6 +472,9 @@ export async function actAndObserve(
       // #71 fix #4a: present ONLY when a child frame was skipped during frames:true traversal, so
       // the default (no-frames) path keeps a byte-unchanged stats object.
       ...(crossBoundarySkipped > 0 ? { crossBoundarySkipped } : {}),
+      // v0.9 Move 1: present ONLY when the opt-in inputIntegrity read ran AND the value drifted, so
+      // every action that did not opt in keeps a byte-unchanged stats object.
+      ...(inputIntegrity ? { inputIntegrity } : {}),
     },
   };
 }

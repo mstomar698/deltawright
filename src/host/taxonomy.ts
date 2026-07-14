@@ -14,6 +14,7 @@ export type RootCauseCategory =
   | 'actionability-blocking'
   | 'verdict-disagreement'
   | 'membership-attribution'
+  | 'outcome-integrity'
   | 'capture-integrity'
   | 'fallback'
   | 'unknown';
@@ -41,6 +42,7 @@ export const PRIMITIVE_SIGNALS = [
   'ref-staleified', // a node's data-dw-ref went stale (element detached)
   'lateStructural', // structural mutation after settle resolved (gap-E, #49)
   'stable', // target rect unchanged on post-settle re-read (gap-F, #50)
+  'committed-value', // post-settle read of a value-bearing target's committed value vs intent (#Move1)
   'addScriptTag-failure', // observer injection threw (e.g. CSP)
   'traversal-skip', // a cross-origin frame / closed shadow root was skipped
   'screenshot-fallback', // the screenshot-diff produced a pixel-region node
@@ -59,6 +61,7 @@ export type RootCauseCode =
   | 'pointer-events-none'
   | 'unstable-animating'
   | 'geom-disagreement'
+  | 'input-not-committed'
   | 'background-churn'
   | 'detached-re-render'
   | 'settle-timeout'
@@ -147,6 +150,15 @@ export const ROOT_CAUSE_TAXONOMY = {
     signals: ['agreed', 'playwright-verdict'],
     grounding:
       "agreed=false between the geometry read and Playwright's authoritative verdict (the [geom:] marker).",
+  },
+  'input-not-committed': {
+    code: 'input-not-committed',
+    category: 'outcome-integrity',
+    meaning:
+      'A value-bearing action reported success, but the field committed a strict subsequence of the intended value — characters were cleared, truncated, or dropped after the action.',
+    signals: ['committed-value'],
+    grounding:
+      "the post-settle committed value (el.value) is a proper subsequence of the intended value, is shorter, AND at least one DROPPED character is a letter or number (real content lost) — never-committed (empty), truncated (a prefix), or dropped-keystrokes (a non-prefix subsequence). A value that is not a subsequence (a case/reorder mask) OR that dropped ONLY separators/whitespace (a subtractive card/phone/trim mask, which IS a shorter subsequence) is NOT flagged — an intended reformat is indistinguishable from corruption. Always `suspected`: it compares intent, it does not override Playwright's success (DW-02/03).",
   },
   'background-churn': {
     code: 'background-churn',

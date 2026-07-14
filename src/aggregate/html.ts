@@ -30,6 +30,7 @@ const CATEGORY_META: Record<RootCauseCategory, { label: string; color: string }>
   'actionability-blocking': { label: 'Actionability blocking', color: '#e5534b' },
   'verdict-disagreement': { label: 'Verdict disagreement', color: '#a371f7' },
   'membership-attribution': { label: 'Membership / attribution', color: '#4c8ed9' },
+  'outcome-integrity': { label: 'Outcome integrity', color: '#db6d28' },
   'capture-integrity': { label: 'Capture integrity', color: '#d4a017' },
   fallback: { label: 'Fallback', color: '#3fb950' },
   unknown: { label: 'Unknown', color: '#8b949e' },
