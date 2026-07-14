@@ -6,17 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-14
+
+The v0.9 live-path pivot — after the offline arms (0.9.0) were measured at only +1 point on a real
+backend-timeout corpus (its opaque failures are offline-opaque), the remaining value is acting/observing
+when the app is actually ready.
+
 ### Added
 
-- **Network-idle quiescence — opt-in `awaitQuiescence` (v0.9 Move 3, the live-path pivot).** The
-  observer monkey-patches `XMLHttpRequest`/`fetch` to keep a real in-flight request count (the app's
-  own network state, not a guess); with `awaitQuiescence`, `waitForSettle` resolves only once the DOM
+- **Network-idle quiescence — opt-in `awaitQuiescence` (v0.9 Move 3).** The observer installs an
+  in-flight `XMLHttpRequest`/`fetch` counter (monkey-patched only when opted in, so the default path
+  leaves native fetch/XHR untouched); with `awaitQuiescence`, `waitForSettle` resolves only once the DOM
   is quiet **and** the app is network-idle (still bounded by `maxWaitMs`), and reports `quiescent`
-  (`false` at a cap = the app was still requesting). Framework idle hooks (`Ext.Ajax.isLoading`) ride
-  on top best-effort. Read-only — never fires events or forces loads; default off → the settle path is
+  (`false` at a cap = the app was still requesting). Framework idle hooks (`Ext.Ajax.isLoading`) ride on
+  top best-effort. Read-only — never fires events or forces loads; default off → the settle path is
   byte-unchanged. Improves the observe-consequences niche on RPC-driven legacy apps; does **not** catch
-  GWT's zero-network `Scheduler` waves (that is `lateWatchMs`) and does not change actionability
-  verdicts. See ADR 2026-07-14.
+  GWT's zero-network `Scheduler` waves (that is `lateWatchMs`) and does not change actionability verdicts.
+  Framework-agnostic first (GWT-RPC/ExtJS/JSF all issue XHR/fetch); accurate for requests made through
+  the patched globals (not a reference captured before the patch, or a child frame). See ADR 2026-07-14.
 
 ## [0.9.0] - 2026-07-14
 
@@ -604,7 +611,8 @@ pointer/click-actionability (role-aware probes are v0.5); settle is a simple lab
 heuristic; mutation-noise filtering is untested; and the token win is unproven on the
 tiny controlled fixture.
 
-[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/mstomar698/deltawright/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/mstomar698/deltawright/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/mstomar698/deltawright/compare/v0.6.0...v0.8.0
 [0.6.0]: https://github.com/mstomar698/deltawright/compare/v0.1.0...v0.6.0
