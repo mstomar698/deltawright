@@ -74,12 +74,18 @@ function selectorKey(selector: string | undefined): { id?: string; name?: string
 }
 
 /**
- * Resolve the committed value of the action's target among the snapshot's value-bearing fields, or
- * `undefined` when it cannot be confidently identified (→ emit nothing, never fabricate). Precedence:
- *  1. the UNIQUE field the snapshotter stamped `__playwright_target__` (the action's own target);
- *  2. the UNIQUE field whose `id` matches the selector key;
- *  3. the UNIQUE field whose `name` matches the selector key.
- * Any ambiguity (0 or >1 candidates at every tier) → undefined (honest silence).
+ * Resolve the committed value of the action's target from the value-bearing fields of ALL
+ * `after@<callId>` snapshots (the UNION across frames — see {@link deriveInputIntegrity}), or
+ * `undefined` when it cannot be confidently identified (→ emit nothing, never fabricate). Because
+ * Playwright emits one same-named snapshot PER FRAME in non-deterministic order, this MUST reason over
+ * the whole union so it is order-independent and GLOBALLY unambiguous. Precedence:
+ *  1. the `__playwright_target__`-stamped field. The snapshotter stamps ONLY the real target element
+ *     (one across all frames), so it is authoritative and globally unique: if exactly one stamped
+ *     field exists anywhere in the union, use ITS value — regardless of which frame emitted first.
+ *  2. FALLBACK, only when NO field is stamped anywhere: the field whose `id` matches the selector key,
+ *     then whose `name` matches — but required to be GLOBALLY unique across all frames. A key that
+ *     matches more than one field (e.g. a sibling iframe sharing the id/name) is AMBIGUOUS → undefined.
+ * Any ambiguity (0 or >1 candidates at every tier) → undefined (honest silence, never a cross-frame guess).
  */
 function resolveCommitted(
   fields: SnapshotField[],
@@ -110,20 +116,29 @@ function intendedFor(action: TraceAction): string | undefined {
 }
 
 /**
- * Reconstruct offline input-integrity findings from a parsed trace (v0.9 Move 1). PURE. For each value
- * action with a known intended value AND an `after@<callId>` snapshot whose target field we can resolve,
- * it runs the shared `classifyInput` and emits a finding ONLY for a real LOSS shape — a `clean` or
- * `transformed` (mask) value, an unresolved target, or a missing snapshot all emit NOTHING.
+ * Reconstruct offline input-integrity findings from a parsed trace (v0.9 Move 1). PURE. For each
+ * SUCCEEDED value action with a known intended value AND an `after@<callId>` snapshot whose target
+ * field we can resolve, it runs the shared `classifyInput` and emits a finding ONLY for a real LOSS
+ * shape — a `clean` or `transformed` (mask) value, an unresolved target, or a missing snapshot all emit
+ * NOTHING. A FAILED value action is skipped: its committed value is a mid-throw partial, so a "the
+ * widget cleared it after the action" reading would misattribute Playwright's own failure — this mirrors
+ * the live arm, which reads the committed value only after the action succeeds.
  */
 export function deriveInputIntegrity(info: TraceInfo): InputIntegrityFinding[] {
   const out: InputIntegrityFinding[] = [];
   for (const action of info.actions) {
+    if (action.failed) continue; // succeeded value actions only (mirror the live arm — see doc above)
     const intended = intendedFor(action);
     if (intended === undefined) continue;
-    // The snapshot Playwright captured for THIS action's after-phase — the committed DOM state.
-    const snap = info.frameSnapshots.find((s) => s.snapshotName === `after@${action.callId}`);
-    if (!snap || snap.fields.length === 0) continue;
-    const committed = resolveCommitted(snap.fields, selectorKey(action.selector));
+    // Playwright captures ONE `after@<callId>` frame-snapshot PER FRAME (same name, non-deterministic
+    // order); a sibling iframe can hold a field sharing the target's id/name. Resolve over the UNION of
+    // ALL matching snapshots' fields so selection is order-independent and globally unambiguous — the
+    // stamp picks the true target regardless of which frame emitted first (v0.9 Move 1 multi-frame fix).
+    const fields = info.frameSnapshots
+      .filter((s) => s.snapshotName === `after@${action.callId}`)
+      .flatMap((s) => s.fields);
+    if (fields.length === 0) continue;
+    const committed = resolveCommitted(fields, selectorKey(action.selector));
     if (committed === undefined) continue; // could not identify the field → never fabricate
     const shape = classifyInput(intended, committed);
     if (!LOSS_SHAPES.has(shape)) continue; // clean OR transformed (a mask) → not flagged (DW-03)

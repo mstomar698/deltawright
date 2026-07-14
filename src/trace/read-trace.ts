@@ -106,17 +106,30 @@ export interface SnapshotField {
 }
 
 /**
- * The value-bearing fields extracted from one `frame-snapshot` (v0.9 Move 1 offline arm). Only
- * `after@…` / `input@…` snapshots (the committed / mid-action states) are kept; the `before@…`
- * pre-action state is skipped. Fields inside a REFERENCE subtree (`[[n,m]]`, an incremental
- * back-reference to an earlier snapshot) are not resolved — that node is skipped, so an unresolved
- * target yields no field and the derive stays honestly silent (never a guess).
+ * The value-bearing fields extracted from one `frame-snapshot` (v0.9 Move 1 offline arm). Only the
+ * `after@…` committed-state snapshots are kept; the `before@…` pre-action state is skipped. Fields
+ * inside a REFERENCE subtree (`[[n,m]]`, an incremental back-reference to an earlier snapshot) are
+ * not resolved — that node is skipped, so an unresolved target yields no field and the derive stays
+ * honestly silent (never a guess).
+ *
+ * IMPORTANT (multi-frame): Playwright emits ONE `frame-snapshot` PER FRAME for the same action, all
+ * sharing the SAME `snapshotName` (`after@<callId>`) + `callId`, in non-deterministic order. So the
+ * consumer must consider ALL entries matching a `snapshotName`, not the first — `isMainFrame` /
+ * `frameId` are retained so it can distinguish frames when it needs to.
  */
 export interface FrameSnapshotFields {
   /** e.g. `after@call@10` — correlates a snapshot to its action's callId + phase. */
   snapshotName?: string;
   /** The action callId this snapshot belongs to (e.g. `call@10`). */
   callId?: string;
+  /**
+   * True when this snapshot is the page's MAIN frame (vs. a sub-frame / iframe). Retained so a
+   * consumer can tell the target frame from a sibling iframe that shares an id/name (v0.9 Move 1
+   * multi-frame robustness). Undefined when the trace did not record it.
+   */
+  isMainFrame?: boolean;
+  /** The frame this snapshot belongs to, when the trace recorded it (frame-distinguishing metadata). */
+  frameId?: string;
   /** The value-bearing fields found in this snapshot's serialized DOM. */
   fields: SnapshotField[];
 }
@@ -171,7 +184,7 @@ export interface TraceInfo {
   coEvents: TraceCoEvent[];
   /** Backend/infra error lines from the test-runner's own output (test-scoped; Move 2 harness routing). */
   harnessSignals: HarnessSignal[];
-  /** Value-bearing fields per `after@…`/`input@…` frame-snapshot (v0.9 Move 1 offline input-integrity). */
+  /** Value-bearing fields per `after@…` frame-snapshot (v0.9 Move 1 offline input-integrity). */
   frameSnapshots: FrameSnapshotFields[];
   /**
    * The failure to diagnose: the LAST failed action. In a normal test, execution stops at the
@@ -395,24 +408,32 @@ export function parseTraceEvents(text: string): TraceInfo {
         if (typeof message === 'string') scanHarness(message, 'error', harnessRaw);
         break;
       }
-      // v0.9 Move 1 offline arm: a DOM snapshot Playwright captured for an action's before/input/after
-      // phase. We keep only the value-bearing fields of the COMMITTED (`after@`) / mid-action (`input@`)
-      // states — the pre-action `before@` state is never the committed value, so it is skipped.
+      // v0.9 Move 1 offline arm: a DOM snapshot Playwright captured for an action's before/after
+      // phase. We keep only the value-bearing fields of the COMMITTED (`after@`) state — the
+      // pre-action `before@` state is never the committed value, so it is skipped; the sole consumer
+      // (`deriveInputIntegrity`) only ever looks up `after@<callId>`. Playwright emits ONE such
+      // snapshot per frame with the SAME name, so `isMainFrame`/`frameId` are retained to let the
+      // consumer distinguish the target frame from a sibling iframe sharing an id/name.
       case 'frame-snapshot': {
         const snap = (e as { snapshot?: unknown }).snapshot;
         if (snap && typeof snap === 'object') {
-          const s = snap as { snapshotName?: unknown; callId?: unknown; html?: unknown };
+          const s = snap as {
+            snapshotName?: unknown;
+            callId?: unknown;
+            html?: unknown;
+            isMainFrame?: unknown;
+            frameId?: unknown;
+          };
           const snapshotName = typeof s.snapshotName === 'string' ? s.snapshotName : undefined;
-          if (
-            snapshotName &&
-            (snapshotName.startsWith('after@') || snapshotName.startsWith('input@'))
-          ) {
+          if (snapshotName && snapshotName.startsWith('after@')) {
             const fields: SnapshotField[] = [];
             collectSnapshotFields(s.html, fields);
             if (fields.length > 0) {
               frameSnapshots.push({
                 snapshotName,
                 callId: typeof s.callId === 'string' ? s.callId : undefined,
+                isMainFrame: typeof s.isMainFrame === 'boolean' ? s.isMainFrame : undefined,
+                frameId: typeof s.frameId === 'string' ? s.frameId : undefined,
                 fields,
               });
             }

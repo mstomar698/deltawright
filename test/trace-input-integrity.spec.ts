@@ -23,6 +23,40 @@ const snapshotEvent = (snapshotName: string, callId: string, inputs: unknown[]):
 });
 
 /**
+ * A `frame-snapshot` event carrying the `isMainFrame`/`frameId` frame metadata (v0.9 Move 1 multi-frame
+ * tests). Playwright emits one `after@<callId>` snapshot PER FRAME with the SAME name, so several of
+ * these can share `after@c1` — the derive must resolve over their UNION, not the first emitted.
+ */
+const frameSnap = (
+  isMainFrame: boolean,
+  callId: string,
+  inputs: unknown[],
+  frameId?: string,
+): object => ({
+  type: 'frame-snapshot',
+  snapshot: {
+    snapshotName: `after@${callId}`,
+    callId,
+    isMainFrame,
+    ...(frameId ? { frameId } : {}),
+    html: ['HTML', {}, ['BODY', {}, ...inputs]],
+  },
+});
+
+/** The context-options + a fill `c1` (`#user`) + its `after` — the head shared by the multi-frame traces. */
+const fillHead = (intended: string): object[] => [
+  { type: 'context-options', version: 8, playwrightVersion: '1.61.1', browserName: 'chromium' },
+  {
+    type: 'before',
+    callId: 'c1',
+    startTime: 1,
+    method: 'fill',
+    params: { selector: '#user', value: intended },
+  },
+  { type: 'after', callId: 'c1', endTime: 2 },
+];
+
+/**
  * A minimal fill-then-snapshot trace: a value action (`c1`) plus one `after@c1` snapshot showing the
  * target input's committed value (stamped `__playwright_target__` + `id`). Everything is overridable so
  * each test crafts exactly one condition.
@@ -235,6 +269,98 @@ test('stays silent when neither the stamp nor the selector key can uniquely iden
         committed: 'aei',
         stampTarget: false,
         id: 'user',
+      }),
+    ),
+  ).toEqual([]);
+});
+
+// --- Multi-frame: order-independent, globally-unambiguous target resolution (the FIX-1 regression) --
+
+// Playwright emits ONE `after@c1` snapshot per frame in non-deterministic order. Before the fix, the
+// derive selected the FIRST-emitted snapshot, so a sibling iframe whose field shared the target's
+// id/name (but carried NO stamp) could steal the match → a FALSE `dropped` on a fill that committed
+// cleanly. The fix resolves over the UNION of ALL `after@c1` snapshots, stamp-first + globally unique.
+
+/** A main-frame snapshot whose STAMPED `#user` committed cleanly, + a sibling iframe's same-id field. */
+const cleanTargetVsDropIframe = (iframeFirst: boolean): string => {
+  const main = frameSnap(true, 'c1', [
+    inputNode({ id: 'user', __playwright_target__: '', __playwright_value_: 'acetaminophen' }),
+  ]);
+  // Sibling iframe: SAME id, NOT stamped, holding a dropped subsequence — the decoy that used to win.
+  const iframe = frameSnap(
+    false,
+    'c1',
+    [inputNode({ id: 'user', __playwright_value_: 'aeaiohn' })],
+    'frame-2',
+  );
+  const snaps = iframeFirst ? [iframe, main] : [main, iframe];
+  return jsonl([...fillHead('acetaminophen'), ...snaps]);
+};
+
+test('multi-frame: stamped clean target wins over a same-id sibling iframe — SILENT (iframe snapshot FIRST)', () => {
+  expect(findingsOf(cleanTargetVsDropIframe(true))).toEqual([]);
+});
+
+test('multi-frame: order-independent — SILENT with the MAIN-frame snapshot emitted first too', () => {
+  expect(findingsOf(cleanTargetVsDropIframe(false))).toEqual([]);
+});
+
+/** The mirror: the STAMPED target actually dropped, behind a same-id clean sibling iframe. */
+const dropTargetVsCleanIframe = (iframeFirst: boolean): string => {
+  const main = frameSnap(true, 'c1', [
+    inputNode({ id: 'user', __playwright_target__: '', __playwright_value_: 'aeaiohn' }),
+  ]);
+  const iframe = frameSnap(
+    false,
+    'c1',
+    [inputNode({ id: 'user', __playwright_value_: 'acetaminophen' })],
+    'frame-2',
+  );
+  const snaps = iframeFirst ? [iframe, main] : [main, iframe];
+  return jsonl([...fillHead('acetaminophen'), ...snaps]);
+};
+
+test('multi-frame: the STAMP drives selection (not frame order) — a real dropped target is flagged, iframe first', () => {
+  const f = findingsOf(dropTargetVsCleanIframe(true));
+  expect(f).toHaveLength(1);
+  expect(f[0]!.shape).toBe('dropped');
+});
+
+test('multi-frame: the STAMP drives selection — same finding with the main-frame snapshot first', () => {
+  const f = findingsOf(dropTargetVsCleanIframe(false));
+  expect(f).toHaveLength(1);
+  expect(f[0]!.shape).toBe('dropped');
+});
+
+test('multi-frame: a NO-STAMP cross-frame id collision is AMBIGUOUS → SILENT (never a cross-frame guess)', () => {
+  // Neither frame stamps the field, and BOTH carry id=user → the id key matches globally in two fields
+  // → ambiguous → undefined → no finding (the make-or-break no-fabrication guard).
+  const main = frameSnap(true, 'c1', [
+    inputNode({ id: 'user', __playwright_value_: 'acetaminophen' }),
+  ]);
+  const iframe = frameSnap(
+    false,
+    'c1',
+    [inputNode({ id: 'user', __playwright_value_: 'aeaiohn' })],
+    'frame-2',
+  );
+  expect(findingsOf(jsonl([...fillHead('acetaminophen'), main, iframe]))).toEqual([]);
+  // …and order-independent.
+  expect(findingsOf(jsonl([...fillHead('acetaminophen'), iframe, main]))).toEqual([]);
+});
+
+// --- Succeeded-only gate: a FAILED value action is not an "async widget cleared it" drift ----------
+
+test('emits NOTHING for a value action that FAILED — its committed value is a mid-throw partial (mirror the live arm)', () => {
+  // A fill/type that wrote a partial prefix then THREW: the after-snapshot shows the partial, but the
+  // action failed, so reading it as a post-action value drift would misattribute Playwright's own
+  // failure. The offline arm reads the committed value only for a SUCCEEDED action, like the live arm.
+  expect(
+    findingsOf(
+      fillTrace({
+        intended: 'acetaminophen',
+        committed: 'aceta',
+        failError: 'Timeout 1ms exceeded.',
       }),
     ),
   ).toEqual([]);
