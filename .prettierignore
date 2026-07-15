@@ -2,6 +2,7 @@ node_modules
 dist
 test-results
 playwright-report
+.claude/worktrees/
 bench/corpus
 package-lock.json
 test/fixtures

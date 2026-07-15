@@ -3,6 +3,12 @@ import { ensureInjected, InjectionBlockedError } from './inject';
 import { annotateActionability, geometryVerdict } from './actionability';
 import { RECUR_MIN } from './diagnose';
 import { classifyInput } from './input-integrity';
+import {
+  attachLiveRouting,
+  buildLiveRouting,
+  type CollectedLiveSignals,
+  type LiveRoutingReport,
+} from './live-routing';
 import { diffChangedRegion, type ChangedRegion } from './screenshot-diff';
 import { DEFAULT_SETTLE } from './types';
 import type {
@@ -113,6 +119,20 @@ export interface ActAndObserveOptions extends Partial<SettleOptions> {
     /** Read the target's committed value after settle (e.g. `locator.inputValue()`). */
     readCommitted: (page: Page) => Promise<string>;
   };
+  /**
+   * Live ownership-routing (v0.9 Move 2 live arm, opt-in). When true, `actAndObserve` attaches four
+   * page-level listeners (`response` status ≥ 400, `requestfailed`, `pageerror`, `console` error/warn)
+   * bracketing the action + settle — the listener LIFETIME is the window — and surfaces a
+   * `stats.routing` {@link LiveRoutingReport}: a "this failure may not be Deltawright's
+   * DOM-actionability class; route it elsewhere" hint. CO-OCCURRENCE, NEVER CAUSATION (DW-03): a
+   * co-occurring uncaught `pageerror` flips `suspectedNotDomCause` (route to the app owner); a 4xx/5xx
+   * response or a failed request flips `suspectedBackendCause` (route to backend/infra); a
+   * `console.error` is context, never a verdict-flip. It emits NO taxonomy code and never touches
+   * Playwright's authoritative action outcome (DW-02). Off by default → ZERO listeners are attached and
+   * `stats.routing` is absent, so the default path is byte-unchanged. PRIVACY: the report carries no
+   * raw URL or full console text — only a status, a query-stripped path, and a length-capped snippet.
+   */
+  routeSignals?: boolean;
 }
 
 // Canonical re-export for the delta path + the main entry; the value lives on the side-effect-free
@@ -329,14 +349,27 @@ export async function actAndObserve(
   );
   let crossBoundarySkipped = framesSkippedAtArm;
 
-  // Perform the action through Playwright so we inherit its auto-wait +
-  // actionability on the action target itself.
-  await action(page);
+  // v0.9 Move 2 (live routing arm, opt-in): attach the four page-level listeners NOW — just before the
+  // action — so the listener LIFETIME brackets the action + settle (that IS the routing window; no
+  // timestamp math needed). ONLY when opted in, so a default run attaches ZERO listeners and leaves the
+  // page's event surface untouched (non-interference).
+  const liveRouting = opts.routeSignals ? attachLiveRouting(page) : null;
 
-  const settleResult = await page.evaluate<SettleResult, SettleOptions>(
-    (o) => (window as unknown as DwWindow).__deltawright!.waitForSettle(o),
-    settle,
-  );
+  // Perform the action through Playwright so we inherit its auto-wait + actionability on the action
+  // target itself, then wait for settle. The live-routing listeners are detached in a `finally` so a
+  // throwing action can never leak them; `collectedLive` is what fired during the window (undefined
+  // when routing was not opted in).
+  let settleResult: SettleResult;
+  let collectedLive: CollectedLiveSignals | undefined;
+  try {
+    await action(page);
+    settleResult = await page.evaluate<SettleResult, SettleOptions>(
+      (o) => (window as unknown as DwWindow).__deltawright!.waitForSettle(o),
+      settle,
+    );
+  } finally {
+    collectedLive = liveRouting?.detach();
+  }
   const collected = await page.evaluate<CollectResult, SettleOptions>(
     (o) => (window as unknown as DwWindow).__deltawright!.collect(o),
     settle,
@@ -455,6 +488,16 @@ export async function actAndObserve(
     }
   }
 
+  // v0.9 Move 2 (live arm, opt-in): build the routing report from what co-occurred in the window. The
+  // action reached settle THROUGH Playwright, so its DOM outcome was SUCCESS — Deltawright named NO DOM
+  // actionability cause (had the action failed on one, Playwright would have thrown and we'd never get
+  // here), so `domCauseNamed` is false and a co-occurring uncaught pageerror / backend error may flip
+  // the route-elsewhere hint. Present ONLY when routing was opted in. Co-occurrence, never causation
+  // (DW-03); Playwright's action outcome is never overridden (DW-02).
+  const routing: LiveRoutingReport | undefined = collectedLive
+    ? buildLiveRouting(collectedLive, { domCauseNamed: false })
+    : undefined;
+
   return {
     action: opts.label ?? 'action',
     nodes,
@@ -486,6 +529,10 @@ export async function actAndObserve(
       // v0.9 Move 3: the network-idle state at settle — present ONLY when awaitQuiescence ran, so the
       // default stats object is byte-unchanged.
       ...(settleResult.quiescent !== undefined ? { quiescent: settleResult.quiescent } : {}),
+      // v0.9 Move 2 (live arm): the ownership-routing report — present ONLY when the opt-in
+      // routeSignals listeners ran, so every action that did not opt in keeps a byte-unchanged stats
+      // object. Co-occurrence metadata (no taxonomy code, no verdict change — DW-02/03).
+      ...(routing ? { routing } : {}),
     },
   };
 }

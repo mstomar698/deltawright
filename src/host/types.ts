@@ -5,6 +5,7 @@
 
 import type { RootCauseCode } from './taxonomy';
 import type { Confidence } from './confidence';
+import type { LiveRoutingReport } from './live-routing';
 
 export type ChangeKind = 'added' | 'removed' | 'attrChanged' | 'textChanged';
 
@@ -182,6 +183,14 @@ export interface DeltaStats {
    * still making requests when the cap was hit — a genuinely-not-ready signal.
    */
   quiescent?: boolean;
+  /**
+   * Live ownership-routing report (v0.9 Move 2 live arm, opt-in via `actAndObserve`'s `routeSignals`).
+   * Present ONLY when the option ran — the page listeners were attached around the action + settle and
+   * captured co-occurring response/pageerror/console signals; absent on every action that did not opt
+   * in, so the default path is byte-unchanged. CO-OCCURRENCE metadata, never causation: it emits no
+   * taxonomy code and never changes a verdict (DW-02/03). See {@link LiveRoutingReport}.
+   */
+  routing?: LiveRoutingReport;
 }
 
 export interface RawDelta {
