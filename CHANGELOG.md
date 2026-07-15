@@ -26,6 +26,27 @@ All notable changes to this project are documented here. The format is based on
   query-stripped URL path, and a length-capped snippet. New exports `buildLiveRouting` (pure) +
   `LiveRoutingReport`/`LiveRoutingSignal`/`LiveSignalKind`/`CollectedLiveSignals`/`RawLiveSignal`. See
   ADR 2026-07-15.
+- **Offline input-integrity arm for `diagnose-trace` (v0.9 Move 1 offline, #81).** `diagnose-trace` now
+  reconstructs the Move 1 `input-not-committed` finding from a trace, with **no live browser**: for a
+  value action (`fill`/`type`/`pressSequentially`) it compares the **intended** value (the action's
+  `params.value`/`params.text`) to the **committed** value (the target field's `__playwright_value_` in
+  the `after@<callId>` frame-snapshot), matched to the target by Playwright's `__playwright_target__`
+  stamp (falling back to the selector's id/name key). It runs the **same** FP-guarded `classifyInput` the
+  live arm uses (reused, not re-implemented) and surfaces a genuine character loss
+  (`never-committed`/`truncated`/`dropped`) as an additive **`suspected` `input-not-committed`** line — a
+  case/reorder or subtractive separator/whitespace mask is deliberately **not** flagged. No new taxonomy
+  code, no SHA change, no DW-04 governance.
+  - **Honest by construction (DW-02/03).** Every finding is `suspected` (reconstructed, not live-probed);
+    it never fabricates — no `after@` snapshot, an unresolvable/ambiguous field, or a reference-hidden
+    value all emit **nothing** (honest silence, not a guess). The wording is "typed X chars, the
+    after-snapshot shows Y — suspected input-drop," **never** "Playwright's fill failed."
+  - **Complement, not replacement.** The `after@` snapshot is captured right after the action returns, so
+    it can predate a **deferred** async drop (the debounce-then-clear pathology) that the **live** arm
+    (post-settle read) catches — the report states this limit on every finding. Low yield on
+    timeout-dominated corpora where the failure is not a value-assertion.
+  - **Privacy.** Only `{ shape, intendedLen, committedLen }` are stored; the raw value is compared
+    in-memory and never printed (mirrors the live arm). Additive: a clean / non-value trace's report is
+    byte-unchanged. See ADR 2026-07-15.
 
 ## [0.9.1] - 2026-07-14
 
