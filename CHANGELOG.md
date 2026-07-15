@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-07-15
+
 ### Added
 
 - **Reporter side-car COVERAGE guarantee — one side-car per finally-failed test.** Dogfooding the
@@ -715,7 +717,8 @@ pointer/click-actionability (role-aware probes are v0.5); settle is a simple lab
 heuristic; mutation-noise filtering is untested; and the token win is unproven on the
 tiny controlled fixture.
 
-[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/mstomar698/deltawright/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/mstomar698/deltawright/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/mstomar698/deltawright/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/mstomar698/deltawright/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/mstomar698/deltawright/compare/v0.8.0...v0.9.0
