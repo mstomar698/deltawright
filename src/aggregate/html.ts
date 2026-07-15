@@ -101,7 +101,11 @@ function recordFlags(r: TestFlakeRecordView): string[] {
  * the source. ALL dynamic text (detail / diagnosis strings / source) is escaped — it is user data.
  */
 function recordEntry(r: TestFlakeRecordView): string {
-  const unsure = r.code === 'unsure';
+  // Key `unsure` off the resolved CATEGORY, not the literal code: the aggregate buckets `category ===
+  // null` as unsure — which also covers the taxonomy's first-class `unknown` and any foreign /
+  // untaxonomized code. So an `unknown`/foreign record renders honestly as `unsure` here (no confident
+  // cause + no confidence badge), exactly how the summary buckets it — never as a confident cause.
+  const unsure = r.category === null;
   const cause = unsure
     ? '<span class="cause unsure">unsure</span>'
     : `<span class="cause"><code>${escapeHtml(r.code)}</code> <span class="conf">(${escapeHtml(r.confidence)})</span></span>`;

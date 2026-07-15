@@ -271,21 +271,61 @@ function sidecars(dir: string): Sidecar[] {
   return files.map((f) => JSON.parse(readFileSync(resolve(dir, f), 'utf8')) as Sidecar);
 }
 
-test('onTestEnd treats an interrupted result as a failure and writes an unsure side-car', () => {
+test('an interrupted-only test (outcome skipped) writes NO side-car and never crashes', () => {
+  // REAL Playwright semantics (computeTestCaseOutcome): interrupted=1, expected=0, unexpected=0 →
+  // outcome() === 'skipped'. An interrupted-ONLY test is therefore NOT finally-failed — it must write
+  // NOTHING (neither the passive path nor the sweep covers it) and must not crash the run.
   const t = fakeTest({
     titlePath: ['suite', 'interrupted one'],
-    outcome: 'unexpected',
+    outcome: 'skipped',
     results: [fakeResult({ status: 'interrupted' })],
   });
   const dir = drive({
     suiteTests: [t],
     ended: [{ test: t, result: fakeResult({ status: 'interrupted' }) }],
   });
+  expect(sidecars(dir)).toHaveLength(0); // not finally-failed → no side-car, no false record
+});
+
+test('a passing test.fail() (outcome unexpected, last result passed) writes NO side-car', () => {
+  // A `test.fail()`-annotated test that PASSES: result.status === 'passed' but outcome() ===
+  // 'unexpected' (passed !== expectedStatus 'failed'). The sweep's last.status gate excludes it — its
+  // final result is a PASS, not a failure — so no false failure side-car is written.
+  const t = fakeTest({
+    titlePath: ['suite', 'expected-to-fail but passed'],
+    outcome: 'unexpected',
+    results: [fakeResult({ status: 'passed' })],
+  });
+  const dir = drive({ suiteTests: [t] }); // no onTestEnd (a passing result is never failed/timedOut)
+  expect(sidecars(dir)).toHaveLength(0); // passing test.fail() → no false failure record
+});
+
+test('a [failed, interrupted] retry keeps attempt-0 REAL diagnosis (never clobbered to unsure)', () => {
+  // Regression pin: attempt 0 fails with a diagnosable actionability error; attempt 1 is interrupted.
+  // outcome() === 'unexpected'. The later interrupted attempt must NOT overwrite the real attempt-0
+  // diagnosis in `pending`, and the sweep must skip the test (already written) — so the one side-car
+  // written carries the REAL cause, not a fabricated `unsure`.
+  const attempt0 = fakeResult({
+    status: 'failed',
+    errors: [{ message: 'element is not enabled' }] as TestResult['errors'],
+  });
+  const attempt1 = fakeResult({ status: 'interrupted', retry: 1 });
+  const t = fakeTest({
+    titlePath: ['suite', 'failed-then-interrupted'],
+    outcome: 'unexpected',
+    results: [attempt0, attempt1],
+  });
+  const dir = drive({
+    suiteTests: [t],
+    ended: [
+      { test: t, result: attempt0 },
+      { test: t, result: attempt1 }, // the later interrupted attempt must NOT clobber attempt 0
+    ],
+  });
   const out = sidecars(dir);
-  expect(out).toHaveLength(1); // recorded, not dropped
-  expect(out[0]!.status).toBe('interrupted');
-  expect(out[0]!.cause).toBe('unsure'); // DW couldn't diagnose it — honest unsure, not fabricated
-  expect(out[0]!.source).toBe('error-text');
+  expect(out).toHaveLength(1);
+  expect(out[0]!.cause).toBe('disabled'); // the REAL attempt-0 cause preserved, not fabricated unsure
+  expect(out[0]!.status).toBe('failed');
 });
 
 test('onEnd sweeps the tree so a hook/fixture failure the passive path missed still gets a coverage side-car', () => {

@@ -133,6 +133,33 @@ test('should_render_the_honest_detail_for_an_unsure_record', () => {
   expect(html).toContain(honest); // no HTML-special chars → appears verbatim
 });
 
+test('should_render_an_unknown_or_foreign_code_as_unsure_in_the_detail_panel_matching_the_summary', () => {
+  // The aggregate buckets the taxonomy's first-class `unknown` (and any foreign/untaxonomized code)
+  // as unsure — `category === null` — never inflating a real category. The detail panel must render
+  // it the SAME honest way the summary buckets it: an `unsure` cause with NO confident code / no
+  // confidence badge — NOT a confident `<code>unknown</code> (confidence)` cause.
+  const html = renderHtml(
+    aggregate([
+      rec({
+        testId: 'suite > murky D',
+        code: 'unknown', // the taxonomy's first-class unsure outcome (category 'unknown' → bucketed null)
+        confidence: 'unknown',
+        category: null, // what recordFromSidecar resolves `unknown`/foreign codes to
+        detail: 'the taxonomy filed this failure under unknown',
+        diagnoses: [],
+      }),
+    ]),
+  );
+  // Rendered honestly as unsure in the expandable panel — matching the summary's unsure bucket.
+  expect(html).toContain('<span class="cause unsure">unsure</span>');
+  // …and NEVER as a confident cause (the pre-fix bug: `code === 'unsure'` let `unknown` render as a
+  // confident `<code>unknown</code> (confidence)` cause). Assert the exact confident-cause markup is
+  // absent (the `<code>unknown</code>` in the fixed unsure-panel prose is unrelated).
+  expect(html).not.toContain('<span class="cause"><code>unknown</code>');
+  // The summary buckets it as unsure too (1 of 1 record) — the panel and the summary agree.
+  expect(html).toContain('1</b> of 1 failure records');
+});
+
 test('should_escape_a_malicious_detail_and_diagnosis_string_they_are_user_data', () => {
   const evil = '<script>alert(1)</script> & "x" \'y\'';
   const html = renderHtml(
