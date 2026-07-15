@@ -24,6 +24,7 @@ import type { DiagnosedDelta, Diagnosis } from '../host/types';
 import type { RootCauseCode } from '../host/taxonomy';
 import { readTraceZip, type TraceInfo } from './read-trace';
 import { deriveRouting, type RoutingReport } from './routing';
+import { deriveInputIntegrity, type InputIntegrityFinding } from './input-integrity';
 
 export interface TraceDiagnosis {
   /** The trace file path (for the report header), when read from disk. */
@@ -46,6 +47,13 @@ export interface TraceDiagnosis {
   diagnosed: DiagnosedDelta;
   /** Move 2 routing: co-occurring in-page errors + a route-elsewhere hint (co-occurrence, not cause). */
   routing: RoutingReport;
+  /**
+   * v0.9 Move 1 OFFLINE input-integrity (#81): reconstructed `input-not-committed` findings — a value
+   * action typed X but its after-snapshot committed a shorter, characters-were-lost value. Always
+   * `suspected`; additive (empty on a clean/non-value trace, so its report is byte-unchanged); a
+   * COMPLEMENT to the live arm (which catches a deferred drop this snapshot may predate).
+   */
+  inputIntegrity: InputIntegrityFinding[];
   /** Why the result is `unsure`, when it is (else empty). */
   note: string;
 }
@@ -53,6 +61,23 @@ export interface TraceDiagnosis {
 /** A short human label for the failed action, used as the delta's `action` (render header). */
 function actionLabel(a: { method: string; selector?: string }): string {
   return a.selector ? `${a.method} ${a.selector}` : a.method;
+}
+
+/**
+ * A value-free, honest one-line phrasing of an offline input-integrity finding (v0.9 Move 1). Mirrors
+ * the live arm's wording (`diagnose()`): length + shape only (never the typed value — privacy), and
+ * "the after-snapshot shows …", NEVER "Playwright's fill failed" (Playwright succeeded; the widget
+ * mutated the value after — DW-02/03).
+ */
+function inputIntegrityLine(f: InputIntegrityFinding): string {
+  const where = f.selector ? `${f.method} ${f.selector}` : f.method;
+  const detail =
+    f.shape === 'never-committed'
+      ? `typed ${f.intendedLen} chars, the after-snapshot shows the field empty — suspected input-drop (an async widget may have cleared it after the action)`
+      : f.shape === 'truncated'
+        ? `typed ${f.intendedLen} chars, the after-snapshot shows ${f.committedLen} (a prefix) — suspected truncation after the action`
+        : `typed ${f.intendedLen} chars, the after-snapshot shows ${f.committedLen} (characters were dropped) — suspected dropped-keystrokes`;
+  return `[input-not-committed] ${where} — ${detail}`;
 }
 
 /** Diagnose an already-read {@link TraceInfo}. Split out so tests can drive it without a zip. */
@@ -66,6 +91,11 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
     failedCount: info.failed.length,
   };
 
+  // v0.9 Move 1 offline arm (#81): reconstruct input-integrity findings from the value actions +
+  // their after-snapshots. Independent of whether an action FAILED — a drifted fill usually reports
+  // success — so it is computed for every trace and surfaced additively.
+  const inputIntegrity = deriveInputIntegrity(info);
+
   const chosen = info.chosenFailure;
   if (!chosen) {
     // Nothing failed in the trace — an honest, non-fabricated no-cause result.
@@ -78,6 +108,7 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
       detached: false,
       diagnosed: empty as DiagnosedDelta,
       routing: deriveRouting(info, { domCauseNamed: false }),
+      inputIntegrity,
       note: 'no failed action found in the trace — nothing to diagnose',
     };
   }
@@ -119,6 +150,7 @@ export function diagnoseTraceInfo(info: TraceInfo, file?: string): TraceDiagnosi
     detached,
     diagnosed,
     routing,
+    inputIntegrity,
     note: summary.cause === 'unsure' && !note ? 'no cause crossed the confidence threshold' : note,
   };
 }
@@ -197,6 +229,20 @@ export function renderTraceReport(d: TraceDiagnosis): string {
       for (const h of r.harnessSignals) lines.push(`  · [${h.source}:${h.bucket}] ${h.text}`);
     }
     if (r.recommendation) lines.push('', `routing: ${r.recommendation}`);
+  }
+
+  // v0.9 Move 1 offline input-integrity — additive: rendered only when a genuine committed-value drift
+  // was reconstructed, so a clean/non-value trace's report is byte-unchanged. SUSPECTED by design.
+  if (d.inputIntegrity.length > 0) {
+    lines.push(
+      '',
+      'Suspected input-integrity (offline reconstruction from the after-snapshot — a value drift, NOT a Playwright failure):',
+    );
+    for (const f of d.inputIntegrity) lines.push(`  · ${inputIntegrityLine(f)} (suspected)`);
+    lines.push(
+      '  Limit: the after-snapshot is captured right after the action, so a DEFERRED async drop it',
+      '  predates is invisible here — the live input-integrity arm (post-settle read) catches that.',
+    );
   }
 
   lines.push(
