@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Move 3 follow-ups — `awaitQuiescence` in the locator-free wait path + a JSF/PrimeFaces busy hook.**
+  Two additive pieces, both gated exactly like the shipped `awaitQuiescence` (default off → byte-unchanged):
+  - **Piece A — `observeConsequences` (`deltawright/wait`) now accepts `awaitQuiescence`.** The
+    locator-free settle SIGNAL — the #41-validated observe-when-ready niche — can now wait for real
+    network idle (in-flight XHR/fetch count 0, no framework hook busy) before it resolves, mirroring
+    `actAndObserve` exactly: only when set does it `enableQuiescence()` (install the in-flight counter)
+    and factor `isQuiescent()` into settle, and it surfaces `quiescent` on the observation the same
+    conditional way (still bounded by `maxWaitMs`). Unset → no patching, no `quiescent` field, identical
+    settle.
+  - **Piece B — a JSF/PrimeFaces framework-busy hook in `frameworkBusy()`.** In addition to ExtJS
+    (`Ext.Ajax.isLoading()`), the observer now recognises a busy PrimeFaces ajax queue
+    (`PrimeFaces.ajax.Queue.isEmpty() === false`, or a raw `.requests` array on builds without
+    `isEmpty`). Every hop is typeof/optional-chaining guarded, so an absent or differently-shaped
+    framework never throws; consulted only from `isQuiescent()` (the opt-in path), so the default path
+    is untouched. **Plain JSF (Mojarra/MyFaces) has no stable public idle API, so no hook is invented
+    for it** — it falls back to the framework-agnostic network counter, which already catches its
+    `jsf.ajax` XHRs (honesty over coverage).
+  - **Honest scope:** the new framework tests are **SYNTHETIC** — mock `window.Ext` / `window.PrimeFaces`
+    globals matching the public shape. This validates the hooks discharge part of Move 3's "prove the
+    framework hooks" gate WITHOUT a real portal; it does **not** equal real-app validation (a real
+    ExtJS/JSF app is still needed) and does **not** address GWT's zero-network `Scheduler` waves (that
+    is `lateWatchMs`). The network counter remains the general path; the framework hooks are best-effort
+    accelerators. See ADR 2026-07-15.
 - **Live ownership-routing — opt-in `routeSignals` (v0.9 Move 2, live arm).** The live half of Move 2,
   the parallel of the offline `diagnose-trace` routing arm. When opted in, `actAndObserve` attaches four
   page-level listeners — `response` (status ≥ 400 only), `requestfailed`, `pageerror`, and `console`

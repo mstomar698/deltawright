@@ -133,12 +133,39 @@ declare global {
     }
   }
 
-  // Best-effort framework idle hook — used ONLY when the framework global is present, so a page
-  // without it is unaffected. ExtJS exposes `Ext.Ajax.isLoading()`; others can be added here.
+  // Best-effort framework idle hooks — consulted ONLY from isQuiescent() (i.e. only on the opt-in
+  // awaitQuiescence path), and each hop is typeof/optional-chaining guarded, so a page WITHOUT the
+  // framework — or running a different version whose shape differs — is unaffected and never throws.
+  // These are ACCELERATORS on top of the framework-agnostic in-flight counter (which already catches
+  // each framework's XHR/fetch): they let settle also wait out a busy signal the counter can't see
+  // (e.g. a request issued via a reference captured before the patch). Add new frameworks here.
+  //   - ExtJS:              `Ext.Ajax.isLoading()` is true while a request is outstanding.
+  //   - JSF/PrimeFaces:     `PrimeFaces.ajax.Queue` is non-empty while requests are queued/in flight
+  //                         (`isEmpty() === false`, or a raw `.requests` array on builds without it).
+  // Plain JSF (Mojarra/MyFaces) has NO stable public idle API, so we deliberately add no hook for it —
+  // it falls back to the framework-agnostic network counter, which already catches its `jsf.ajax` XHRs.
+  // Honesty over coverage: we do not invent an unstable signal.
   function frameworkBusy(): boolean {
     try {
       const ext = (window as unknown as { Ext?: { Ajax?: { isLoading?: () => boolean } } }).Ext;
       if (ext?.Ajax?.isLoading && ext.Ajax.isLoading()) return true;
+    } catch {
+      /* a framework global that throws on read — treat as not-busy */
+    }
+    try {
+      const q = (
+        window as unknown as {
+          PrimeFaces?: { ajax?: { Queue?: { isEmpty?: () => boolean; requests?: unknown[] } } };
+        }
+      ).PrimeFaces?.ajax?.Queue;
+      if (q) {
+        // Primary: the public predicate. `isEmpty?.()` short-circuits to undefined when isEmpty is
+        // absent (no throw), and `undefined === false` is false — so a build without it falls through.
+        if (q.isEmpty?.() === false) return true;
+        // Fallback for builds that expose the raw request array instead of isEmpty().
+        if (typeof q.isEmpty !== 'function' && Array.isArray(q.requests) && q.requests.length > 0)
+          return true;
+      }
     } catch {
       /* a framework global that throws on read — treat as not-busy */
     }

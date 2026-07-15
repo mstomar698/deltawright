@@ -41,6 +41,16 @@ export interface ObserveConsequencesOptions extends Partial<SettleOptions> {
    * It adds up to this much latency after quiescence; set 0 to skip it.
    */
   lateWatchMs?: number;
+  /**
+   * Network-idle quiescence (v0.9 Move 3 follow-up, opt-in — inherited from `SettleOptions`, restated
+   * here for discoverability). When true, this locator-free settle also waits for the app to be
+   * network-idle (in-flight XHR/fetch count 0, no framework idle hook busy) before it resolves — the
+   * observe-when-ready niche for RPC-driven legacy apps — and surfaces `quiescent` on the result.
+   * Gated EXACTLY like `actAndObserve`: only when set does it `enableQuiescence()` (monkey-patch the
+   * in-flight counter) and factor `isQuiescent()` into settle. Still bounded by `maxWaitMs`. Default
+   * unset = the settle path is byte-unchanged (no patching, no `quiescent` field). See ADR 2026-07-15.
+   */
+  awaitQuiescence?: boolean;
 }
 
 export interface ConsequenceObservation {
@@ -56,6 +66,14 @@ export interface ConsequenceObservation {
   observed: boolean;
   /** present when `observed` is false: the skip reason (skip-with-reason). */
   skippedReason?: string;
+  /**
+   * Move 3 (opt-in): present ONLY when `awaitQuiescence` was set — whether the app was network-idle
+   * (no in-flight XHR/fetch, no framework hook busy) at the settle point. `false` alongside
+   * `hitMaxWait` means the app was STILL requesting when the cap hit (a genuinely-not-ready signal).
+   * Absent on the default path, so the default observation shape is byte-unchanged. A SIGNAL, not a
+   * readiness guarantee (see the module header).
+   */
+  quiescent?: boolean;
 }
 
 /**
@@ -73,6 +91,9 @@ export async function observeConsequences(
     maxWaitMs: opts.maxWaitMs ?? DEFAULT_SETTLE.maxWaitMs,
     animMaxMs: opts.animMaxMs ?? DEFAULT_SETTLE.animMaxMs,
     lateWatchMs: opts.lateWatchMs ?? DEFAULT_LATE_WATCH_MS,
+    // Move 3 (opt-in): factor network-idle into settle only when set (mirrors actAndObserve). Unset →
+    // waitForSettle sees awaitQuiescence:false and the settle path is byte-unchanged.
+    awaitQuiescence: opts.awaitQuiescence === true,
   };
 
   // Degrade under a strict CSP / non-Chromium (addScriptTag blocked): still run the action, but report
@@ -92,6 +113,12 @@ export async function observeConsequences(
   }
 
   await page.evaluate(() => (window as unknown as DwWindow).__deltawright!.arm(false));
+  // Move 3 (opt-in): install the in-flight XHR/fetch counter NOW — before the action, so its requests
+  // are counted — and ONLY when awaiting quiescence, so a default run leaves the page's native
+  // fetch/XHR untouched (non-interference). Mirrors actAndObserve exactly.
+  if (settle.awaitQuiescence) {
+    await page.evaluate(() => (window as unknown as DwWindow).__deltawright!.enableQuiescence());
+  }
   try {
     await action(page);
     const result = await page.evaluate<SettleResult, SettleOptions>(
@@ -107,6 +134,9 @@ export async function observeConsequences(
       hitMaxWait: result.hitMaxWait,
       suspectedEarly: late.lateStructural,
       observed: true,
+      // Present ONLY when awaitQuiescence ran (result.quiescent is set on that path), so the default
+      // observation shape is byte-unchanged.
+      ...(result.quiescent !== undefined ? { quiescent: result.quiescent } : {}),
     };
   } finally {
     // We skipped collect() (which normally stops the observer), so ALWAYS disconnect it — even if the
