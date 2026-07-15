@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Reporter side-car COVERAGE guarantee — one side-car per finally-failed test.** Dogfooding the
+  reporter on a 292-test suite showed it wrote side-cars for only **56 of 80** finally-failed tests: the
+  passive `onTestEnd` path only sees `failed`/`timedOut` results, so `interrupted` results and failures
+  raised in a `beforeAll`/`afterAll` hook or a fixture (which never surface as a per-test `failed`
+  result) were silently uncovered. Two additive fixes in `deltawright/reporter`: `onTestEnd` now also
+  triages `interrupted` (degrading to an honest `unsure` side-car — DW couldn't diagnose it, but the
+  failure is recorded, not dropped), and `onEnd` now SWEEPS the run's test tree (`suite.allTests()`) and
+  writes a minimal `unsure` **coverage** side-car for every `outcome() === 'unexpected'` test it hasn't
+  already written. Together these **guarantee one side-car per finally-failed test (80/80)**. The
+  flaky-then-passed exclusion is preserved (a finally-green test still writes NOTHING), a test is never
+  double-written, and everything stays guarded (never breaks the run). No fabrication: a coverage record
+  is `unsure`/`unknown` with a truthful detail (DW-02/03). See ADR 2026-07-15.
+- **`attachDiagnosis(testInfo, delta)` — DW's diagnosis INSIDE the Playwright HTML report.** Where
+  `attachDelta` attaches only the raw machine delta (a download), the new `attachDiagnosis` export
+  attaches the machine `deltawright-delta` (so the reporter's rich mode still fires) AND diagnoses the
+  delta right now through the SAME `triageFailure` engine, attaching a second human-readable
+  `deltawright-triage` (`text/plain`) attachment — the rendered triage text — which the standard
+  Playwright HTML report shows inline per test. Diagnosing through the one engine means the inline text
+  can't drift from the side-car. `attachDelta` is unchanged (back-compat): the zero-edit reporter writes
+  side-cars BESIDE the report; `attachDiagnosis` is the opt-in one-liner that puts DW INSIDE it. See ADR
+  2026-07-15.
+- **Interactive flake dashboard — per-test EXPLANATION, not just counts.** `recordFromSidecar` discarded
+  the side-car's `detail`/`diagnoses`/`source`, so `flakes.html` was a static count table. `FlakeRecord`
+  now RETAINS `detail`, `source`, and a `diagnoses` array (read defensively — foreign/partial side-cars
+  still degrade); `TestFlakeSummary` carries a per-test `records` list; and each dashboard row is now
+  EXPANDABLE — a native `<button>` toggle (keyboard-accessible: `aria-expanded` + `aria-controls`) opens
+  a detail panel showing, per failure record, `cause (confidence)` · the `detail` text · the
+  per-diagnosis lines `[scope] code (confidence) — detail` · flags (detached / late-wave / stale-rect) ·
+  source. Vanilla inline JS/CSS, the existing theme toggle kept, self-contained (no external asset). All
+  dynamic text (test IDs AND detail/diagnosis strings — user data) is HTML-escaped; the `unsure` bucket
+  stays honest and separate (never fabricated, never folded into a category). See ADR 2026-07-15.
+
 ## [0.9.2] - 2026-07-15
 
 ### Added

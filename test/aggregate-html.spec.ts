@@ -18,6 +18,16 @@ function rec(over: Partial<FlakeRecord> = {}): FlakeRecord {
     detached: false,
     lateWave: false,
     staleRect: false,
+    detail: 'the target <button> is disabled',
+    source: 'error-text',
+    diagnoses: [
+      {
+        code: 'disabled',
+        confidence: 'confirmed',
+        scope: 'node',
+        detail: 'element is not enabled',
+      },
+    ],
     ...over,
   };
 }
@@ -61,6 +71,81 @@ test('should_html_escape_test_ids_so_a_malicious_test_name_cannot_inject_markup'
   expect(html).not.toContain('<img src=x onerror=alert(1)>');
   expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   expect(html).toContain('&amp;');
+  expect(html).toContain('&quot;');
+  expect(html).toContain('&#39;');
+});
+
+test('should_render_an_expandable_per_test_explanation_panel_with_detail_and_diagnoses', () => {
+  const html = renderHtml(
+    aggregate([
+      rec({
+        testId: 'suite > flaky A',
+        runId: 'run-7',
+        detail: 'the target <button> is disabled',
+        diagnoses: [
+          {
+            code: 'disabled',
+            confidence: 'confirmed',
+            scope: 'node',
+            detail: 'element is not enabled',
+          },
+        ],
+      }),
+    ]),
+  );
+
+  // The row carries an accessible toggle button wired to a hidden detail row (aria-controls target).
+  expect(html).toMatch(
+    /<button class="toggle"[^>]*aria-expanded="false"[^>]*aria-controls="dw-detail-1"/,
+  );
+  expect(html).toContain('id="dw-detail-1"');
+  expect(html).toContain('hidden'); // the detail row is collapsed by default
+  // The panel renders the retained explanation: the run, the cause, the detail text …
+  expect(html).toContain('run-7');
+  expect(html).toContain('the target &lt;button&gt; is disabled'); // detail (escaped, see below)
+  // … and a per-diagnosis line `[scope] code (confidence) — detail`.
+  expect(html).toContain('[node]');
+  expect(html).toContain('element is not enabled');
+  expect(html).toContain('(confirmed)');
+  expect(html).toContain('source: error-text');
+  // The toggle JS is present and self-contained (no external asset).
+  expect(html).toContain("querySelectorAll('button.toggle')");
+});
+
+test('should_render_the_honest_detail_for_an_unsure_record', () => {
+  const honest =
+    'the failure was not a recognized Playwright actionability error — no cause inferred';
+  const html = renderHtml(
+    aggregate([
+      rec({
+        testId: 'suite > murky C',
+        code: 'unsure',
+        confidence: 'unknown',
+        category: null,
+        detail: honest,
+        diagnoses: [],
+      }),
+    ]),
+  );
+  // The unsure cause is surfaced honestly in its OWN panel, with the honest detail text — not folded
+  // into a taxonomy category and not fabricated.
+  expect(html).toContain('>unsure<');
+  expect(html).toContain(honest); // no HTML-special chars → appears verbatim
+});
+
+test('should_escape_a_malicious_detail_and_diagnosis_string_they_are_user_data', () => {
+  const evil = '<script>alert(1)</script> & "x" \'y\'';
+  const html = renderHtml(
+    aggregate([
+      rec({
+        detail: evil,
+        diagnoses: [{ code: 'disabled', confidence: 'confirmed', scope: 'node', detail: evil }],
+      }),
+    ]),
+  );
+  // The raw payload never appears verbatim in EITHER the detail paragraph or the diagnosis line.
+  expect(html).not.toContain('<script>alert(1)</script>');
+  expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   expect(html).toContain('&quot;');
   expect(html).toContain('&#39;');
 });
