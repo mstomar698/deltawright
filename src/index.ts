@@ -34,6 +34,14 @@ export type {
 export { assessConfidence, atLeastAsConfident, CONFIDENCE_ORDER } from './host/confidence';
 export type { Confidence, EvidenceSource, Evidence } from './host/confidence';
 export { classifyInput, LOSS_SHAPES } from './host/input-integrity';
+export { buildLiveRouting } from './host/live-routing';
+export type {
+  LiveRoutingReport,
+  LiveRoutingSignal,
+  LiveSignalKind,
+  CollectedLiveSignals,
+  RawLiveSignal,
+} from './host/live-routing';
 export type {
   Delta,
   DeltaNode,

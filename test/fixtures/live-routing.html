@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>live-routing fixture (v0.9 Move 2 live)</title></head>
+<body>
+  <button id="go">go</button>
+  <button id="console-only">console-only</button>
+  <button id="console-spam">console-spam</button>
+  <div id="app"></div>
+  <script>
+    // An absolute http URL (with a query string, so the privacy path-strip is exercised) that
+    // page.route intercepts — the test controls its response status. See quiescence.html for the same
+    // pattern.
+    var API = 'http://dw.test/api/orders/submit?token=SECRET123';
+    // Append a marker so the DOM goes quiet quickly (settle resolves promptly) after each click.
+    function mark(label) {
+      const s = document.createElement('span');
+      s.textContent = label;
+      document.getElementById('app').appendChild(s);
+    }
+    // #go: a backend call that fails (the test makes it a 500 via page.route) AND an uncaught JS
+    // exception. The live routing arm should capture BOTH — the 500 response (→ backend route) and the
+    // pageerror (→ app-owner route).
+    document.getElementById('go').addEventListener('click', () => {
+      mark('go');
+      fetch(API).catch(() => {});
+      setTimeout(() => {
+        throw new Error('boom — undefined is not a function');
+      }, 0);
+    });
+    // #console-only: only console.error/warn, NO uncaught exception — a console.error must NEVER flip
+    // the not-DOM hint on its own (legacy apps spam them).
+    document.getElementById('console-only').addEventListener('click', () => {
+      mark('console-only');
+      console.error('deprecated api used');
+      console.warn('slow response');
+    });
+    // #console-spam: many console.errors in the window — exercises the list-and-clamp cap.
+    document.getElementById('console-spam').addEventListener('click', () => {
+      mark('console-spam');
+      for (let i = 0; i < 20; i++) console.error('batch ' + i + ' failed to load');
+    });
+  </script>
+</body>
+</html>
