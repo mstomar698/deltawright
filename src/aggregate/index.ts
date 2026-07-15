@@ -15,6 +15,14 @@ import type { Confidence } from '../host/confidence';
 
 const SIDECAR_SUFFIX = '.deltawright-sidecar.json';
 
+/** A per-diagnosis line retained from a side-car, defensively typed (foreign side-cars may vary). */
+export interface FlakeDiagnosis {
+  code: string;
+  confidence: string;
+  scope: string;
+  detail: string;
+}
+
 /** One normalized flake data point derived from a side-car. */
 export interface FlakeRecord {
   testId: string;
@@ -34,6 +42,26 @@ export interface FlakeRecord {
   detached: boolean;
   lateWave: boolean;
   staleRect: boolean;
+  /** The side-car's human-readable `detail` (why this cause / why unsure). Retained for the dashboard. */
+  detail: string;
+  /** Where the diagnosis came from (`delta-attachment` / `error-text`). Retained for the dashboard. */
+  source: string;
+  /** Every diagnosis the side-car carried, so the dashboard can explain the failure, not just count it. */
+  diagnoses: FlakeDiagnosis[];
+}
+
+/** A compact per-failure-record view the dashboard expands under a test row (its explanation). */
+export interface TestFlakeRecordView {
+  runId: string;
+  code: RootCauseCode | 'unsure';
+  confidence: Confidence;
+  category: RootCauseCategory | null;
+  detail: string;
+  source: string;
+  detached: boolean;
+  lateWave: boolean;
+  staleRect: boolean;
+  diagnoses: FlakeDiagnosis[];
 }
 
 export interface TestFlakeSummary {
@@ -52,6 +80,8 @@ export interface TestFlakeSummary {
   settleCapRate: number;
   /** Fraction of failures carrying a geometry↔Playwright disagreement. */
   disagreementRate: number;
+  /** This test's failure records with their retained explanation, so the dashboard can expand them. */
+  records: TestFlakeRecordView[];
 }
 
 export interface FlakeReport {
@@ -67,10 +97,17 @@ interface SidecarShape {
   test?: unknown;
   cause?: unknown;
   confidence?: unknown;
+  detail?: unknown;
+  source?: unknown;
   detached?: unknown;
   lateWave?: unknown;
   staleRect?: unknown;
-  diagnoses?: Array<{ code?: unknown }>;
+  diagnoses?: Array<{ code?: unknown; confidence?: unknown; scope?: unknown; detail?: unknown }>;
+}
+
+/** Read a possibly-missing string field, defaulting to '' — foreign / partial side-cars may omit it. */
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : '';
 }
 
 /** Map a parsed side-car object into a FlakeRecord, or null if it is not a recognizable side-car. */
@@ -87,9 +124,17 @@ export function recordFromSidecar(sidecar: unknown, runId: string): FlakeRecord 
   const resolved: RootCauseCategory | null =
     code === 'unsure' ? null : (ROOT_CAUSE_TAXONOMY[code as RootCauseCode]?.category ?? null);
   const category: RootCauseCategory | null = resolved === 'unknown' ? null : resolved;
-  const codes = Array.isArray(s.diagnoses)
-    ? s.diagnoses.map((d) => (d && typeof d.code === 'string' ? d.code : ''))
+  // Retain every diagnosis line (defensively typed) so the dashboard can explain a failure, not just
+  // count it — the explanatory `detail`/`scope`/`confidence` were previously discarded.
+  const diagnoses: FlakeDiagnosis[] = Array.isArray(s.diagnoses)
+    ? s.diagnoses.map((d) => ({
+        code: str(d?.code),
+        confidence: str(d?.confidence) || 'unknown',
+        scope: str(d?.scope),
+        detail: str(d?.detail),
+      }))
     : [];
+  const codes = diagnoses.map((d) => d.code);
 
   return {
     testId: s.test,
@@ -102,6 +147,9 @@ export function recordFromSidecar(sidecar: unknown, runId: string): FlakeRecord 
     detached: s.detached === true,
     lateWave: s.lateWave === true,
     staleRect: s.staleRect === true,
+    detail: str(s.detail),
+    source: str(s.source),
+    diagnoses,
   };
 }
 
@@ -146,6 +194,19 @@ export function aggregate(records: FlakeRecord[]): FlakeReport {
       unsure,
       settleCapRate: rate(capped, recs.length),
       disagreementRate: rate(disagreed, recs.length),
+      // Carry each record's retained explanation so the dashboard can expand the row's detail panel.
+      records: recs.map((r) => ({
+        runId: r.runId,
+        code: r.code,
+        confidence: r.confidence,
+        category: r.category,
+        detail: r.detail,
+        source: r.source,
+        detached: r.detached,
+        lateWave: r.lateWave,
+        staleRect: r.staleRect,
+        diagnoses: r.diagnoses,
+      })),
     });
   }
 

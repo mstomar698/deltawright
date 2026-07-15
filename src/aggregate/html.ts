@@ -1,5 +1,5 @@
 import type { RootCauseCategory } from '../host/taxonomy';
-import type { FlakeReport, TestFlakeSummary } from './index';
+import type { FlakeReport, TestFlakeRecordView, TestFlakeSummary } from './index';
 
 // The flake dashboard (#2, Wave-1) — a self-contained, theme-aware static HTML view over the
 // EXISTING FlakeReport (#59's deliberately-cut dashboard). VIEW-ONLY: `renderHtml` is a pure
@@ -86,18 +86,84 @@ function categorySection(tests: TestFlakeSummary[], unsureBucket: number): strin
     </section>`;
 }
 
-function testRow(t: TestFlakeSummary, rank: number): string {
+/** Flags present on a record, as fixed human labels (not user data). */
+function recordFlags(r: TestFlakeRecordView): string[] {
+  const flags: string[] = [];
+  if (r.detached) flags.push('detached');
+  if (r.lateWave) flags.push('late-wave');
+  if (r.staleRect) flags.push('stale-rect');
+  return flags;
+}
+
+/**
+ * One failure record inside a test's expandable detail panel: its gated cause (+ confidence), the
+ * honest `detail` text, each per-diagnosis line `[scope] code (confidence) — detail`, any flags, and
+ * the source. ALL dynamic text (detail / diagnosis strings / source) is escaped — it is user data.
+ */
+function recordEntry(r: TestFlakeRecordView): string {
+  // Key `unsure` off the resolved CATEGORY, not the literal code: the aggregate buckets `category ===
+  // null` as unsure — which also covers the taxonomy's first-class `unknown` and any foreign /
+  // untaxonomized code. So an `unknown`/foreign record renders honestly as `unsure` here (no confident
+  // cause + no confidence badge), exactly how the summary buckets it — never as a confident cause.
+  const unsure = r.category === null;
+  const cause = unsure
+    ? '<span class="cause unsure">unsure</span>'
+    : `<span class="cause"><code>${escapeHtml(r.code)}</code> <span class="conf">(${escapeHtml(r.confidence)})</span></span>`;
+  const diagLines = r.diagnoses
+    .map(
+      (d) =>
+        `<li>[${escapeHtml(d.scope)}] <code>${escapeHtml(d.code)}</code> <span class="conf">(${escapeHtml(
+          d.confidence,
+        )})</span>${d.detail ? ` — ${escapeHtml(d.detail)}` : ''}</li>`,
+    )
+    .join('');
+  const flags = recordFlags(r);
   return `
-      <tr>
+            <li class="rec">
+              <div class="rec-head"><span class="rec-run">${escapeHtml(r.runId)}</span>${cause}</div>
+              ${r.detail ? `<p class="rec-detail">${escapeHtml(r.detail)}</p>` : ''}
+              ${diagLines ? `<ul class="diags">${diagLines}</ul>` : ''}
+              <div class="rec-meta">${
+                flags.length
+                  ? `<span class="flags">${flags.map(escapeHtml).join(' · ')}</span>`
+                  : ''
+              }<span class="src">source: ${escapeHtml(r.source)}</span></div>
+            </li>`;
+}
+
+/** The hidden detail row toggled beneath a test row — the per-record explanation panel. */
+function detailRow(t: TestFlakeSummary, rank: number): string {
+  const entries = t.records.map(recordEntry).join('');
+  return `
+      <tr class="detail-row" id="dw-detail-${rank}" hidden>
+        <td colspan="8">
+          <div class="detail">
+            <h3>Failure records (${t.records.length})</h3>
+            <ul class="recs">${entries}</ul>
+          </div>
+        </td>
+      </tr>`;
+}
+
+function testRow(t: TestFlakeSummary, rank: number): string {
+  const id = `dw-detail-${rank}`;
+  // The summary row carries an accessible toggle button (native <button> ⇒ Enter/Space work) that
+  // controls the hidden detail row via aria-controls; JS below flips `hidden` + `aria-expanded`.
+  return `
+      <tr class="test-row">
         <td class="num">${rank}</td>
-        <td class="test"><code>${escapeHtml(t.testId)}</code></td>
+        <td class="test">
+          <button class="toggle" type="button" aria-expanded="false" aria-controls="${id}"
+            aria-label="Show failure detail for ${escapeHtml(t.testId)}">▸</button>
+          <code>${escapeHtml(t.testId)}</code>
+        </td>
         <td class="num">${t.failures}</td>
         <td class="num">${t.runs}</td>
         <td>${categorySwatch(t.dominantCategory)}</td>
         <td class="num">${pct(t.settleCapRate)}</td>
         <td class="num">${pct(t.disagreementRate)}</td>
         <td class="num${t.unsure > 0 ? ' has-unsure' : ''}">${t.unsure}</td>
-      </tr>`;
+      </tr>${detailRow(t, rank)}`;
 }
 
 function testsSection(tests: TestFlakeSummary[]): string {
@@ -222,8 +288,32 @@ export function renderHtml(report: FlakeReport): string {
   tbody tr:last-child td { border-bottom:none; }
   tbody tr:hover { background:color-mix(in srgb, var(--accent) 7%, transparent); }
   td.test code { background:var(--code); padding:.1rem .35rem; border-radius:4px; font-size:.85em; }
+  td.test { display:flex; align-items:center; gap:.5rem; }
   td.has-unsure { color:var(--unsure); font-weight:650; }
   code { font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace; }
+  button.toggle {
+    background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted);
+    width:1.5rem; height:1.5rem; line-height:1; padding:0; cursor:pointer; flex:0 0 auto;
+    font-size:.8rem; font-family:inherit;
+  }
+  button.toggle:hover { border-color:var(--accent); color:var(--fg); }
+  button.toggle:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .detail-row td { padding:0; background:color-mix(in srgb, var(--accent) 4%, transparent); }
+  .detail-row[hidden] { display:none; }
+  .detail { padding:.9rem 1.1rem 1.1rem 2.6rem; }
+  .detail h3 { font-size:.82rem; text-transform:uppercase; letter-spacing:.02em; color:var(--muted); margin:0 0 .6rem; }
+  ul.recs { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.75rem; }
+  li.rec { border-left:2px solid var(--border); padding-left:.75rem; }
+  .rec-head { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; font-size:.88rem; }
+  .rec-run { color:var(--muted); font-size:.8rem; }
+  .cause code { background:var(--code); padding:.05rem .3rem; border-radius:4px; }
+  .cause.unsure { color:var(--unsure); font-weight:650; }
+  .conf { color:var(--muted); font-size:.82rem; }
+  .rec-detail { margin:.35rem 0; font-size:.86rem; max-width:80ch; }
+  ul.diags { list-style:none; margin:.35rem 0; padding:0; display:flex; flex-direction:column; gap:.2rem; font-size:.82rem; color:var(--muted); }
+  ul.diags code { background:var(--code); padding:.02rem .25rem; border-radius:3px; }
+  .rec-meta { display:flex; gap:.75rem 1rem; flex-wrap:wrap; font-size:.78rem; color:var(--muted); margin-top:.3rem; }
+  .rec-meta .flags { color:var(--accent); }
   .unsure-panel { border-left:3px solid var(--unsure); }
   .unsure-panel p, .empty p { color:var(--muted); margin:0; max-width:75ch; }
   .empty h2 { color:var(--muted); }
@@ -266,6 +356,20 @@ ${unsurePanel(unsureBucket, totalRecords)}
       var next = current() === 'dark' ? 'light' : 'dark';
       root.setAttribute('data-theme', next);
       try { localStorage.setItem(KEY, next); } catch (e) {}
+    });
+
+    // Expandable test rows: a native button (Enter/Space work) toggles its controlled detail row's
+    // hidden attr + its own aria-expanded, flipping the caret glyph. No dependency, keyboard-accessible.
+    var toggles = document.querySelectorAll('button.toggle');
+    Array.prototype.forEach.call(toggles, function (t) {
+      t.addEventListener('click', function () {
+        var row = document.getElementById(t.getAttribute('aria-controls'));
+        if (!row) return;
+        var open = t.getAttribute('aria-expanded') === 'true';
+        t.setAttribute('aria-expanded', open ? 'false' : 'true');
+        t.textContent = open ? '▸' : '▾'; // ▸ collapsed / ▾ expanded
+        if (open) row.setAttribute('hidden', ''); else row.removeAttribute('hidden');
+      });
     });
   })();
 </script>
