@@ -164,6 +164,20 @@ Each candidate gets a `durability` (0–100), a `grade`, and brittleness `flags`
 
 **Honesty:** `durability` is a **single-page ESTIMATE** — a brittleness proxy, never a claim of stability across releases or re-renders. (The only sound cross-render signal is a two-snapshot re-check, a deliberate follow-up.)
 
+### The three compose
+
+`observeEffectSettled` (readiness), `pageMap` (the picture), and `scoreSelectors` (the durable handle) are one primitive family — *see what changed → know when it's ready → get a durable handle* — aimed at legacy / poor-a11y / heavy-RPC apps where the a11y tree degrades and `networkidle` never fires:
+
+```ts
+// 1. wait for the click's OWN delayed effect to land (no sleep, no networkidle)
+await observeEffectSettled(page, (p) => p.click('#load'));
+// 2. capture the change as a delta, then read the settled page as a map (occlusion-aware, recency-marked)
+const delta = await actAndObserve(page, (p) => p.click('#load'));
+console.log(renderPageMap(await pageMap(page, { delta })));
+// 3. get a durable, graded handle for the changed node
+const { bestDurable } = await scoreSelectors(page, delta);
+```
+
 ## Use it as an MCP server
 
 Deltawright ships a stdio MCP server so agents consume deltas natively:
