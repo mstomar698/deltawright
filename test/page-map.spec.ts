@@ -150,6 +150,13 @@ test('reconcile: Playwright wins, and a geometry disagreement is surfaced (not h
   expect(cont.actionable).toBe('ACTIONABLE');
   expect(cont.geomDisagreesWithPlaywright).toBe(false);
 
+  // An OFF-SCREEN interactive node is NOT probed under reconcile — a trial-click would auto-scroll it
+  // into view (fabricating a disagreement + polluting the captured scroll). It stays geometry-derived.
+  const ghost = byName(map, 'Ghost action')!;
+  expect(ghost.geometry.offscreen).toBe(true);
+  expect(ghost.reconciled).toBe(false);
+  expect(ghost.geomDisagreesWithPlaywright).toBe(false);
+
   // The rendered map declares authoritative verdicts and shows the disagreement token (in the
   // geometry vocabulary, so it can't read as a competing authoritative verdict).
   const text = renderPageMap(map);

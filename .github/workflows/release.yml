@@ -17,6 +17,15 @@ on:
   push:
     tags: ['v*']
 
+# Serialize releases per tag. The publish step's `npm view … && skip` idempotency guard is TOCTOU-racy
+# across CONCURRENT runs (two near-simultaneous tag pushes, or a delete+re-push, could both pass the
+# "not yet published" check and both call `npm publish` — the loser fails red on a 409). A concurrency
+# group makes runs for the same ref queue instead of race; `cancel-in-progress: false` so an in-flight
+# publish is NEVER killed mid-way.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 # Least privilege: `contents: write` only to create the GitHub release; `id-token: write` only so
 # npm can exchange the OIDC token for a publish credential + provenance. No other scope is granted.
 permissions:

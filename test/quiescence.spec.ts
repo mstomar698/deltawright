@@ -10,7 +10,7 @@ import { fixtureUrl } from './helpers';
 // actionability timeouts (those are covered/backend). Additive — the default settle is unchanged.
 
 const URL = fixtureUrl('quiescence.html');
-const DELAY = 250; // the in-flight window the test controls via page.route
+const DELAY = 600; // the in-flight window the test controls via page.route
 
 async function delaySlowEndpoint(page: import('@playwright/test').Page) {
   await page.route('**/dw-slow-endpoint', async (route) => {

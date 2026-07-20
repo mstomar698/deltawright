@@ -33,7 +33,7 @@
         // Report busy for BUSY_MS, then clear — no XHR/fetch is issued, so the in-flight counter
         // stays 0 the whole time and the framework hook is the sole gate on quiescence.
         busy = true;
-        const BUSY_MS = 250;
+        const BUSY_MS = 600;
         setTimeout(() => {
           busy = false;
         }, BUSY_MS);

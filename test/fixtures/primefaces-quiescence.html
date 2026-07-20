@@ -36,7 +36,7 @@
         // Enqueue a pending request, then drain it after BUSY_MS — no XHR/fetch is issued, so the
         // in-flight counter stays 0 and the queue is the sole gate on quiescence.
         requests.push({ id: 1 });
-        const BUSY_MS = 250;
+        const BUSY_MS = 600;
         setTimeout(() => {
           requests.length = 0;
         }, BUSY_MS);

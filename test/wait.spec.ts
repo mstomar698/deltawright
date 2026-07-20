@@ -88,7 +88,7 @@ test('degrades to observed:false with a reason under a strict CSP', async ({ pag
 // conditional way. Default unset → byte-unchanged (no patching, no `quiescent`).
 
 const Q_URL = fixtureUrl('quiescence.html');
-const Q_DELAY = 250; // the in-flight window the test controls via page.route
+const Q_DELAY = 600; // the in-flight window the test controls via page.route
 
 async function delaySlowEndpoint(page: import('@playwright/test').Page, ms = Q_DELAY) {
   await page.route('**/dw-slow-endpoint', async (route) => {

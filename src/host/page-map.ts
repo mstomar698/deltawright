@@ -193,8 +193,12 @@ export async function pageMap(page: Page, opts: PageMapOptions = {}): Promise<Pa
           ? recencyForKind(kindByRef.get(rn.deltaRef)!)
           : null;
 
-      // Default: verdict is the geometry read (fast, offline, labeled as geometry-derived).
-      if (!reconcileOn || !rn.interactive) {
+      // Default: verdict is the geometry read (fast, offline, labeled as geometry-derived). Also take
+      // this path for OFF-SCREEN nodes even under reconcile: a Playwright trial auto-scrolls the node
+      // into view and passes, which (a) fabricates a geometry-vs-Playwright "disagreement" for a benign
+      // scroll-to-reach control and (b) mutates the scroll position `scan` already captured. Off-screen
+      // is authoritatively NOT-actionable-here from geometry; no probe needed.
+      if (!reconcileOn || !rn.interactive || rn.geometry.offscreen) {
         return {
           ...rn,
           geomActionable,

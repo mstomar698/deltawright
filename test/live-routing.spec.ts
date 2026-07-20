@@ -234,6 +234,25 @@ test('a co-occurring client-abort (net::ERR_ABORTED) requestfailed is NOT counte
   expect(r.suspectedBackendCause).toBe(true); // a real failure STILL flips it
 });
 
+test('a genuine net::ERR_CONNECTION_ABORTED (connection dropped by the server) is KEPT and routed', async ({
+  page,
+}) => {
+  const collector = attachLiveRouting(page);
+  // Contains "ABORTED" but is a REAL infra fault (connection dropped by the network/server), NOT a
+  // client cancel — it must be counted. Regression: the old /ERR_ABORTED|aborted/i excluded it.
+  emitOn(
+    page,
+    'requestfailed',
+    fakeRequest('http://dw.test/api/gw', 'net::ERR_CONNECTION_ABORTED'),
+  );
+  const r = buildLiveRouting(collector.detach(), { domCauseNamed: false });
+  expect(
+    r.backendCount,
+    'ERR_CONNECTION_ABORTED is a real backend fault, not a client cancel',
+  ).toBe(1);
+  expect(r.suspectedBackendCause).toBe(true);
+});
+
 test('a requestfailed with no failure text is kept (a genuine failure is the safe default)', async ({
   page,
 }) => {

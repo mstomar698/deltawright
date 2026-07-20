@@ -15,7 +15,7 @@ import { fixtureUrl } from './helpers';
 
 const EXT_URL = fixtureUrl('extjs-quiescence.html');
 const PF_URL = fixtureUrl('primefaces-quiescence.html');
-const BUSY_MS = 250; // the busy window each fixture holds (matches its inline BUSY_MS)
+const BUSY_MS = 600; // the busy window each fixture holds (matches its inline BUSY_MS)
 
 type IsQWindow = { __deltawright: { enableQuiescence(): void; isQuiescent(): boolean } };
 
