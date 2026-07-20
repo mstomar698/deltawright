@@ -6,6 +6,12 @@ name: ci
 permissions:
   contents: read
 
+# Coalesce redundant runs: a rapid re-push to the same branch/PR cancels the now-stale in-flight run
+# instead of piling up. (Unlike release.yml, cancelling CI mid-run is safe — it publishes nothing.)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]

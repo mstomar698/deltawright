@@ -22,6 +22,9 @@ All notable changes to this project are documented here. The format is based on
   disagreement + polluting the captured scroll). (6) **MCP `serverInfo.version`** now reads the real
   package version instead of a hardcoded `0.1.0`. (7) **`release.yml`** gained a `concurrency:` group
   to prevent a duplicate-publish race. Regression tests added for (2), (3), (5).
+- **CI hygiene + a trace-report edge:** added a `concurrency:` group to `ci.yml` (a rapid re-push
+  cancels the stale in-flight run instead of piling up); `read-trace`'s `capText` now caps by code
+  point so a cut never lands mid-surrogate and leaves a lone `�`.
 
 ### Added
 

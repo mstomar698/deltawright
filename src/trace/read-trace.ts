@@ -224,10 +224,12 @@ function extractCauseLine(callLog: string[]): string | undefined {
   return cause;
 }
 
-/** First line of a co-event message, trimmed and capped — never a multi-line stack or a novel. */
+/** First line of a co-event message, trimmed and capped — never a multi-line stack or a novel. Caps by
+ *  CODE POINT (not UTF-16 unit) so the cut never lands mid-surrogate and leaves a lone `�`. */
 function capText(s: string): string {
   const firstLine = s.split('\n')[0]!.trim();
-  return firstLine.length > 200 ? firstLine.slice(0, 197) + '…' : firstLine;
+  const cps = Array.from(firstLine);
+  return cps.length > 200 ? cps.slice(0, 197).join('') + '…' : firstLine;
 }
 
 /** Cap on how many harness lines we scan-keep before dedup — a chatty harness must not run away. */
