@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-20
+
+**The authoring-enhancer release.** Deltawright grows from a diagnosis/triage layer into a categorical
+Playwright **authoring enhancer** — a structured, deterministic model of *what changed because of the
+action you just took*: where it is, whether you can act on it, and when it's ready — aimed at legacy /
+poor-a11y / heavy-RPC apps where the accessibility tree degrades and `networkidle` never fires. Three
+new primitives (`pageMap`, `observeEffectSettled`, `scoreSelectors`) ship as one family, plus a dual
+ESM+CJS package and a four-agent bug-hunt hardening pass. Every change was two-lens reviewed
+(correctness + honesty/anti-reskin) and honesty-gated.
+
 ### Changed
 
 - **Dual ESM + CJS package (adoption fix, #B4/#C).** The library entries (`deltawright`, `deltawright/
