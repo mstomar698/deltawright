@@ -305,8 +305,80 @@ export interface DeltawrightApi {
    * (the host may enrich them from Playwright's authoritative ARIA snapshot).
    */
   scan(opts: ScanOptions): RawPageMap;
+  /**
+   * Region-scoped, assertion-free effect-settle (R1). Runs AFTER the action (the host arms +
+   * baselines + acts first, exactly like the settle path), then: (1) waits for the FIRST non-background
+   * effect mutation — the first-effect "appeared" edge, nothing named in advance (co-occurrence with
+   * the action, not proven causation); (2) seeds a region from the
+   * union of that effect's rects; (3) waits until the REGION goes still — only non-background mutations
+   * INTERSECTING the region reset the quiet timer, so background churn OUTSIDE it can't (the direct fix
+   * for both the no-network client-re-render miss AND the global-quiescence over-wait); (4) fuses WAAPI
+   * animation-settle + an optional network-idle gate; (5) region-scoped late-watch → `suspectedEarly`.
+   * Honest by construction: `effectAppeared:false` (never a fake settle) when nothing changed;
+   * `hitMaxWait:true` (INCONCLUSIVE) at the cap; no `ready` boolean. It reuses the same buffered records
+   * + baseline footprints as `collect`, so it is a settle VARIANT, not a second observer.
+   */
+  waitForEffectSettle(opts: EffectSettleOptions): Promise<EffectSettleResult>;
   reset(): void;
 }
+
+// --- Effect-settle (R1) --------------------------------------------------
+
+/** Tunable knobs for the region-scoped effect-settle. */
+export interface EffectSettleOptions {
+  /** The region must see no non-background effect mutation for this long before it is "settled". */
+  quietMs: number;
+  /** Hard cap on the settle wait, measured from just after the action (the `waitForEffectSettle` call,
+   *  so a slow action does not eat the budget); on hit → `hitMaxWait:true` (INCONCLUSIVE, never a fake
+   *  settle). A clean settle's region-scoped late-watch (`lateWatchMs`) runs AFTER this and is not
+   *  counted against it. */
+  maxWaitMs: number;
+  /** Budget for the WAAPI animation-settle on the region's roots. */
+  animMaxMs: number;
+  /** How long to wait for the effect to APPEAR before concluding `effectAppeared:false`. */
+  appearTimeoutMs: number;
+  /** Region-scoped late-watch after settle: a later effect mutation intersecting the region sets
+   *  `suspectedEarly`. 0 = skip. */
+  lateWatchMs: number;
+  /** Opt-in network-idle accelerator: also require `isQuiescent()` before settling (still capped). */
+  awaitQuiescence: boolean;
+}
+
+/** Which settle gates were satisfied — EVIDENCE, not a verdict (no `ready` boolean). */
+export interface EffectSettleSignals {
+  structuralQuiet: boolean;
+  animationsSettled: boolean;
+  /** Present only when `awaitQuiescence` ran. */
+  networkIdle?: boolean;
+}
+
+export interface EffectSettleResult {
+  /** false = no non-background change was observed within `appearTimeoutMs` (honest "no effect"), which
+   *  is NOT "ready". The host may still localize a canvas/no-DOM effect via a screenshot fallback. */
+  effectAppeared: boolean;
+  /** arm → first non-background effect mutation (null when none appeared). */
+  appearedMs: number | null;
+  /** arm → the region went still (or the cap). */
+  settledMs: number;
+  /** The suspected-effect rect (viewport coords) — CO-OCCURRENCE, not proven causation. Null when no
+   *  effect appeared. */
+  region: Rect | null;
+  /** true = the cap was hit before the region went quiet → treat the settle as INCONCLUSIVE. */
+  hitMaxWait: boolean;
+  /** A later effect mutation hit the region after it settled (gap-E, region-scoped) — worth a second look. */
+  suspectedEarly: boolean;
+  signals: EffectSettleSignals;
+}
+
+/** Default effect-settle knobs — quiet/cap/anim mirror {@link DEFAULT_SETTLE}; appear + late-watch added. */
+export const DEFAULT_EFFECT_SETTLE: EffectSettleOptions = {
+  quietMs: 120,
+  maxWaitMs: 2000,
+  animMaxMs: 1000,
+  appearTimeoutMs: 2000,
+  lateWatchMs: 300,
+  awaitQuiescence: false,
+};
 
 // --- Page map (R2 flagship) ----------------------------------------------
 

@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`observeEffectSettled(page, action, opts?)` — the R1 capability: region-scoped, assertion-free,
+  causal effect-settle** (`deltawright/wait`). Phase 2 of the authoring-enhancer chapter. Answers "has
+  *this action's* effect landed and gone still" WITHOUT a static sleep and WITHOUT global `networkidle`,
+  including the case both miss: a client-side re-render with zero network. A new stateless
+  `waitForEffectSettle()` mode on the injected observer waits for the FIRST non-background mutation (the
+  first-effect "appeared" edge — nothing named in advance; co-occurrence with the action, not proven
+  causation), seeds a REGION from that effect, then waits until
+  the region goes still — only non-background mutations INTERSECTING the region reset the quiet timer, so
+  background churn OUTSIDE it can't (the direct fix for both the no-network re-render miss AND the
+  global-quiescence over-wait). Fuses WAAPI animation-settle + an optional `awaitQuiescence` network
+  gate. NOT `networkidle` rebranded: the region comes from the observed effect and the settle is local.
+  Honest by construction: no `ready`/`safe`/`settled` boolean, no retry; `effectAppeared:false` is an
+  honest "no effect" (a no-effect action reports `hitMaxWait:true`, never a fake clean settle);
+  `hitMaxWait` = INCONCLUSIVE; region-scoped `suspectedEarly` flags a late wave. Reuses the same buffered
+  records + baseline footprints as the delta (a settle VARIANT, not a second observer). No-DOM effects
+  (canvas/WebGL) honestly report `effectAppeared:false` — compose the public `diffChangedRegion` to
+  localize by pixels (kept out of the lean `deltawright/wait` subpath, which stays pngjs-free).
+
 - **`pageMap(page, opts?)` + `renderPageMap(map, opts?)` — the R2 flagship: a spatial + semantic
   "marked page map."** The first primitive of the authoring-enhancer chapter (see
   `docs/plans/dw-authoring-enhancer-plan.md`). It reads a bounded set of SALIENT nodes (interactive +
