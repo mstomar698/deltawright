@@ -52,6 +52,29 @@ test('should_import_from_built_package_without_tsx', () => {
   expect(out.trim()).toBe('OK:12');
 });
 
+test('should_require_the_built_package_from_CJS_incl_subpaths_and_observer', () => {
+  // The CJS half of the dual package (the ERR_PACKAGE_PATH_NOT_EXPORTED fix): `require('deltawright')`
+  // + the require-able subpaths resolve under plain node, and the CJS bundle's `import.meta.url` shim
+  // still locates the pre-bundled observer IIFE (inject.ts's runtime path resolution).
+  const script = [
+    `const dw = require('deltawright');`,
+    `const m = require('deltawright/matchers');`,
+    `const w = require('deltawright/wait');`,
+    `const a = require('deltawright/aggregate');`,
+    `const r = require('deltawright/reporter');`,
+    `const ok = typeof dw.actAndObserve === 'function' && typeof dw.pageMap === 'function'`,
+    `  && typeof m.scoreSelectors === 'function' && typeof w.observeEffectSettled === 'function'`,
+    `  && a && r;`,
+    `if (!ok) { console.error('MISSING CJS exports'); process.exit(2); }`,
+    `dw.injectedSource().then((src) => {`,
+    `  if (typeof src === 'string' && src.includes('__deltawright')) console.log('OK');`,
+    `  else { console.error('BAD observer source'); process.exit(3); }`,
+    `}).catch((e) => { console.error('injectedSource: ' + e.message); process.exit(4); });`,
+  ].join('\n');
+  const out = execFileSync('node', ['-e', script], { cwd: root, encoding: 'utf8' });
+  expect(out.trim()).toBe('OK');
+});
+
 test('should_import_matchers_subpath_from_dist', () => {
   // The `deltawright/matchers` subpath (#53) resolves from dist under plain node and exports the
   // preflight fn + matcher bag as functions/objects.

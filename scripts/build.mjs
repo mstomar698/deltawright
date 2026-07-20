@@ -14,25 +14,11 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 
-// 1. Compile the public entry points. `clean` wipes dist/ first, so this runs
-//    before the observer emit below.
-await tsupBuild({
-  entry: {
-    index: 'src/index.ts',
-    'mcp/server': 'src/mcp/server.ts',
-    'matchers/index': 'src/matchers/index.ts',
-    'reporter/index': 'src/reporter/index.ts',
-    'wait/index': 'src/wait/index.ts',
-    'aggregate/index': 'src/aggregate/index.ts',
-    'trace/diagnose-trace': 'src/trace/diagnose-trace.ts',
-    cli: 'src/cli.ts',
-  },
+const commonTsup = {
   outDir: 'dist',
-  format: ['esm'],
   target: 'node20',
   platform: 'node',
   dts: true,
-  clean: true,
   splitting: false,
   sourcemap: false,
   treeshake: true,
@@ -40,6 +26,39 @@ await tsupBuild({
   // (src/host/inject.ts). Never bundle it into the published output.
   external: ['esbuild'],
   silent: true,
+};
+
+// 1a. The LIBRARY entries a consumer imports OR requires → DUAL package (ESM `.js` + CJS `.cjs`), so
+//     both `import 'deltawright'` and `require('deltawright')` work (the CJS friction blocked adoption).
+//     `shims:true` polyfills `import.meta.url` in the CJS outputs ONLY (inject.ts reads it to locate the
+//     pre-bundled observer); the ESM outputs keep NATIVE `import.meta.url`. `clean` wipes dist/ first.
+await tsupBuild({
+  ...commonTsup,
+  entry: {
+    index: 'src/index.ts',
+    'matchers/index': 'src/matchers/index.ts',
+    'reporter/index': 'src/reporter/index.ts',
+    'wait/index': 'src/wait/index.ts',
+    'aggregate/index': 'src/aggregate/index.ts',
+  },
+  format: ['esm', 'cjs'],
+  shims: true,
+  clean: true,
+});
+
+// 1b. The BINS + a top-level-await module stay ESM-ONLY: `mcp/server` uses top-level await (CJS can't)
+//     and IS the `deltawright-mcp` bin; `cli` is the `deltawright` bin; `trace/diagnose-trace` is an
+//     internal entry the (ESM) cli dynamically imports. Embedders needing `deltawright/mcp` from CJS use
+//     `await import('deltawright/mcp')`. `clean:false` — these land alongside the dual outputs above.
+await tsupBuild({
+  ...commonTsup,
+  entry: {
+    'mcp/server': 'src/mcp/server.ts',
+    'trace/diagnose-trace': 'src/trace/diagnose-trace.ts',
+    cli: 'src/cli.ts',
+  },
+  format: ['esm'],
+  clean: false,
 });
 
 // 2. Pre-bundle the injected page script into a self-contained IIFE. Same esbuild
