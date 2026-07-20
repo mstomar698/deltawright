@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright scoreSelectors fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    button, a, input { font-size: 14px; }
+    #panel { position: absolute; left: 100px; top: 100px; width: 360px; }
+    #panel > * { position: absolute; }
+  </style>
+</head>
+<body>
+  <button id="go">Build</button>
+  <script>
+    // Clicking #go inserts a panel (one added subtree) with a spread of selector-durability cases:
+    //   • a DURABLE role+name button ("Save")
+    //   • an UNSTABLE-ID button whose accessible name is a generated id ("item-10847")
+    //   • TWO identical "Delete" buttons → ambiguous
+    //   • a TEXT-VOLATILE link ("Order #10847")
+    //   • two unnamed inputs → getByRole('textbox') is ambiguous, so neither has a verified semantic
+    //     selector; the one placed NEXT TO "Save" is the geometry-relative fallback target.
+    document.getElementById('go').addEventListener('click', () => {
+      const panel = document.createElement('div');
+      panel.id = 'panel';
+      panel.innerHTML =
+        '<button class="save" style="left:0;top:0;">Save</button>' +
+        '<button aria-label="item-10847" style="left:160px;top:0;">✕</button>' +
+        '<input class="near" style="left:0;top:34px;width:150px;" />' +
+        '<button class="del1" style="left:0;top:72px;">Delete</button>' +
+        '<button class="del2" style="left:120px;top:72px;">Delete</button>' +
+        '<a class="order" href="#" style="left:0;top:110px;">Order #10847</a>' +
+        '<input class="far" style="left:0;top:240px;width:150px;" />';
+      document.body.appendChild(panel);
+    });
+  </script>
+</body>
+</html>

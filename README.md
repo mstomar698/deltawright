@@ -148,6 +148,22 @@ expect(delta).toMatchDeltaChecksum('submit-opens-dialog'); // or .toMatchDeltaSn
 
 It tolerates pixel/timing jitter but fails on a **verdict or tree change**, storing baselines in `__dw_checksums__/` (refresh with `DW_UPDATE_CHECKSUMS=1`, `--update-snapshots`, or `deltawright checksum --update -- <cmd>`) and rendering a structural diff on mismatch. `matchDeltaChecksum(delta, file)` is available as a plain function too. `verifySuggestions(root, delta)` rounds each `suggest(delta)` selector candidate through the live page and re-ranks verified-first, for stable-selector / assertion generation.
 
+### Durable-selector scoring: `scoreSelectors`
+
+`scoreSelectors(root, delta, opts?)` (in `deltawright/matchers`) layers a **durability score** on `verifySuggestions`: where verify says *does this resolve uniquely to the changed element*, `scoreSelectors` adds *…and how likely is it to keep working*.
+
+```ts
+import { scoreSelectors } from 'deltawright/matchers';
+
+const delta = await actAndObserve(page, (p) => p.click('#save'));
+const { selectors, bestDurable, warnings } = await scoreSelectors(page, delta);
+// each: { durability: 0..100, grade: 'durable'|'usable'|'brittle'|'broken', flags: [...] }
+```
+
+Each candidate gets a `durability` (0–100), a `grade`, and brittleness `flags` — `unstable-id` (a generated accessible name like `item-10847`), `text-volatile` (a name with an order number/price/date), `ambiguous`, `heuristic-role-unverified`, `tag-only`, `occluded`/`offscreen`/`not-actionable`. When nothing semantic verifies for a node, it synthesizes a **delta-anchored geometry-relative fallback** (`<tag>:near(:text("<nearest verified anchor>"))`), re-verified and graded as the last-resort handle it is. `bestDurable` is the top verified, non-brittle candidate — or `null` (with a warning) rather than a brittle hand-off.
+
+**Honesty:** `durability` is a **single-page ESTIMATE** — a brittleness proxy, never a claim of stability across releases or re-renders. (The only sound cross-render signal is a two-snapshot re-check, a deliberate follow-up.)
+
 ## Use it as an MCP server
 
 Deltawright ships a stdio MCP server so agents consume deltas natively:

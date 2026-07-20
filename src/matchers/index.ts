@@ -30,6 +30,13 @@ export type {
   VerifyStatus,
   VerifySuggestionsOptions,
 } from './verify-suggest';
+export { scoreSelectors } from './score-selectors';
+export type {
+  DurableSuggestResult,
+  ScoredSelectorSuggestion,
+  SelectorGrade,
+  ScoreSelectorsOptions,
+} from './score-selectors';
 
 import type { PreflightOptions } from './actionable';
 

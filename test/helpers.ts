@@ -19,3 +19,6 @@ export const PAGEMAP_FIXTURE_URL = fixtureUrl('pagemap.html');
 
 /** file:// URL of the effect-settle fixture (client re-render, background ticker, canvas, no-op). */
 export const EFFECT_SETTLE_FIXTURE_URL = fixtureUrl('effect-settle.html');
+
+/** file:// URL of the scoreSelectors fixture (durable / unstable-id / ambiguous / text-volatile / geom). */
+export const SCORE_SELECTORS_FIXTURE_URL = fixtureUrl('score-selectors.html');
