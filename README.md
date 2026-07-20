@@ -261,6 +261,23 @@ if (obs.hitMaxWait) console.warn('never settled within the cap');
 
 It is explicitly a *signal*, not a readiness guarantee, a retry, or a flake suppressant.
 
+### Wait for the action's own effect to land: `observeEffectSettled`
+
+`observeEffectSettled(page, action, opts?)` answers the harder question: **has *this action's* effect landed and gone still — without a static sleep and without global `networkidle`**, including the case both miss: a client-side re-render with **zero network activity**.
+
+```ts
+import { observeEffectSettled } from 'deltawright/wait';
+
+const obs = await observeEffectSettled(page, (p) => p.click('#save'));
+// obs.effectAppeared, obs.settledMs, obs.region, obs.hitMaxWait, obs.suspectedEarly, obs.signals
+```
+
+It waits for the **first non-background mutation** (the causal "appeared" edge — nothing named in advance), seeds a **region** from that effect, then waits until the **region** goes still — *only* non-background mutations **intersecting the region** reset the quiet timer, so a background ticker/poll **outside** it can't. This is why it is **not `networkidle` rebranded**: the region comes from the observed effect and the settle is local.
+
+- **Not a guarantee.** No `ready`/`safe`/`settled` boolean, no retry (same discipline as `observeConsequences`). `effectAppeared:false` is an honest "no effect observed" (never a fake settle); `hitMaxWait:true` is INCONCLUSIVE; `suspectedEarly` flags a late wave into the region. The caller decides.
+- **Background-churn-immune** via the pre-action baseline (learns the background footprint so a ticker/toast isn't mistaken for the effect). Opt into a network-idle gate with `{ awaitQuiescence: true }`.
+- **No-DOM effects** (a `<canvas>`/WebGL draw) honestly report `effectAppeared:false` — compose the public `diffChangedRegion` (from the main `deltawright` entry) to localize them by pixels. (Kept out of `deltawright/wait` so that subpath stays lean.)
+
 ## Diagnose a failing trace, offline
 
 Already have a `trace.zip` from a failed CI run? Explain the failing action **without re-running it** — no browser, no flake, no reproduction:

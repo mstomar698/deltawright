@@ -16,3 +16,6 @@ export const GWT_FIXTURE_URL = fixtureUrl('gwt.html');
 
 /** file:// URL of the pageMap fixture (poor-a11y div-soup + overlay occlusion of look-alikes). */
 export const PAGEMAP_FIXTURE_URL = fixtureUrl('pagemap.html');
+
+/** file:// URL of the effect-settle fixture (client re-render, background ticker, canvas, no-op). */
+export const EFFECT_SETTLE_FIXTURE_URL = fixtureUrl('effect-settle.html');

@@ -25,6 +25,9 @@ import type {
   RawPageMap,
   RawPageMapNode,
   PageMapLayer,
+  Rect,
+  EffectSettleOptions,
+  EffectSettleResult,
 } from '../host/types';
 
 declare global {
@@ -63,6 +66,12 @@ declare global {
   // rows / virtualized lists), so background-added subtrees are excluded too (#30).
   let bgInsert = new Set<string>();
   let bgInsertCount = new Map<string, number>();
+  // Recurring element-REMOVAL signatures seen in the baseline (auto-dismissing toasts, virtualized
+  // rows recycling out), so background removals are not mistaken for the action's effect by the R1
+  // effect-settle. Symmetric with bgInsert; consumed ONLY by effectTargetsOf (the delta path does not
+  // read it, so the delta output is byte-unchanged). Same lifecycle as bgInsert.
+  let bgRemove = new Set<string>();
+  let bgRemoveCount = new Map<string, number>();
   // In-window insertion-signature tally (#7 detection). Counts RAW insertion events during the
   // settle window (add-then-remove churn still counts), so a container that only STARTS churning
   // AFTER the action — invisible to the pre-arm baseline `bgInsert` — is still detectable. Read at
@@ -453,6 +462,232 @@ declare global {
     });
   }
 
+  // --- Region-scoped effect-settle (R1) ------------------------------------
+  // The effect TARGETS of a mutation: the elements whose rects define the effect region, or [] when the
+  // mutation is BACKGROUND (matches a pre-arm baseline footprint) or DW's own bookkeeping. Reuses the
+  // SAME footprints (bgAttr/bgText/bgInsert) the delta's causal attribution uses — so "the action's own
+  // effect" here means exactly what it means for the delta, keyed to the action, not to global activity.
+  function effectTargetsOf(m: MutationRecord): Element[] {
+    if (m.type === 'attributes') {
+      if (!isElement(m.target)) return [];
+      const name = m.attributeName ?? '';
+      if (name === 'data-dw-ref' || name === 'data-dw-map-ref') return []; // DW's own bookkeeping
+      const bg = bgAttr.get(m.target);
+      return bg && bg.has(name) ? [] : [m.target];
+    }
+    if (m.type === 'characterData') {
+      const parent = (m.target as CharacterData).parentElement;
+      return parent && !bgText.has(parent) ? [parent] : [];
+    }
+    // childList: added elements not in a background insertion signature, text-node adds on a non-bg
+    // parent, and removals (a detached node has no rect — use its former parent, the record target).
+    const out: Element[] = [];
+    m.addedNodes.forEach((n) => {
+      if (isElement(n)) {
+        if (!(bgInsert.size > 0 && bgInsert.has(insertSig(n)))) out.push(n);
+      } else if (isText(n) && n.parentElement && !bgText.has(n.parentElement)) {
+        out.push(n.parentElement);
+      }
+    });
+    m.removedNodes.forEach((n) => {
+      if (!isElement(m.target)) return;
+      const parent = m.target;
+      if (isElement(n)) {
+        // A recurring background removal (auto-dismiss toast, recycled virtualized row) is not the
+        // action's effect; other element removals are the effect on the former parent.
+        if (!(bgRemove.size > 0 && bgRemove.has(removeSig(n, parent)))) out.push(parent);
+      } else if (isText(n) && !bgText.has(parent)) {
+        out.push(parent);
+      }
+    });
+    return out;
+  }
+
+  interface EffectRect {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }
+
+  // Wait until the ACTION'S OWN EFFECT has landed and its region has gone still. Runs against the SAME
+  // buffered `records` the observer is already filling (a settle VARIANT, not a second observer). See
+  // the DeltawrightApi doc + docs/research/01-wait-free-readiness.md §6.
+  function waitForEffectSettle(opts: EffectSettleOptions): Promise<EffectSettleResult> {
+    const t0 = armStart;
+    const start = performance.now();
+    const deadline = start + opts.maxWaitMs;
+    const appearDeadline = Math.min(start + opts.appearTimeoutMs, deadline);
+    const awaitQ = opts.awaitQuiescence === true;
+    const tick = Math.max(5, Math.min(opts.quietMs, 25));
+
+    let processed = 0;
+    let region: EffectRect | null = null;
+    const regionRoots = new Set<Element>();
+    let appearedMs: number | null = null;
+    let lastEffectAt = 0;
+
+    const rectOf = (el: Element): EffectRect | null => {
+      try {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 && r.height <= 0) return null;
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      } catch {
+        return null;
+      }
+    };
+    const intersects = (a: EffectRect, b: EffectRect): boolean =>
+      a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const unite = (a: EffectRect | null, b: EffectRect): EffectRect =>
+      a
+        ? {
+            left: Math.min(a.left, b.left),
+            top: Math.min(a.top, b.top),
+            right: Math.max(a.right, b.right),
+            bottom: Math.max(a.bottom, b.bottom),
+          }
+        : { ...b };
+    const toRect = (e: EffectRect | null): Rect | null =>
+      e
+        ? {
+            x: round(e.left),
+            y: round(e.top),
+            width: round(e.right - e.left),
+            height: round(e.bottom - e.top),
+          }
+        : null;
+
+    // Drain records seen since the last call. Before a region exists (appear phase) every effect rect
+    // seeds it; afterwards only rects INTERSECTING the region count — so background churn OUTSIDE the
+    // region can never reset the settle (the whole point vs global quiescence / networkidle).
+    const drainEffects = (regionScoped: boolean): EffectRect[] => {
+      const hits: EffectRect[] = [];
+      for (; processed < records.length; processed++) {
+        for (const el of effectTargetsOf(records[processed]!)) {
+          const r = rectOf(el);
+          if (!r) continue;
+          if (regionScoped && region && !intersects(r, region)) continue;
+          hits.push(r);
+          regionRoots.add(el);
+        }
+      }
+      return hits;
+    };
+
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+    return (async (): Promise<EffectSettleResult> => {
+      // PHASE 1 — the effect APPEARS (the first-effect edge; nothing is named in advance).
+      for (;;) {
+        const hits = drainEffects(false);
+        if (hits.length) {
+          for (const r of hits) region = unite(region, r);
+          appearedMs = round(performance.now() - t0);
+          lastEffectAt = performance.now();
+          break;
+        }
+        const now = performance.now();
+        if (now >= appearDeadline) {
+          // No non-background effect within the appear window — honest "no effect", NEVER "ready".
+          // hitMaxWait is TRUE here (we waited the whole appear window and saw nothing conclusive): a
+          // consumer glancing only at hitMaxWait must never read a no-effect action as a clean settle.
+          return {
+            effectAppeared: false,
+            appearedMs: null,
+            settledMs: round(now - t0),
+            region: null,
+            hitMaxWait: true,
+            suspectedEarly: false,
+            signals: {
+              structuralQuiet: false,
+              animationsSettled: false,
+              ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
+            },
+          };
+        }
+        await sleep(tick);
+      }
+
+      // PHASE 2 — the region STABILIZES (region-scoped; background-outside can't reset it).
+      for (;;) {
+        const hits = drainEffects(true);
+        if (hits.length) {
+          for (const r of hits) region = unite(region, r);
+          lastEffectAt = performance.now();
+        }
+        const now = performance.now();
+        const structuralQuiet = now - lastEffectAt >= opts.quietMs;
+
+        // HARD CAP hit without going quiet → return INCONCLUSIVE immediately. Do NOT run the animation
+        // wait or the late-watch here — on a region that never quiesces they would overshoot maxWaitMs
+        // by up to animMaxMs + lateWatchMs.
+        if (!structuralQuiet && now >= deadline) {
+          return {
+            effectAppeared: true,
+            appearedMs,
+            settledMs: round(now - t0),
+            region: toRect(region),
+            hitMaxWait: true,
+            suspectedEarly: false,
+            signals: {
+              structuralQuiet: false,
+              animationsSettled: false,
+              ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
+            },
+          };
+        }
+
+        if (structuralQuiet) {
+          // Fuse the WAAPI animation-settle on the region's roots (budget clamped to the time left before
+          // the cap), then RE-verify quiet + network — a mutation can land during the animation wait.
+          const animBudget = Math.max(0, Math.min(opts.animMaxMs, deadline - performance.now()));
+          await settleAnimations(
+            [...regionRoots].filter((e) => e.isConnected),
+            animBudget,
+          );
+          const during = drainEffects(true);
+          if (during.length) {
+            for (const r of during) region = unite(region, r);
+            lastEffectAt = performance.now();
+          }
+          const now2 = performance.now();
+          const stillQuiet = now2 - lastEffectAt >= opts.quietMs;
+          const networkIdle = !awaitQ || isQuiescent();
+          const cleanSettle = stillQuiet && networkIdle;
+          const capped2 = now2 >= deadline;
+          if (cleanSettle || capped2) {
+            // On a CLEAN settle, run the region-scoped late-watch (gap-E): a later effect intersecting
+            // the region is a late wave → suspectedEarly. On a cap WITHOUT a clean settle, return
+            // INCONCLUSIVE immediately (no late-watch — it would overshoot the cap for no signal).
+            let suspectedEarly = false;
+            if (cleanSettle && opts.lateWatchMs > 0) {
+              const lateDeadline = now2 + opts.lateWatchMs;
+              while (performance.now() < lateDeadline) {
+                await sleep(Math.min(opts.lateWatchMs, 25));
+                if (drainEffects(true).length) suspectedEarly = true;
+              }
+            }
+            return {
+              effectAppeared: true,
+              appearedMs,
+              settledMs: round(now2 - t0),
+              region: toRect(region),
+              hitMaxWait: !cleanSettle,
+              suspectedEarly,
+              signals: {
+                structuralQuiet: stillQuiet,
+                animationsSettled: true,
+                ...(awaitQ ? { networkIdle } : {}),
+              },
+            };
+          }
+          // network still busy (or a re-reset during the animation wait) and not capped → keep polling.
+        }
+        await sleep(tick);
+      }
+    })();
+  }
+
   // --- Baseline (causal attribution, #15) ----------------------------------
   function noteBackground(m: MutationRecord): void {
     if (m.type === 'attributes' && isElement(m.target)) {
@@ -479,6 +714,16 @@ declare global {
           bgInsertCount.set(s, (bgInsertCount.get(s) ?? 0) + 1);
         }
       });
+      // Tally element-REMOVAL signatures too (a removed node's parentElement is already null, so use
+      // m.target as the former parent) — a recurring removal is an auto-dismissing toast / recycled row.
+      if (isElement(m.target)) {
+        m.removedNodes.forEach((n) => {
+          if (isElement(n)) {
+            const s = removeSig(n, m.target as Element);
+            bgRemoveCount.set(s, (bgRemoveCount.get(s) ?? 0) + 1);
+          }
+        });
+      }
     }
   }
 
@@ -488,6 +733,13 @@ declare global {
     const parent = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
     const cls = el.classList[0] ?? el.getAttribute('role') ?? '';
     return `${parent}>${el.tagName.toLowerCase()}.${cls}`;
+  }
+
+  // Signature of a REMOVED element, using its former parent (the mutation target, since the node's
+  // own parentElement is null by removal). Same shape as insertSig so effect classification matches.
+  function removeSig(el: Element, parent: Element): string {
+    const cls = el.classList[0] ?? el.getAttribute('role') ?? '';
+    return `${parent.tagName.toLowerCase()}>${el.tagName.toLowerCase()}.${cls}`;
   }
 
   // Observe the page briefly BEFORE the action to learn what is already churning, so
@@ -501,6 +753,8 @@ declare global {
     bgAttr = new Map();
     bgInsert = new Set();
     bgInsertCount = new Map();
+    bgRemove = new Set();
+    bgRemoveCount = new Map();
     return new Promise((resolve) => {
       let sawAny = false;
       const obs = new MutationObserver((muts) => {
@@ -518,11 +772,12 @@ declare global {
         const elapsed = performance.now() - start;
         if ((!sawAny && elapsed >= opts.earlyExitMs) || elapsed >= opts.baselineMs) {
           obs.disconnect();
-          // A signature inserted >= 2x during the baseline is a background pattern.
+          // A signature inserted (or removed) >= 2x during the baseline is a background pattern.
           for (const [sig, count] of bgInsertCount) if (count >= 2) bgInsert.add(sig);
+          for (const [sig, count] of bgRemoveCount) if (count >= 2) bgRemove.add(sig);
           resolve({
             sampledMs: Math.round(elapsed),
-            footprintSize: bgText.size + bgAttr.size + bgInsert.size,
+            footprintSize: bgText.size + bgAttr.size + bgInsert.size + bgRemove.size,
           });
         } else {
           setTimeout(check, 20);
@@ -964,6 +1219,8 @@ declare global {
     bgAttr = new Map();
     bgInsert = new Set();
     bgInsertCount = new Map();
+    bgRemove = new Set();
+    bgRemoveCount = new Map();
     winInsertCount = new Map();
 
     return {
@@ -1201,6 +1458,7 @@ declare global {
     lateResult,
     recheckRects,
     scan,
+    waitForEffectSettle,
     // Preflight (#53): stateless on-demand geometry read for the actionability matcher's [geom:]
     // annotation. Reuses the SAME readGeometry as collect (one source of truth for geometry); it
     // never touches observer/arm/collect state, so it is safe to call standalone.

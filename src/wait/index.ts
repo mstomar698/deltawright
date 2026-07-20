@@ -1,11 +1,17 @@
 import type { Page } from '@playwright/test';
 import { ensureInjected, InjectionBlockedError } from '../host/inject';
 import type { Action } from '../host/actAndObserve';
-// DEFAULT_SETTLE comes from the side-effect-free `types` leaf, NOT actAndObserve, so this lean subpath
-// does not eagerly pull actAndObserve's screenshot-diff/pngjs subtree.
+// DEFAULT_SETTLE / DEFAULT_EFFECT_SETTLE come from the side-effect-free `types` leaf, NOT actAndObserve,
+// so this lean subpath does not eagerly pull actAndObserve's screenshot-diff/pngjs subtree. Nothing here
+// imports screenshot-diff — observeEffectSettled keeps the no-DOM pixel fallback OUT of this subpath
+// (callers compose the public `diffChangedRegion` from the main entry), so it stays pngjs-free.
 import {
   DEFAULT_SETTLE,
+  DEFAULT_EFFECT_SETTLE,
+  type BaselineOptions,
   type DeltawrightApi,
+  type EffectSettleOptions,
+  type EffectSettleResult,
   type SettleOptions,
   type SettleResult,
 } from '../host/types';
@@ -142,6 +148,125 @@ export async function observeConsequences(
     // We skipped collect() (which normally stops the observer), so ALWAYS disconnect it — even if the
     // action / an evaluate threw — so no MutationObserver is left running. Best-effort: a closed page
     // makes reset() throw; swallow that so it never masks the original error.
+    await page
+      .evaluate(() => (window as unknown as DwWindow).__deltawright!.reset())
+      .catch(() => {});
+  }
+}
+
+// --- observeEffectSettled (R1) -------------------------------------------
+// The differentiated readiness capability: know the ACTION'S OWN EFFECT has landed and its region has
+// gone still — WITHOUT a static sleep and WITHOUT global networkidle, including the case both miss (a
+// no-network client re-render). NOT networkidle rebranded: the region comes from the OBSERVED effect
+// (nothing named in advance), and the settle is LOCAL (background churn outside the region can't reset
+// it). Same honesty discipline as observeConsequences — no `ready` boolean, no retry; the caller reads
+// `effectAppeared` / `hitMaxWait` / `suspectedEarly` and decides.
+
+const DEFAULT_BASELINE_MS = 150;
+const DEFAULT_BASELINE_EARLY_EXIT_MS = 60;
+
+export interface ObserveEffectSettledOptions {
+  /** Region must see no non-background effect mutation for this long to be "settled" (default 120). */
+  quietMs?: number;
+  /** Hard cap from arm; on hit → `hitMaxWait:true` (INCONCLUSIVE) (default 2000). */
+  maxWaitMs?: number;
+  /** WAAPI animation-settle budget on the region roots (default 1000). */
+  animMaxMs?: number;
+  /** How long to wait for the effect to APPEAR before `effectAppeared:false` (default 2000). */
+  appearTimeoutMs?: number;
+  /** Region-scoped late-watch after settle → `suspectedEarly`; 0 to skip (default 300). */
+  lateWatchMs?: number;
+  /** Opt-in network-idle accelerator (in-flight XHR/fetch count 0 + no framework hook busy). */
+  awaitQuiescence?: boolean;
+  /**
+   * Pre-action baseline sampling (learns the background footprint so a ticker/toast is not mistaken for
+   * the effect). ON by default — the effect-settle is only background-churn-immune WITH it. `baseline:
+   * false` disables it (then the FIRST mutation of any kind is treated as the effect).
+   */
+  baseline?: boolean;
+  baselineMs?: number;
+  baselineEarlyExitMs?: number;
+}
+
+export interface EffectSettleObservation extends EffectSettleResult {
+  /** false when the observer could not be injected (strict CSP / non-Chromium) — NOTHING was observed. */
+  observed: boolean;
+  /** present when `observed` is false: the skip reason. */
+  skippedReason?: string;
+}
+
+// A DOM-less effect (e.g. a `<canvas>`/WebGL draw) mutates no DOM, so `effectAppeared` is honestly
+// false. To localize it by pixels, COMPOSE the already-public `diffChangedRegion` from the main
+// `deltawright` entry — kept out of this module deliberately so the wait subpath stays lean (no pngjs).
+
+/**
+ * Perform `action`, then observe when the action's OWN effect has landed and its region has gone still
+ * — the region-scoped, assertion-free, causal effect-settle (R1). See the section header + the
+ * DeltawrightApi doc. Honest by construction: no `ready` boolean, no retry.
+ */
+export async function observeEffectSettled(
+  page: Page,
+  action: Action,
+  opts: ObserveEffectSettledOptions = {},
+): Promise<EffectSettleObservation> {
+  const settle: EffectSettleOptions = {
+    quietMs: opts.quietMs ?? DEFAULT_EFFECT_SETTLE.quietMs,
+    maxWaitMs: opts.maxWaitMs ?? DEFAULT_EFFECT_SETTLE.maxWaitMs,
+    animMaxMs: opts.animMaxMs ?? DEFAULT_EFFECT_SETTLE.animMaxMs,
+    appearTimeoutMs: opts.appearTimeoutMs ?? DEFAULT_EFFECT_SETTLE.appearTimeoutMs,
+    lateWatchMs: opts.lateWatchMs ?? DEFAULT_EFFECT_SETTLE.lateWatchMs,
+    awaitQuiescence: opts.awaitQuiescence === true,
+  };
+
+  // Degrade under a strict CSP / non-Chromium: still run the action, report observed:false + a reason.
+  try {
+    await ensureInjected(page);
+  } catch (err) {
+    if (!(err instanceof InjectionBlockedError)) throw err;
+    await action(page);
+    return {
+      observed: false,
+      skippedReason:
+        'observer injection blocked (strict CSP / non-Chromium) — effect-settle not observed',
+      effectAppeared: false,
+      appearedMs: null,
+      settledMs: 0,
+      region: null,
+      hitMaxWait: false,
+      suspectedEarly: false,
+      signals: { structuralQuiet: false, animationsSettled: false },
+    };
+  }
+
+  // Baseline (learns the background footprint) — ON by default; without it the effect-settle can't tell
+  // a background ticker from the action's effect.
+  const baseline: BaselineOptions | null =
+    opts.baseline === false
+      ? null
+      : {
+          baselineMs: opts.baselineMs ?? DEFAULT_BASELINE_MS,
+          earlyExitMs: opts.baselineEarlyExitMs ?? DEFAULT_BASELINE_EARLY_EXIT_MS,
+        };
+  if (baseline) {
+    await page.evaluate<{ sampledMs: number; footprintSize: number }, BaselineOptions>(
+      (o) => (window as unknown as DwWindow).__deltawright!.sampleBaseline(o),
+      baseline,
+    );
+  }
+
+  await page.evaluate(() => (window as unknown as DwWindow).__deltawright!.arm(false));
+  if (settle.awaitQuiescence) {
+    await page.evaluate(() => (window as unknown as DwWindow).__deltawright!.enableQuiescence());
+  }
+
+  try {
+    await action(page);
+    const res = await page.evaluate<EffectSettleResult, EffectSettleOptions>(
+      (o) => (window as unknown as DwWindow).__deltawright!.waitForEffectSettle(o),
+      settle,
+    );
+    return { ...res, observed: true };
+  } finally {
     await page
       .evaluate(() => (window as unknown as DwWindow).__deltawright!.reset())
       .catch(() => {});

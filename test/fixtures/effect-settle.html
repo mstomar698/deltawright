@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright effect-settle fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #111; }
+    button { font-size: 15px; padding: 8px 14px; margin: 6px; }
+    .controls { position: absolute; left: 20px; top: 300px; }
+    #feed { position: absolute; left: 20px; top: 20px; width: 200px; margin: 0; padding: 0; list-style: none; }
+    #feed li { height: 14px; font-size: 11px; color: #999; }
+    #panel { position: absolute; left: 420px; top: 200px; width: 260px; min-height: 40px; border: 1px solid #ccc; padding: 8px; }
+    #effect-area { position: absolute; left: 900px; top: 480px; width: 220px; min-height: 60px; border: 1px dashed #99c; padding: 8px; }
+    #result { background: #dfe; padding: 6px; }
+    canvas { position: absolute; left: 620px; top: 60px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <!-- Background feed for the ticker (spatially separate from the effect area). -->
+  <ul id="feed"></ul>
+
+  <!-- Client re-render target (scenario a). -->
+  <div id="panel">panel</div>
+
+  <!-- Canvas (scenario c): a repaint mutates pixels but NOT the DOM. -->
+  <canvas id="c" width="200" height="140"></canvas>
+
+  <!-- Delayed real effect target (scenario b), far from the feed. -->
+  <div id="effect-area">effect area</div>
+
+  <div class="controls">
+    <button id="client-rerender">Client re-render (no network)</button>
+    <button id="delayed-effect">Delayed effect (amid churn)</button>
+    <button id="canvas-draw">Canvas draw (no DOM)</button>
+    <button id="no-op">No-op</button>
+  </div>
+
+  <script>
+    // (a) A NO-NETWORK client re-render, 300ms after the click: appends a child to #panel. No fetch/XHR,
+    //     so networkidle returns before this lands; the effect-settle must wait for the DOM change.
+    document.getElementById('client-rerender').addEventListener('click', () => {
+      setTimeout(() => {
+        const p = document.createElement('p');
+        p.id = 'rendered';
+        p.textContent = 'Rendered client-side';
+        document.getElementById('panel').appendChild(p);
+      }, 300);
+    });
+
+    // (b) A delayed REAL effect at 300ms, in #effect-area — far from the background feed. With the
+    //     ticker running, a global settle over-waits to the cap; the region-scoped settle lands on this.
+    document.getElementById('delayed-effect').addEventListener('click', () => {
+      setTimeout(() => {
+        const d = document.createElement('div');
+        d.id = 'result';
+        d.textContent = 'Done';
+        document.getElementById('effect-area').appendChild(d);
+      }, 300);
+    });
+
+    // (c) A canvas repaint: changes pixels, mutates NO DOM. effectAppeared is false unless the
+    //     screenshot fallback localizes it.
+    const ctx = document.getElementById('c').getContext('2d');
+    ctx.fillStyle = '#eef';
+    ctx.fillRect(0, 0, 200, 140);
+    document.getElementById('canvas-draw').addEventListener('click', () => {
+      ctx.fillStyle = '#c33';
+      ctx.fillRect(30, 30, 140, 80);
+    });
+
+    // (d) No-op: the click does nothing at all.
+
+    // The background ticker (scenario b): started on demand by the test so other scenarios stay clean.
+    // Inserts a feed row every 30ms → the pre-action baseline sees it recur → classifies it background.
+    let tickTimer = null;
+    window.startTicker = function () {
+      if (tickTimer) return;
+      tickTimer = setInterval(() => {
+        const li = document.createElement('li');
+        li.className = 'tick';
+        li.textContent = 'tick ' + Date.now();
+        document.getElementById('feed').appendChild(li);
+      }, 30);
+    };
+
+    // A virtualized-list RECYCLER: every 30ms it removes the first feed row AND appends a new one — so
+    // the background churn is REMOVAL-dominant (exercises the baseline's recurring-removal channel).
+    window.startRecycler = function () {
+      const feed = document.getElementById('feed');
+      for (let i = 0; i < 15; i++) {
+        const li = document.createElement('li');
+        li.className = 'row';
+        li.textContent = 'row ' + i;
+        feed.appendChild(li);
+      }
+      if (tickTimer) return;
+      tickTimer = setInterval(() => {
+        if (feed.firstChild) feed.removeChild(feed.firstChild); // recycle out (removal churn)
+        const li = document.createElement('li');
+        li.className = 'row';
+        li.textContent = 'row ' + Date.now();
+        feed.appendChild(li); // recycle in (insertion churn)
+      }, 30);
+    };
+  </script>
+</body>
+</html>
