@@ -118,3 +118,26 @@ test('a synchronous XHR.send() throw does not leak the counter', async ({ page }
   );
   expect(quiescent, 'the sync throw did NOT leak inFlight — the counter is not wedged').toBe(true);
 });
+
+test('a synchronous XHR that COMPLETES does not leak the counter (loadend fires during send)', async ({
+  page,
+}) => {
+  await page.goto(URL);
+  // Enable the counter, then issue a SYNC XHR that completes: its load/loadend fire DURING send(),
+  // before send() returns — a decrement listener attached AFTER send() (the old code) would miss it
+  // and wedge inFlight at ≥1 for the page's life. The fix attaches it BEFORE apply.
+  await actAndObserve(page, (p) => p.click('#go'), { label: 'go', awaitQuiescence: true });
+  await page.evaluate(() => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'data:text/plain,ok', false); // synchronous
+    xhr.send();
+  });
+  const quiescent = await page.evaluate(() =>
+    (
+      window as unknown as { __deltawright: { isQuiescent(): boolean } }
+    ).__deltawright.isQuiescent(),
+  );
+  expect(quiescent, 'the completed sync XHR balanced inFlight — the counter is not wedged').toBe(
+    true,
+  );
+});

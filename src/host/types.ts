@@ -356,7 +356,10 @@ export interface EffectSettleResult {
   /** false = no non-background change was observed within `appearTimeoutMs` (honest "no effect"), which
    *  is NOT "ready". The host may still localize a canvas/no-DOM effect via a screenshot fallback. */
   effectAppeared: boolean;
-  /** arm → first non-background effect mutation (null when none appeared). */
+  /** arm → the first non-background effect mutation was PROCESSED (null when none appeared). Approximate:
+   *  MutationRecords carry no timestamp, so this is stamped when the poll drains the record, not when the
+   *  mutation fired — a tight lower bound for a fresh effect, but it can lag a burst that landed between
+   *  polls or before the call. */
   appearedMs: number | null;
   /** arm → the region went still (or the cap). */
   settledMs: number;

@@ -82,7 +82,15 @@ function harnessBucket(line: string): string {
     )
   )
     return 'conn/network';
-  if (/bad gateway|service unavailable|gateway time|internal server error|\b5\d\d\b/i.test(line))
+  // The bare `5\d\d` must be the status token that IMMEDIATELY follows a status indicator
+  // (`status`/`code`/`http`, allowing an `HTTP/1.1`-style version) — a free-floating 5xx-shaped number
+  // elsewhere on a 4xx line (its incidental `(took 503 ms)`) must NOT flip the label. Named 5xx phrases
+  // are unambiguous on their own.
+  if (
+    /bad gateway|service unavailable|gateway time|internal server error|(?:status|code|http)\S*\s*5\d\d\b/i.test(
+      line,
+    )
+  )
     return '5xx/gateway';
   return '4xx';
 }

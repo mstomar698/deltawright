@@ -210,6 +210,7 @@ async function armChildFrames(
   enabled: boolean,
   baseline: BaselineOptions | null,
   inWindowRecurrence: boolean,
+  awaitQuiescence: boolean,
 ): Promise<{ armed: ArmedFrame[]; skipped: number }> {
   if (!enabled) return { armed: [], skipped: 0 };
   const mainFrame = page.mainFrame();
@@ -230,6 +231,13 @@ async function armChildFrames(
         (iwr) => (window as unknown as DwWindow).__deltawright!.arm(iwr),
         inWindowRecurrence,
       );
+      // Honor awaitQuiescence INSIDE the frame too — else the frame's isQuiescent() is always true (its
+      // globals were never patched) and the frame silently skips the network gate the caller asked for.
+      if (awaitQuiescence) {
+        await frame.evaluate(() =>
+          (window as unknown as DwWindow).__deltawright!.enableQuiescence(),
+        );
+      }
       let offset = { x: 0, y: 0 };
       try {
         const box = await (await frame.frameElement()).boundingBox();
@@ -346,6 +354,7 @@ export async function actAndObserve(
     opts.frames === true,
     baseline,
     opts.inWindowRecurrence === true,
+    settle.awaitQuiescence === true,
   );
   let crossBoundarySkipped = framesSkippedAtArm;
 
