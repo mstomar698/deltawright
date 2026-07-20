@@ -112,16 +112,26 @@ declare global {
       if (proto && !(proto as unknown as { __dwPatched?: boolean }).__dwPatched) {
         const origSend = proto.send;
         proto.send = function (this: XMLHttpRequest, ...args: unknown[]): void {
-          // Call through FIRST: a synchronous throw (e.g. send() before open() → InvalidStateError)
-          // must propagate untouched and NOT increment, or the count would leak and wedge isQuiescent
-          // stuck-false for the page's life. send() dispatches asynchronously, so loadend cannot have
-          // fired before apply returns — attaching the decrement after a successful apply is race-free.
-          const ret = (origSend as (...a: unknown[]) => void).apply(this, args);
+          // Increment + attach the decrement BEFORE apply, so a SYNCHRONOUS XHR (open(...,false)) — whose
+          // load/loadend fire DURING send(), before apply returns — is still balanced (a listener attached
+          // AFTER apply would miss it and leak the counter for the page's life). `settled` guards against a
+          // double-decrement. A synchronous THROW (e.g. send() before open() → InvalidStateError) fires no
+          // loadend, so the catch undoes the increment and rethrows untouched — no leak either way.
           inFlight++;
-          this.addEventListener('loadend', () => (inFlight = Math.max(0, inFlight - 1)), {
-            once: true,
-          });
-          return ret;
+          let settled = false;
+          const settle = () => {
+            if (!settled) {
+              settled = true;
+              inFlight = Math.max(0, inFlight - 1);
+            }
+          };
+          this.addEventListener('loadend', settle, { once: true });
+          try {
+            return (origSend as (...a: unknown[]) => void).apply(this, args);
+          } catch (e) {
+            settle();
+            throw e;
+          }
         };
         (proto as unknown as { __dwPatched?: boolean }).__dwPatched = true;
       }
@@ -527,11 +537,25 @@ declare global {
     let appearedMs: number | null = null;
     let lastEffectAt = 0;
 
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
     const rectOf = (el: Element): EffectRect | null => {
       try {
         const r = el.getBoundingClientRect();
         if (r.width <= 0 && r.height <= 0) return null;
-        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        // Clamp to the viewport. A removal's effect locus is the (detached) node's FORMER PARENT rect,
+        // which for an overlay appended to <body> is the whole page (taller than the viewport) — an
+        // un-clamped region ≈ the page defeats region-scoping. Clamping keeps the region within view;
+        // a genuinely full-viewport removal still yields a coarse region (honest-inconclusive, not a
+        // fake settle). KNOWN LIMIT: a top-level removal cannot be localized tighter (no rect exists).
+        const left = Math.max(0, r.left);
+        const top = Math.max(0, r.top);
+        const right = Math.min(vw, r.right);
+        const bottom = Math.min(vh, r.bottom);
+        // A rect entirely outside the viewport clamps to a degenerate (inverted/zero) box — it can't be
+        // a localizable region, so drop it (return null) rather than report a malformed rect.
+        if (right <= left || bottom <= top) return null;
+        return { left, top, right, bottom };
       } catch {
         return null;
       }
@@ -1126,8 +1150,15 @@ declare global {
     for (const el of roots) {
       if (typeof el.getAnimations !== 'function') continue;
       for (const a of el.getAnimations({ subtree: true })) {
-        if (a.playState === 'running' || a.playState === 'paused' || (a as any).pending)
-          anims.add(a);
+        // Only wait on animations that will actually FINISH: a `paused` one isn't progressing, and an
+        // infinite-iteration one (a spinner) never resolves `.finished` — either would pin the settle to
+        // the full animMaxMs for no benefit.
+        if (a.playState !== 'running' && !(a as unknown as { pending?: boolean }).pending) continue;
+        const timing = (
+          a.effect as { getTiming?: () => { iterations?: number } } | null
+        )?.getTiming?.();
+        if (timing && timing.iterations === Infinity) continue;
+        anims.add(a);
       }
     }
     if (anims.size === 0) return 0;
@@ -1335,16 +1366,34 @@ declare global {
   // salient node in it) to a false "overlay layer". `position:relative`/`static` are excluded (normal
   // layout). Falls back to the element itself (e.g. a bare glass pane hosts no salient node → nothing
   // is promoted; the occlusion still shows via coveredBy). Bounded climb; light DOM.
-  function overlayContainerOf(c: Element): Element {
+  // A full-width, SHORT, edge-anchored positioned bar is page CHROME (header/footer/toolbar), not a
+  // modal overlay — a sticky/fixed header covering scrolled content should not read as an overlay
+  // layer. A TALL full-viewport element (a modal backdrop) is NOT chrome (height rules it out).
+  function isEdgeChrome(el: Element): boolean {
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return r.width >= vw * 0.9 && r.height < vh * 0.33 && (r.top <= 2 || r.bottom >= vh - 2);
+  }
+
+  // Climb a covering element to the overlay CONTAINER it belongs to (or null when it is not an overlay).
+  // A container is a dialog/alertdialog (true overlay semantics) OR a POSITIONED ancestor
+  // (fixed/absolute/sticky — how real overlays are placed) that is NOT edge-anchored page chrome.
+  // Deliberately NOT `role="region"`/`role="alert"` (generic content landmarks). `position:relative`/
+  // `static` are normal layout. Returns null for chrome or a coverer with no positioned/dialog ancestor
+  // — the occlusion still shows via coveredBy, but nothing is promoted to a false overlay layer.
+  function overlayContainerOf(c: Element): Element | null {
     let cur: Element | null = c;
     for (let i = 0; cur && i < 8; i++, cur = cur.parentElement) {
       const tag = cur.tagName.toLowerCase();
       const role = cur.getAttribute('role');
       if (tag === 'dialog' || role === 'dialog' || role === 'alertdialog') return cur;
       const pos = getComputedStyle(cur).position;
-      if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') return cur;
+      if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') {
+        return isEdgeChrome(cur) ? null : cur;
+      }
     }
-    return c;
+    return null;
   }
 
   // Additive + STATELESS page-map scan. Reads a bounded set of salient nodes (interactive first,
@@ -1396,8 +1445,10 @@ declare global {
       const rootNode = s.el.getRootNode();
       const fromPoint = rootNode instanceof ShadowRoot ? rootNode : document;
       const cover = fromPoint.elementFromPoint(cx, cy);
-      if (cover && cover !== s.el && !s.el.contains(cover))
-        overlayRoots.push(overlayContainerOf(cover));
+      if (cover && cover !== s.el && !s.el.contains(cover)) {
+        const container = overlayContainerOf(cover);
+        if (container) overlayRoots.push(container);
+      }
     }
     const isOnOverlay = (el: Element): boolean =>
       overlayRoots.some((root) => root === el || root.contains(el));
@@ -1425,17 +1476,21 @@ declare global {
       };
     });
 
-    // Label the overlay layer from its OWN salient content (never from a bare glass pane that hosts
-    // no salient node). Prefer a dialog/alertdialog/region/alert container's accessible name or role.
-    let overlayLabel: string | null = null;
-    const layer1 = nodes.filter((n) => n.layer === 1);
-    for (const n of layer1) {
-      if (n.role && /dialog|alert|region/.test(n.role)) {
-        overlayLabel = n.name ?? n.role;
-        break;
-      }
+    // Label the overlay layer from the overlay root(s) that ACTUALLY own layer-1 content (a bare glass
+    // pane hosting no salient node doesn't count). If exactly ONE overlay owns the layer-1 nodes, name
+    // it; if MULTIPLE distinct overlays do (a toast + a modal), leave the label null rather than
+    // misattribute one overlay's name to nodes living in another.
+    const contentOverlays = new Set<Element>();
+    for (const s of scanned) {
+      if (!isOnOverlay(s.el)) continue;
+      const owner = overlayRoots.find((root) => root === s.el || root.contains(s.el));
+      if (owner) contentOverlays.add(owner);
     }
-    if (!overlayLabel && layer1.length) overlayLabel = layer1[0]!.name ?? layer1[0]!.role;
+    let overlayLabel: string | null = null;
+    if (contentOverlays.size === 1) {
+      const root = [...contentOverlays][0]!;
+      overlayLabel = mapNameOf(root) ?? mapRoleOf(root) ?? describe(root);
+    }
 
     const layerCounts = new Map<number, number>();
     for (const n of nodes) layerCounts.set(n.layer, (layerCounts.get(n.layer) ?? 0) + 1);

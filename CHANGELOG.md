@@ -25,6 +25,19 @@ All notable changes to this project are documented here. The format is based on
 - **CI hygiene + a trace-report edge:** added a `concurrency:` group to `ci.yml` (a rapid re-push
   cancels the stale in-flight run instead of piling up); `read-trace`'s `capText` now caps by code
   point so a cut never lands mid-surrogate and leaves a lone `�`.
+- **More bug-hunt backlog resolved** (`docs/BUG-HUNT-2026-07-20.md`): (a) a **synchronous XHR** no
+  longer leaks the in-flight quiescence counter — the decrement listener is attached BEFORE `send()`
+  (a sync XHR's `loadend` fires during `send()`), with a `catch` undoing the increment on a sync throw;
+  (b) `settleAnimations` no longer waits on **infinite-iteration or paused** animations (a spinner's
+  `.finished` never resolves — it used to pin the settle to the full `animMaxMs`); (c) `pageMap` no
+  longer reports a **sticky/fixed page header** (full-width, short, edge-anchored chrome) as a false
+  overlay layer, and no longer **misattributes** one overlay's name to nodes in another (multiple
+  overlays → the layer label is left unset rather than wrong); (d) `observeEffectSettled`'s effect
+  **region is clamped to the viewport** (a top-level modal-close seeded the region from `<body>`);
+  (e) `awaitQuiescence` is now honored **inside child frames** (`frames:true`); (f) `harnessBucket`'s
+  5xx label requires a **status context** so an incidental latency number (`404 (took 503 ms)`) isn't
+  mislabeled `5xx`; (g) doc precision for `appearedMs` (stamped at drain time) and the screenshot-diff
+  region's device-pixel space on HiDPI. Regression tests added for (a), (c), (f).
 
 ### Added
 

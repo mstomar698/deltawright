@@ -70,6 +70,25 @@ test('occlusion honesty: coveredBy is claimed only for hit-tested-covered nodes;
   expect(map.stats.occludedCount).toBe(covered.length);
 });
 
+test('a sticky/fixed page header covering scrolled content is NOT a false overlay layer', async ({
+  page,
+}) => {
+  // A full-width, short, top-anchored FIXED bar is page chrome (header/toolbar) — not a modal overlay.
+  await page.setContent(`
+    <div style="position:fixed;top:0;left:0;width:100%;height:48px;background:#eee;z-index:10">
+      <button id="nav">Home</button>
+    </div>
+    <button id="deep" style="position:absolute;top:16px;left:8px">Deep</button>
+  `);
+  const map = await pageMap(page);
+  // No overlay layer is reported — the header is edge-anchored chrome, so its controls stay layer 0.
+  expect(
+    map.layers.every((l) => l.layer === 0),
+    'no false overlay layer from a sticky header',
+  ).toBe(true);
+  expect(map.nodes.find((n) => n.name === 'Home')!.layer).toBe(0);
+});
+
 test('apparent z-layers: dialog + its buttons are layer 1, the covered control stays layer 0', async ({
   page,
 }) => {

@@ -1,6 +1,9 @@
 import { PNG } from 'pngjs';
 
 export interface ChangedRegion {
+  /** The changed pixel bounds, in the SCREENSHOT's pixel space. NOTE: on a HiDPI viewport
+   *  (`deviceScaleFactor > 1`) the screenshot is scaled, so this rect is in DEVICE pixels — divide by
+   *  the device scale factor to compare with CSS-pixel DOM geometry. */
   rect: { x: number; y: number; width: number; height: number };
   changedPixels: number;
 }

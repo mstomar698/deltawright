@@ -276,6 +276,7 @@ test('real backend forms still match with the right bucket (recall + classificat
     ['HTTP/1.1 511 Network Authentication Required', '5xx/gateway'], // 5xx outside {500,502,503,504}
     ['responded with a status of 429', '4xx'],
     ['status code: 404', '4xx'],
+    ['responded with a status of 404 (took 503 ms)', '4xx'], // incidental 5xx-shaped latency ≠ 5xx
     ['ECONNREFUSED connecting to db', 'conn/network'],
   ];
   for (const [line, bucket] of real) {
