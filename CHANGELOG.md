@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Dual ESM + CJS package (adoption fix, #B4/#C).** The library entries (`deltawright`, `deltawright/
+  matchers`, `deltawright/reporter`, `deltawright/wait`, `deltawright/aggregate`) now ship BOTH an ESM
+  build (`.js`) and a CJS build (`.cjs`) with per-condition `types`, so `require('deltawright')` works
+  from a CommonJS Playwright config — no more `ERR_PACKAGE_PATH_NOT_EXPORTED` / dynamic-import shim. The
+  CJS bundles polyfill `import.meta.url` (used to locate the pre-bundled injected observer). `deltawright/
+  mcp` stays ESM-only (it uses top-level await and is the `deltawright-mcp` bin — embedders `await
+  import()` it); the `deltawright` / `deltawright-mcp` bins stay native ESM. A packaging test exercises
+  `require()` of every dual subpath end-to-end (incl. resolving the observer from CJS).
+
 ### Fixed
 
 - **Repo hardening from a four-agent bug-hunt** (`docs/BUG-HUNT-2026-07-20.md`). (1) **Flaky

@@ -32,32 +32,63 @@
     "LICENSE",
     "CHANGELOG.md"
   ],
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./mcp": {
       "types": "./dist/mcp/server.d.ts",
       "import": "./dist/mcp/server.js"
     },
     "./matchers": {
-      "types": "./dist/matchers/index.d.ts",
-      "import": "./dist/matchers/index.js"
+      "import": {
+        "types": "./dist/matchers/index.d.ts",
+        "default": "./dist/matchers/index.js"
+      },
+      "require": {
+        "types": "./dist/matchers/index.d.cts",
+        "default": "./dist/matchers/index.cjs"
+      }
     },
     "./reporter": {
-      "types": "./dist/reporter/index.d.ts",
-      "import": "./dist/reporter/index.js"
+      "import": {
+        "types": "./dist/reporter/index.d.ts",
+        "default": "./dist/reporter/index.js"
+      },
+      "require": {
+        "types": "./dist/reporter/index.d.cts",
+        "default": "./dist/reporter/index.cjs"
+      }
     },
     "./wait": {
-      "types": "./dist/wait/index.d.ts",
-      "import": "./dist/wait/index.js"
+      "import": {
+        "types": "./dist/wait/index.d.ts",
+        "default": "./dist/wait/index.js"
+      },
+      "require": {
+        "types": "./dist/wait/index.d.cts",
+        "default": "./dist/wait/index.cjs"
+      }
     },
     "./aggregate": {
-      "types": "./dist/aggregate/index.d.ts",
-      "import": "./dist/aggregate/index.js"
+      "import": {
+        "types": "./dist/aggregate/index.d.ts",
+        "default": "./dist/aggregate/index.js"
+      },
+      "require": {
+        "types": "./dist/aggregate/index.d.cts",
+        "default": "./dist/aggregate/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },

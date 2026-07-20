@@ -38,7 +38,7 @@ const delta = await actAndObserve(page, (p) => p.click('#sign-in'), { label: 'cl
 console.log(render(delta).text);
 ```
 
-Requires **Node ≥ 20**. `@playwright/test` is a **peer** dependency — bring your own.
+Requires **Node ≥ 20**. `@playwright/test` is a **peer** dependency — bring your own. Ships as a **dual ESM + CommonJS** package, so a CJS config works too: `const { actAndObserve } = require('deltawright')`. (`deltawright/mcp` is ESM-only — `await import()` it from CJS.)
 
 ## The core primitive: `actAndObserve`
 

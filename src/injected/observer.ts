@@ -552,9 +552,12 @@ declare global {
         const top = Math.max(0, r.top);
         const right = Math.min(vw, r.right);
         const bottom = Math.min(vh, r.bottom);
-        // A rect entirely outside the viewport clamps to a degenerate (inverted/zero) box — it can't be
-        // a localizable region, so drop it (return null) rather than report a malformed rect.
-        if (right <= left || bottom <= top) return null;
+        // A rect entirely outside the viewport clamps to an INVERTED box (right<left / bottom<top) — drop
+        // that. But keep a zero-AREA in-viewport rect (right==left or bottom==top): a container whose
+        // children are all position:absolute has 0 height yet IS a real effect locus (dropping it would
+        // miss the effect entirely). The original `width<=0 && height<=0` guard above already handles a
+        // truly empty node.
+        if (right < left || bottom < top) return null;
         return { left, top, right, bottom };
       } catch {
         return null;
