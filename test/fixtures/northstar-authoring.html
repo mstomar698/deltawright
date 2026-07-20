@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright north-star authoring fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    button, .q2k { font-size: 14px; }
+    /* Div-soup "buttons": generated class, role+tabindex, no semantic element. */
+    .q2k { display: inline-flex; align-items: center; padding: 4px 10px; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; }
+    .glass { background: rgba(0, 0, 0, 0.03); }
+  </style>
+</head>
+<body>
+  <button id="load">Load</button>
+  <script>
+    // An RPC-style flow: clicking Load inserts a result panel 250ms later (no network — a client
+    // re-render, the case networkidle misses). The panel is a poor-a11y mix: a durable native button,
+    // a div-soup role=button, and a div-soup role=button covered by an invisible glass pane.
+    document.getElementById('load').addEventListener('click', () => {
+      setTimeout(() => {
+        const panel = document.createElement('div');
+        panel.id = 'result';
+        panel.style.cssText = 'position:absolute; left:80px; top:80px; width:320px;';
+        panel.innerHTML =
+          '<button class="s9f" style="position:absolute; left:0; top:0;">Save</button>' +
+          '<div class="q2k" role="button" tabindex="0" style="position:absolute; left:0; top:44px;">Retry</div>' +
+          '<div class="q2k" role="button" tabindex="0" style="position:absolute; left:0; top:88px; width:80px;">Discard</div>' +
+          '<div class="glass" style="position:absolute; left:-4px; top:84px; width:110px; height:34px; z-index:5;"></div>';
+        document.body.appendChild(panel);
+      }, 250);
+    });
+  </script>
+</body>
+</html>

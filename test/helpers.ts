@@ -22,3 +22,6 @@ export const EFFECT_SETTLE_FIXTURE_URL = fixtureUrl('effect-settle.html');
 
 /** file:// URL of the scoreSelectors fixture (durable / unstable-id / ambiguous / text-volatile / geom). */
 export const SCORE_SELECTORS_FIXTURE_URL = fixtureUrl('score-selectors.html');
+
+/** file:// URL of the north-star authoring fixture (RPC-style delayed poor-a11y panel + occlusion). */
+export const NORTHSTAR_AUTHORING_FIXTURE_URL = fixtureUrl('northstar-authoring.html');
