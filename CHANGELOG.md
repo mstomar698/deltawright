@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **`scoreSelectors(root, delta, opts?)` — durable-selector scoring** (`deltawright/matchers`). Phase 3
+  (the byproduct) of the authoring-enhancer chapter. Layers a **durability ESTIMATE** (0–100) + grade
+  (`durable`/`usable`/`brittle`/`broken`) + brittleness flags over `verifySuggestions`: tier base
+  weights + the verify-status multiplier + generated-id / text-volatility detectors (Robula+ blacklist /
+  Similo two-tier weighting, applied to the accessible NAME) + a heuristic-role discount + geometry /
+  actionability context flags (`unstable-id`, `text-volatile`, `ambiguous`, `heuristic-role-unverified`,
+  `tag-only`, `occluded`, `offscreen`, `not-actionable`). When nothing semantic verifies for a node it
+  synthesizes a **delta-anchored geometry-relative fallback** — `<tag>:near(:text("<nearest verified
+  anchor>"))` via Playwright's layout engine — re-verified through the same path and graded as the
+  last-resort handle it is. `bestDurable` is the top verified, non-brittle candidate, or `null` (with a
+  warning) rather than a brittle hand-off; assertions are re-pointed onto it. HONESTY (DW-03):
+  `durability` is a SINGLE-PAGE ESTIMATE (a brittleness proxy), NEVER a claim of stability across
+  releases/re-renders (the sound cross-render signal — a two-snapshot re-check — is a deliberate
+  follow-up, not fabricated); Playwright's uniqueness/identity verdict stays authoritative. Additive:
+  `suggest`/`verifySuggestions` are unchanged.
+
 - **`observeEffectSettled(page, action, opts?)` — the R1 capability: region-scoped, assertion-free,
   causal effect-settle** (`deltawright/wait`). Phase 2 of the authoring-enhancer chapter. Answers "has
   *this action's* effect landed and gone still" WITHOUT a static sleep and WITHOUT global `networkidle`,
