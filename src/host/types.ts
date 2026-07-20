@@ -293,7 +293,85 @@ export interface DeltawrightApi {
    *  idle hook (e.g. ExtJS `Ext.Ajax.isLoading`, JSF/PrimeFaces `PrimeFaces.ajax.Queue`) is busy. The
    *  settle path reads it when `awaitQuiescence`. */
   isQuiescent(): boolean;
+  /**
+   * Page-map scan (R2 flagship — the spatial+semantic "marked page map"). ADDITIVE + STATELESS, like
+   * `probeGeometry`: it reads a bounded set of SALIENT nodes (interactive + landmark/heading) in ONE
+   * in-page pass, running the SAME per-node geometry+occlusion read the delta uses (`readGeometry`),
+   * and returns the fused map. It never touches the observer/arm/collect state, so it is safe to call
+   * standalone (no prior `actAndObserve`) and is idempotent. It stamps its OWN refs as
+   * `data-dw-map-ref` — never `data-dw-ref` — so a scan cannot disturb a prior delta's refs; it reads
+   * any existing `data-dw-ref` into `deltaRef` so the host can fuse recency from a supplied delta.
+   * The geometry/occlusion half is Deltawright's; role/name are DW's lightweight in-page derivation
+   * (the host may enrich them from Playwright's authoritative ARIA snapshot).
+   */
+  scan(opts: ScanOptions): RawPageMap;
   reset(): void;
+}
+
+// --- Page map (R2 flagship) ----------------------------------------------
+
+/** Tunable knobs for the injected `scan` pass. */
+export interface ScanOptions {
+  /** Cap on the salient nodes read in one pass (interactive nodes take priority over landmarks when
+   *  the set exceeds this). Bounds hit-test cost + token size; sets `stats.capped` when it truncates. */
+  maxNodes: number;
+  /** Also read landmark + heading roles (non-interactive salient nodes), not just interactive ones. */
+  includeLandmarks: boolean;
+  /** NxN grid resolution for the coarse `zone` tag (>= 1; 3 gives named zones like "top-right"). */
+  zoneGrid: number;
+}
+
+/**
+ * One salient node in a page-map scan, as read by the injected script — the geometry-only half,
+ * with NO Playwright reconciliation (the host adds that). Mirrors the RawNode → DeltaNode split.
+ */
+export interface RawPageMapNode {
+  /** Map ref (e.g. "m1"), stamped as `data-dw-map-ref`. Separate from the delta's `data-dw-ref`. */
+  ref: string;
+  /** This node's existing `data-dw-ref` (from a prior `actAndObserve`), or null — lets the host fuse
+   *  recency from a supplied delta without the scan re-deriving what changed. */
+  deltaRef: string | null;
+  /** DW's lightweight in-page role derivation (same as the delta's) — NOT an authoritative a11y-name
+   *  computation. The host may enrich it from Playwright's ARIA snapshot. */
+  role: string | null;
+  name: string | null;
+  interactive: boolean;
+  /** Reuses the EXACT per-node read the delta uses: rect, `coveredBy`, `hitSelf`, `offscreen`. */
+  geometry: GeometryRead;
+  /** Coarse spatial zone from the NxN grid ("top-right", "center", …; "offscreen" when off-viewport). */
+  zone: string;
+  /** Apparent stacking layer inferred from hit-tests (0 = base; 1 = painted on an overlay).
+   *  APPROXIMATE — from `elementFromPoint` chains, NOT a CSS z-index claim. MVP caps at 2 levels. */
+  layer: number;
+}
+
+/** Summary of one apparent stacking layer in a page map. */
+export interface PageMapLayer {
+  layer: number;
+  /** Best-effort label for an overlay layer (name/role of the covering subtree), else null. */
+  label: string | null;
+  /** How many scanned nodes sit on this layer. */
+  count: number;
+}
+
+/** The injected `scan` output — the geometry-only map the host reconciles into a `PageMap`. */
+export interface RawPageMap {
+  url: string;
+  viewport: { width: number; height: number; scrollX: number; scrollY: number };
+  nodes: RawPageMapNode[];
+  layers: PageMapLayer[];
+  stats: {
+    /** Salient nodes read. */
+    scanned: number;
+    interactiveCount: number;
+    /** Nodes whose center hit-test found a foreign topmost element (`coveredBy != null`). */
+    occludedCount: number;
+    offscreenCount: number;
+    /** The salient set exceeded `maxNodes` and was truncated (priority: interactive over landmarks). */
+    capped: boolean;
+  };
+  /** Honesty flags — present only when set (default path is byte-unchanged). */
+  partial?: { injectionBlocked?: boolean };
 }
 
 /** Tunable v0.1 settle heuristic knobs (all ms). */

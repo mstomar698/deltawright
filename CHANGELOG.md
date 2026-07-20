@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`pageMap(page, opts?)` + `renderPageMap(map, opts?)` — the R2 flagship: a spatial + semantic
+  "marked page map."** The first primitive of the authoring-enhancer chapter (see
+  `docs/plans/dw-authoring-enhancer-plan.md`). It reads a bounded set of SALIENT nodes (interactive +
+  landmark/heading) in ONE in-page pass — reusing the same per-node geometry+occlusion read the delta
+  uses (`readGeometry`) via a new stateless `scan()` mode on the injected observer — and fuses the
+  fields no ARIA snapshot or `boundingBox` carries: deterministic **occlusion** (`coveredBy` / apparent
+  z-layer), **actionability**, and (composed after an action, via a supplied `delta`) **recency**, onto
+  each node's exact geometry + coarse zone. On a poor-a11y div-soup page it distinguishes two IDENTICAL
+  `button "Save"` — naming the covered one `covered-by <overlay>` where an ARIA snapshot renders them
+  the same and `boundingBox` has no notion of coverage. Honest by construction (DW-02/03): verdicts are
+  **geometry-derived by default** and rendered in a DISTINCT vocabulary (`reachable` / `covered-by …`)
+  so a single line can never be mistaken for Playwright's judgment; `{ reconcile: true }` additionally
+  runs Playwright's AUTHORITATIVE probe on interactive nodes (then the verdict reads
+  `ACTIONABLE` / `NOT-actionable (…)`), Playwright wins any disagreement, and it is surfaced
+  (`[geom:…]`), never hidden. Occlusion is a
+  center-point hit-test that names only what was hit-tested; off-screen nodes are marked, not dropped;
+  apparent z-layers are inferred from hit-tests (not a CSS `z-index` claim). ADDITIVE + STATELESS: the
+  scan stamps only `data-dw-map-ref` (never `data-dw-ref`), so it never disturbs a prior delta's refs,
+  and the delta/serialize paths are byte-unchanged. Exported from the main entry
+  (`import { pageMap, renderPageMap } from 'deltawright'`).
+
 ## [0.9.3] - 2026-07-15
 
 ### Added

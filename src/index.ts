@@ -5,6 +5,8 @@ export { actAndObserve, DEFAULT_SETTLE, DEFAULT_BASELINE } from './host/actAndOb
 export type { Action, ActAndObserveOptions } from './host/actAndObserve';
 export { serialize, render, tokenCount } from './host/serialize';
 export type { SerializeOptions } from './host/serialize';
+export { pageMap, renderPageMap } from './host/page-map';
+export type { PageMap, PageMapNode, PageMapOptions, RenderPageMapOptions } from './host/page-map';
 export { diagnose } from './host/diagnose';
 export { suggest } from './host/suggest';
 export type {
@@ -61,4 +63,8 @@ export type {
   SettleResult,
   CollectResult,
   BaselineOptions,
+  ScanOptions,
+  RawPageMap,
+  RawPageMapNode,
+  PageMapLayer,
 } from './host/types';
