@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright pageMap fixture — poor-a11y div-soup + overlay occlusion</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; color: #111; }
+
+    /* Div-soup design system: generated class names, no semantic structure.
+       The "buttons" are divs with role=button + tabindex — realistic legacy
+       markup where the a11y tree degrades to look-alike, ambiguous entries. */
+    .x7f3a {
+      position: absolute;
+      width: 120px;
+      height: 40px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 15px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .q9k2 { /* a native button variant, same look */
+      position: absolute;
+      width: 120px;
+      height: 40px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .q9k2[disabled] { background: #9aa8c7; cursor: not-allowed; }
+
+    /* The glass pane: a transparent blocker painted OVER control B's center.
+       It has no role and a generated class — exactly the "invisible" overlay
+       that intercepts pointer events on a legacy app. */
+    .dw-glass {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.02);
+      z-index: 100;
+    }
+
+    /* An off-screen control: fixed + far negative left, unreachable by scroll. */
+    .offscreen-host {
+      position: fixed;
+      left: -10000px;
+      top: 0;
+      width: 200px;
+    }
+
+    /* A real modal dialog painted OVER the "Background action" control — exercises apparent
+       z-layering: the dialog + its buttons are layer 1, the control behind it stays layer 0. */
+    .m4d1 {
+      position: absolute;
+      left: 560px;
+      top: 260px;
+      width: 260px;
+      height: 160px;
+      box-sizing: border-box;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+      z-index: 200;
+    }
+    .m4d1 p { margin: 0 0 40px; }
+    .m4d1 button { position: absolute; bottom: 16px; width: 96px; height: 34px; }
+    .m4d1 .ok { left: 20px; }
+    .m4d1 .dismiss { right: 20px; }
+  </style>
+</head>
+<body>
+  <!-- A heading + nav landmark so the map includes non-interactive salient nodes. -->
+  <h1 style="position:absolute; left:40px; top:20px; font-size:20px; margin:0;">Account settings</h1>
+  <nav aria-label="Primary" style="position:absolute; left:40px; top:56px;">
+    <a href="#profile">Profile</a> · <a href="#billing">Billing</a>
+  </nav>
+
+  <!-- Two VISUALLY + SEMANTICALLY IDENTICAL "Save" controls (look-alikes).
+       In an ARIA snapshot both render as `button "Save"` — indistinguishable.
+       Control A is uncovered and reachable; control B is covered by the glass. -->
+  <div class="x7f3a" role="button" tabindex="0" data-testid="save-a"
+       style="left:100px; top:120px;">Save</div>
+  <div class="x7f3a" role="button" tabindex="0" data-testid="save-b"
+       style="left:100px; top:320px;">Save</div>
+
+  <!-- The glass pane, positioned to cover control B's center (160, 340). -->
+  <div class="dw-glass" style="left:80px; top:300px; width:160px; height:80px;"></div>
+
+  <!-- A real, uncovered, ENABLED button — reachable. -->
+  <button class="q9k2" style="left:300px; top:120px;">Continue</button>
+
+  <!-- A real, uncovered, DISABLED button: geometry says reachable (topmost, in
+       viewport), Playwright says "not enabled" — a genuine disagreement the
+       reconcile pass surfaces. -->
+  <button class="q9k2" disabled style="left:300px; top:320px;">Locked</button>
+
+  <!-- A control painted OVER by the modal dialog (below), so it is covered-by the dialog and
+       stays on the BASE layer while the dialog + its buttons are the overlay layer. -->
+  <button class="q9k2" style="left:600px; top:300px;">Background action</button>
+
+  <!-- The modal dialog: a real overlay with its own interactive content. Its buttons are layer 1;
+       "Background action" behind it is layer 0 but covered-by the dialog. -->
+  <div class="m4d1" role="dialog" aria-label="Confirm changes">
+    <p>Apply these changes?</p>
+    <button class="ok">OK</button>
+    <button class="dismiss">Dismiss</button>
+  </div>
+
+  <!-- An off-screen control: explicitly marked offscreen, never dropped. -->
+  <div class="offscreen-host">
+    <button class="q9k2" style="position:static;">Ghost action</button>
+  </div>
+
+  <script>
+    // Minimal dynamic behavior for the recency-fusion test: clicking "Continue" toggles its own
+    // aria-pressed, so actAndObserve produces a delta and pageMap(…, { delta }) can mark it *changed*.
+    document.querySelector('.q9k2').addEventListener('click', function () {
+      this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  </script>
+</body>
+</html>

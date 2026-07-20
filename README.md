@@ -218,6 +218,36 @@ jobs:
 
 Inputs: `results-dir`, `version` (default `latest`), `comment` (default `true`), `dashboard-artifact`, `github-token`. It uses the built-in token via `gh` (no third-party action, no bespoke secret), and HTML-escapes report text into the comment so a malicious test name can't inject Markdown.
 
+## Page map: a spatial + occlusion-aware picture — `pageMap`
+
+`pageMap(page, opts?)` reads a bounded set of **salient** nodes (interactive + landmarks/headings) in one in-page pass and returns a `PageMap` — a compact, deterministic, offline "marked page map." It **leads with the fields no ARIA snapshot or `boundingBox` carries**: deterministic **occlusion** (`coveredBy` / apparent z-layer), **actionability**, and — composed after an action — **recency**; role/name are borrowed annotations. It reads like a screenshot:
+
+```ts
+import { pageMap, renderPageMap } from 'deltawright';
+
+const map = await pageMap(page);
+console.log(renderPageMap(map));
+```
+
+```
+page-map @ 1280x720 (scroll 0,0) — verdicts: geometry-derived
+layers: 0 base (10) | 1 overlay "Confirm changes" (3)
+ L0 button "Save" [m5] @top-left (100,120 120x40) reachable
+ L0 button "Save" [m6] @middle-left (100,320 120x40) covered-by div.dw-glass
+ L1 dialog "Confirm changes" [m10] @center (560,260 260x160)
+ L1 button "OK" [m11] @center (581,369 96x34) reachable
+ L0 button "Ghost action" [m13] offscreen — scroll to reach
+(scanned 13, interactive 10, occluded 2, offscreen 1)
+```
+
+Two **identical** `button "Save"` — an ARIA snapshot renders them the same and `boundingBox` gives two rects with no notion of coverage, but the map says which one is actually reachable and *what covers the other*. This is strongest exactly where the a11y tree degrades: **legacy / poor-a11y apps and overlay occlusion**.
+
+- **Verdicts are geometry-derived by default** — a pointer-model read shown in a distinct vocabulary (`reachable` / `covered-by …`) so a line is never mistaken for Playwright's judgment. Pass `{ reconcile: true }` to additionally run Playwright's **authoritative** actionability probe on interactive nodes; the verdict then reads `ACTIONABLE` / `NOT-actionable (…)`, Playwright wins any disagreement, and it's surfaced as `[geom:…]`, never hidden (DW-02).
+- **Occlusion is a center-point hit-test** — it names only what was hit-tested, never more. Off-screen nodes are **marked, not dropped**. Apparent z-layers are inferred from hit-tests (not a CSS `z-index` claim).
+- **Compose it after an action** to fuse recency: `pageMap(page, { delta })` marks any scanned node the delta touched as `*added*` / `*changed*` / `*removed*`.
+
+Options: `maxNodes` (cap, default 150), `includeLandmarks` (default true), `zoneGrid` (coarse zone resolution, default 3), `reconcile` + `reconcileConcurrency` + `trialTimeoutMs`, and `delta`. `renderPageMap(map, { precise: false })` drops exact rects for a zone-only, even cheaper rendering.
+
 ## Observe consequences without a locator: `deltawright/wait`
 
 `observeConsequences(page, action, opts?)` arms the observer, performs one action, waits for structural quiescence, and returns a `ConsequenceObservation` (`settleMs`, `hitMaxWait`, `suspectedEarly`, `observed`, and an optional `skippedReason`). It skips the per-node reconcile, so it's a lightweight settle **signal**:

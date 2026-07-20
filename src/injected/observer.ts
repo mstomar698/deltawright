@@ -21,6 +21,10 @@ import type {
   CollectResult,
   BaselineOptions,
   DeltawrightApi,
+  ScanOptions,
+  RawPageMap,
+  RawPageMapNode,
+  PageMapLayer,
 } from '../host/types';
 
 declare global {
@@ -658,7 +662,7 @@ declare global {
       const attrs: string[] = [];
       const stateChanges: AttrStateChange[] = [];
       for (const [name, old] of perEl) {
-        if (name === 'data-dw-ref') continue;
+        if (name === 'data-dw-ref' || name === 'data-dw-map-ref') continue; // DW's own bookkeeping
         const current = el.getAttribute(name);
         if (current === old) continue; // no net change
         if (bg && bg.has(name)) {
@@ -991,6 +995,203 @@ declare global {
     return out;
   }
 
+  // --- Page-map scan (R2 flagship) -----------------------------------------
+  // The non-interactive salient nodes that give the map structure. Interactive nodes come from
+  // INTERACTIVE_SELECTOR (reused); these add landmarks + headings + labeled regions/dialogs.
+  const LANDMARK_SELECTOR =
+    'h1,h2,h3,h4,h5,h6,[role="heading"],main,[role="main"],nav,[role="navigation"],' +
+    'header,[role="banner"],footer,[role="contentinfo"],aside,[role="complementary"],' +
+    'section[aria-label],section[aria-labelledby],dialog,[role="dialog"],[role="alertdialog"],' +
+    '[role="region"],[role="alert"],[role="status"]';
+
+  const ZONE_ROW = ['top', 'middle', 'bottom'];
+  const ZONE_COL = ['left', 'center', 'right'];
+
+  const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+  const LANDMARK_IMPLICIT_ROLE: Record<string, string> = {
+    main: 'main',
+    header: 'banner',
+    footer: 'contentinfo',
+    aside: 'complementary',
+    section: 'region',
+  };
+
+  // Map-LOCAL role/name enrichment (never touches the shared roleOf/nameOf, so the delta output is
+  // byte-unchanged). Adds heading + landmark roles and a short text label for those non-interactive
+  // salient nodes, so a heading reads "heading \"Account settings\"" rather than a bare "node". This
+  // is DW's lightweight in-page derivation — the host may still enrich it from Playwright's ARIA
+  // snapshot (the authoritative a11y-name computation this deliberately does NOT reimplement).
+  function mapRoleOf(el: Element): string | null {
+    const r = roleOf(el);
+    if (r) return r;
+    const tag = el.tagName.toLowerCase();
+    if (HEADING_TAGS.has(tag)) return 'heading';
+    return LANDMARK_IMPLICIT_ROLE[tag] ?? null;
+  }
+  function mapNameOf(el: Element): string | null {
+    const n = nameOf(el);
+    if (n) return n;
+    const tag = el.tagName.toLowerCase();
+    if (HEADING_TAGS.has(tag) || tag === 'section' || el.getAttribute('role') === 'heading') {
+      const t = (el.textContent || '').trim().replace(/\s+/g, ' ');
+      if (t) return t.slice(0, 40);
+    }
+    return null;
+  }
+
+  // Coarse spatial zone from an NxN grid over the viewport. The default 3x3 grid returns friendly
+  // names ("top-right", "center"); other resolutions return "r{row}c{col}". "offscreen" is tied to
+  // the SAME offscreen flag readGeometry computed (from the raw rect), so zone and geometry.offscreen
+  // can never disagree at a rounding boundary; an in-viewport node's center is clamped into range.
+  function zoneOf(geom: GeometryRead, vw: number, vh: number, grid: number): string {
+    if (geom.offscreen) return 'offscreen';
+    const cx = geom.rect.x + geom.rect.width / 2;
+    const cy = geom.rect.y + geom.rect.height / 2;
+    const g = Math.max(1, Math.floor(grid));
+    const col = Math.min(g - 1, Math.max(0, Math.floor((cx / vw) * g)));
+    const row = Math.min(g - 1, Math.max(0, Math.floor((cy / vh) * g)));
+    if (g === 3) {
+      const r = ZONE_ROW[row]!;
+      const c = ZONE_COL[col]!;
+      return r === 'middle' && c === 'center' ? 'center' : `${r}-${c}`;
+    }
+    return `r${row + 1}c${col + 1}`;
+  }
+
+  // Climb a covering element to the overlay CONTAINER it belongs to, so the whole overlay subtree —
+  // not just the leaf the hit-test landed on — is treated as one layer. A container is a dialog /
+  // alertdialog (true overlay semantics) OR a POSITIONED ancestor (fixed/absolute/sticky — how real
+  // overlays are placed). Deliberately NOT `role="region"`/`role="alert"`: those are generic content
+  // landmarks/inline messages, and climbing to them would promote a whole content section (and every
+  // salient node in it) to a false "overlay layer". `position:relative`/`static` are excluded (normal
+  // layout). Falls back to the element itself (e.g. a bare glass pane hosts no salient node → nothing
+  // is promoted; the occlusion still shows via coveredBy). Bounded climb; light DOM.
+  function overlayContainerOf(c: Element): Element {
+    let cur: Element | null = c;
+    for (let i = 0; cur && i < 8; i++, cur = cur.parentElement) {
+      const tag = cur.tagName.toLowerCase();
+      const role = cur.getAttribute('role');
+      if (tag === 'dialog' || role === 'dialog' || role === 'alertdialog') return cur;
+      const pos = getComputedStyle(cur).position;
+      if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') return cur;
+    }
+    return c;
+  }
+
+  // Additive + STATELESS page-map scan. Reads a bounded set of salient nodes (interactive first,
+  // then landmarks) in ONE pass, reusing readGeometry for the per-node geometry+occlusion read.
+  // Never touches observer/arm/collect state; stamps ONLY data-dw-map-ref (never data-dw-ref).
+  function scan(opts: ScanOptions): RawPageMap {
+    const grid = Math.max(1, Math.floor(opts.zoneGrid || 3));
+    const maxNodes = Math.max(1, Math.floor(opts.maxNodes || 150));
+    // Clear our own prior stamps so repeat scans don't accumulate refs. We never touch data-dw-ref,
+    // so a prior actAndObserve delta's refs (read below into deltaRef) survive.
+    document
+      .querySelectorAll('[data-dw-map-ref]')
+      .forEach((el) => el.removeAttribute('data-dw-map-ref'));
+
+    // Collect salient candidates: interactive first (priority under the cap), then landmarks.
+    const seen = new Set<Element>();
+    const candidates: Element[] = [];
+    const add = (el: Element) => {
+      if (!seen.has(el)) {
+        seen.add(el);
+        candidates.push(el);
+      }
+    };
+    document.querySelectorAll(INTERACTIVE_SELECTOR).forEach(add);
+    if (opts.includeLandmarks) document.querySelectorAll(LANDMARK_SELECTOR).forEach(add);
+
+    const capped = candidates.length > maxNodes;
+    const chosen = candidates.slice(0, maxNodes);
+    // Present in DOM order (reads top-to-bottom like a screenshot), independent of priority order.
+    chosen.sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scanned = chosen.map((el) => ({ el, geometry: readGeometry(el) }));
+
+    // Overlay/layer inference (APPROXIMATE — from hit-tests, NOT CSS z-index): the topmost element
+    // at a covered node's center is an overlay; climb it to its container; any salient node that IS
+    // that container or sits INSIDE it is layer 1. Covered nodes are few, so the extra hit-tests are
+    // negligible. `el.contains(root)` is deliberately NOT an on-overlay condition — a page-level
+    // container that merely wraps a glass pane must not read as an overlay.
+    const overlayRoots: Element[] = [];
+    for (const s of scanned) {
+      if (!s.geometry.coveredBy || s.geometry.offscreen) continue;
+      const r = s.el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const rootNode = s.el.getRootNode();
+      const fromPoint = rootNode instanceof ShadowRoot ? rootNode : document;
+      const cover = fromPoint.elementFromPoint(cx, cy);
+      if (cover && cover !== s.el && !s.el.contains(cover))
+        overlayRoots.push(overlayContainerOf(cover));
+    }
+    const isOnOverlay = (el: Element): boolean =>
+      overlayRoots.some((root) => root === el || root.contains(el));
+
+    let occludedCount = 0;
+    let offscreenCount = 0;
+    let interactiveCount = 0;
+    const nodes: RawPageMapNode[] = scanned.map((s, i) => {
+      const el = s.el;
+      const ref = 'm' + (i + 1);
+      el.setAttribute('data-dw-map-ref', ref);
+      const interactive = isInteractive(el);
+      if (interactive) interactiveCount++;
+      if (s.geometry.coveredBy) occludedCount++;
+      if (s.geometry.offscreen) offscreenCount++;
+      return {
+        ref,
+        deltaRef: el.getAttribute('data-dw-ref'),
+        role: mapRoleOf(el),
+        name: mapNameOf(el),
+        interactive,
+        geometry: s.geometry,
+        zone: zoneOf(s.geometry, vw, vh, grid),
+        layer: isOnOverlay(el) ? 1 : 0,
+      };
+    });
+
+    // Label the overlay layer from its OWN salient content (never from a bare glass pane that hosts
+    // no salient node). Prefer a dialog/alertdialog/region/alert container's accessible name or role.
+    let overlayLabel: string | null = null;
+    const layer1 = nodes.filter((n) => n.layer === 1);
+    for (const n of layer1) {
+      if (n.role && /dialog|alert|region/.test(n.role)) {
+        overlayLabel = n.name ?? n.role;
+        break;
+      }
+    }
+    if (!overlayLabel && layer1.length) overlayLabel = layer1[0]!.name ?? layer1[0]!.role;
+
+    const layerCounts = new Map<number, number>();
+    for (const n of nodes) layerCounts.set(n.layer, (layerCounts.get(n.layer) ?? 0) + 1);
+    const layers: PageMapLayer[] = [...layerCounts.keys()]
+      .sort((a, b) => a - b)
+      .map((layer) => ({
+        layer,
+        label: layer === 0 ? null : overlayLabel,
+        count: layerCounts.get(layer)!,
+      }));
+
+    return {
+      url: location.href,
+      viewport: {
+        width: vw,
+        height: vh,
+        scrollX: Math.round(window.scrollX),
+        scrollY: Math.round(window.scrollY),
+      },
+      nodes,
+      layers,
+      stats: { scanned: nodes.length, interactiveCount, occludedCount, offscreenCount, capped },
+    };
+  }
+
   window.__deltawright = {
     arm,
     sampleBaseline,
@@ -999,6 +1200,7 @@ declare global {
     reset,
     lateResult,
     recheckRects,
+    scan,
     // Preflight (#53): stateless on-demand geometry read for the actionability matcher's [geom:]
     // annotation. Reuses the SAME readGeometry as collect (one source of truth for geometry); it
     // never touches observer/arm/collect state, so it is safe to call standalone.
