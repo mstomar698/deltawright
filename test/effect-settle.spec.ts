@@ -75,6 +75,28 @@ test('(b2) background REMOVAL churn (virtualized recycler) does not mis-seed or 
   expect(obs.region!.x, 'region is the effect area, not the recycling feed').toBeGreaterThan(500);
 });
 
+test('the baseline footprint does not leak across calls (a later baseline:false sees a clean slate)', async ({
+  page,
+}) => {
+  await page.evaluate(() => (window as unknown as { startTicker: () => void }).startTicker());
+  await page.waitForTimeout(120);
+  // First call (baseline ON) learns the 30ms ticker as background and must CONSUME that footprint.
+  await observeEffectSettled(page, (p) => p.click('#delayed-effect'));
+  await page.evaluate(() => document.getElementById('result')?.remove());
+  // Second call with baseline:false. If the footprint LEAKED, the ticker would still be excluded and
+  // the effect would be the 300ms #result (appearedMs ~300). With the footprint CLEARED (fix), a clean
+  // slate treats the very next ticker insert (~30ms) as the first effect.
+  const obs = await observeEffectSettled(page, (p) => p.click('#delayed-effect'), {
+    baseline: false,
+    maxWaitMs: 500,
+  });
+  expect(obs.effectAppeared).toBe(true);
+  expect(
+    obs.appearedMs,
+    'a clean slate treats the first mutation (ticker ~30ms) as the effect, not the 300ms delayed one',
+  ).toBeLessThan(200);
+});
+
 test('(c) canvas / no-DOM: honest effectAppeared:false; compose diffChangedRegion to localize by pixels', async ({
   page,
 }) => {

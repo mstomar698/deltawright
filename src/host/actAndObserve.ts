@@ -388,12 +388,16 @@ export async function actAndObserve(
       ),
   );
 
-  // #34: settle + collect + reconcile each armed child frame; offset + prefix, append.
+  // #34: settle + collect + reconcile each armed child frame; offset + prefix, append. A child frame's
+  // late-watch is NEVER read back (only the main page's `lateResult()` runs), so passing lateWatchMs to
+  // a frame would start a `lateObserver` that never gets torn down (a leaked MutationObserver per frame,
+  // per call). Strip it — frames don't contribute `lateStructural` anyway.
+  const frameSettle: SettleOptions = { ...settle, lateWatchMs: 0 };
   for (const c of childFrames) {
     try {
       await c.frame.evaluate<SettleResult, SettleOptions>(
         (o) => (window as unknown as DwWindow).__deltawright!.waitForSettle(o),
-        settle,
+        frameSettle,
       );
       const cc = await c.frame.evaluate<CollectResult, SettleOptions>(
         (o) => (window as unknown as DwWindow).__deltawright!.collect(o),

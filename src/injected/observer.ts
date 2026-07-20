@@ -577,113 +577,125 @@ declare global {
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
     return (async (): Promise<EffectSettleResult> => {
-      // PHASE 1 — the effect APPEARS (the first-effect edge; nothing is named in advance).
-      for (;;) {
-        const hits = drainEffects(false);
-        if (hits.length) {
-          for (const r of hits) region = unite(region, r);
-          appearedMs = round(performance.now() - t0);
-          lastEffectAt = performance.now();
-          break;
-        }
-        const now = performance.now();
-        if (now >= appearDeadline) {
-          // No non-background effect within the appear window — honest "no effect", NEVER "ready".
-          // hitMaxWait is TRUE here (we waited the whole appear window and saw nothing conclusive): a
-          // consumer glancing only at hitMaxWait must never read a no-effect action as a clean settle.
-          return {
-            effectAppeared: false,
-            appearedMs: null,
-            settledMs: round(now - t0),
-            region: null,
-            hitMaxWait: true,
-            suspectedEarly: false,
-            signals: {
-              structuralQuiet: false,
-              animationsSettled: false,
-              ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
-            },
-          };
-        }
-        await sleep(tick);
-      }
-
-      // PHASE 2 — the region STABILIZES (region-scoped; background-outside can't reset it).
-      for (;;) {
-        const hits = drainEffects(true);
-        if (hits.length) {
-          for (const r of hits) region = unite(region, r);
-          lastEffectAt = performance.now();
-        }
-        const now = performance.now();
-        const structuralQuiet = now - lastEffectAt >= opts.quietMs;
-
-        // HARD CAP hit without going quiet → return INCONCLUSIVE immediately. Do NOT run the animation
-        // wait or the late-watch here — on a region that never quiesces they would overshoot maxWaitMs
-        // by up to animMaxMs + lateWatchMs.
-        if (!structuralQuiet && now >= deadline) {
-          return {
-            effectAppeared: true,
-            appearedMs,
-            settledMs: round(now - t0),
-            region: toRect(region),
-            hitMaxWait: true,
-            suspectedEarly: false,
-            signals: {
-              structuralQuiet: false,
-              animationsSettled: false,
-              ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
-            },
-          };
-        }
-
-        if (structuralQuiet) {
-          // Fuse the WAAPI animation-settle on the region's roots (budget clamped to the time left before
-          // the cap), then RE-verify quiet + network — a mutation can land during the animation wait.
-          const animBudget = Math.max(0, Math.min(opts.animMaxMs, deadline - performance.now()));
-          await settleAnimations(
-            [...regionRoots].filter((e) => e.isConnected),
-            animBudget,
-          );
-          const during = drainEffects(true);
-          if (during.length) {
-            for (const r of during) region = unite(region, r);
+      try {
+        // PHASE 1 — the effect APPEARS (the first-effect edge; nothing is named in advance).
+        for (;;) {
+          const hits = drainEffects(false);
+          if (hits.length) {
+            for (const r of hits) region = unite(region, r);
+            appearedMs = round(performance.now() - t0);
             lastEffectAt = performance.now();
+            break;
           }
-          const now2 = performance.now();
-          const stillQuiet = now2 - lastEffectAt >= opts.quietMs;
-          const networkIdle = !awaitQ || isQuiescent();
-          const cleanSettle = stillQuiet && networkIdle;
-          const capped2 = now2 >= deadline;
-          if (cleanSettle || capped2) {
-            // On a CLEAN settle, run the region-scoped late-watch (gap-E): a later effect intersecting
-            // the region is a late wave → suspectedEarly. On a cap WITHOUT a clean settle, return
-            // INCONCLUSIVE immediately (no late-watch — it would overshoot the cap for no signal).
-            let suspectedEarly = false;
-            if (cleanSettle && opts.lateWatchMs > 0) {
-              const lateDeadline = now2 + opts.lateWatchMs;
-              while (performance.now() < lateDeadline) {
-                await sleep(Math.min(opts.lateWatchMs, 25));
-                if (drainEffects(true).length) suspectedEarly = true;
-              }
-            }
+          const now = performance.now();
+          if (now >= appearDeadline) {
+            // No non-background effect within the appear window — honest "no effect", NEVER "ready".
+            // hitMaxWait is TRUE here (we waited the whole appear window and saw nothing conclusive): a
+            // consumer glancing only at hitMaxWait must never read a no-effect action as a clean settle.
             return {
-              effectAppeared: true,
-              appearedMs,
-              settledMs: round(now2 - t0),
-              region: toRect(region),
-              hitMaxWait: !cleanSettle,
-              suspectedEarly,
+              effectAppeared: false,
+              appearedMs: null,
+              settledMs: round(now - t0),
+              region: null,
+              hitMaxWait: true,
+              suspectedEarly: false,
               signals: {
-                structuralQuiet: stillQuiet,
-                animationsSettled: true,
-                ...(awaitQ ? { networkIdle } : {}),
+                structuralQuiet: false,
+                animationsSettled: false,
+                ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
               },
             };
           }
-          // network still busy (or a re-reset during the animation wait) and not capped → keep polling.
+          await sleep(tick);
         }
-        await sleep(tick);
+
+        // PHASE 2 — the region STABILIZES (region-scoped; background-outside can't reset it).
+        for (;;) {
+          const hits = drainEffects(true);
+          if (hits.length) {
+            for (const r of hits) region = unite(region, r);
+            lastEffectAt = performance.now();
+          }
+          const now = performance.now();
+          const structuralQuiet = now - lastEffectAt >= opts.quietMs;
+
+          // HARD CAP hit without going quiet → return INCONCLUSIVE immediately. Do NOT run the animation
+          // wait or the late-watch here — on a region that never quiesces they would overshoot maxWaitMs
+          // by up to animMaxMs + lateWatchMs.
+          if (!structuralQuiet && now >= deadline) {
+            return {
+              effectAppeared: true,
+              appearedMs,
+              settledMs: round(now - t0),
+              region: toRect(region),
+              hitMaxWait: true,
+              suspectedEarly: false,
+              signals: {
+                structuralQuiet: false,
+                animationsSettled: false,
+                ...(awaitQ ? { networkIdle: isQuiescent() } : {}),
+              },
+            };
+          }
+
+          if (structuralQuiet) {
+            // Fuse the WAAPI animation-settle on the region's roots (budget clamped to the time left before
+            // the cap), then RE-verify quiet + network — a mutation can land during the animation wait.
+            const animBudget = Math.max(0, Math.min(opts.animMaxMs, deadline - performance.now()));
+            await settleAnimations(
+              [...regionRoots].filter((e) => e.isConnected),
+              animBudget,
+            );
+            const during = drainEffects(true);
+            if (during.length) {
+              for (const r of during) region = unite(region, r);
+              lastEffectAt = performance.now();
+            }
+            const now2 = performance.now();
+            const stillQuiet = now2 - lastEffectAt >= opts.quietMs;
+            const networkIdle = !awaitQ || isQuiescent();
+            const cleanSettle = stillQuiet && networkIdle;
+            const capped2 = now2 >= deadline;
+            if (cleanSettle || capped2) {
+              // On a CLEAN settle, run the region-scoped late-watch (gap-E): a later effect intersecting
+              // the region is a late wave → suspectedEarly. On a cap WITHOUT a clean settle, return
+              // INCONCLUSIVE immediately (no late-watch — it would overshoot the cap for no signal).
+              let suspectedEarly = false;
+              if (cleanSettle && opts.lateWatchMs > 0) {
+                const lateDeadline = now2 + opts.lateWatchMs;
+                while (performance.now() < lateDeadline) {
+                  await sleep(Math.min(opts.lateWatchMs, 25));
+                  if (drainEffects(true).length) suspectedEarly = true;
+                }
+              }
+              return {
+                effectAppeared: true,
+                appearedMs,
+                settledMs: round(now2 - t0),
+                region: toRect(region),
+                hitMaxWait: !cleanSettle,
+                suspectedEarly,
+                signals: {
+                  structuralQuiet: stillQuiet,
+                  animationsSettled: true,
+                  ...(awaitQ ? { networkIdle } : {}),
+                },
+              };
+            }
+            // network still busy (or a re-reset during the animation wait) and not capped → keep polling.
+          }
+          await sleep(tick);
+        }
+      } finally {
+        // Consume the pre-arm baseline footprint (symmetric with collect) so a LATER `baseline:false`
+        // run isn't measured against this action's stale background. reset() must NOT do this — arm()
+        // calls reset() AFTER sampleBaseline, so clearing there would wipe the delta path's baseline.
+        bgText = new Set();
+        bgAttr = new Map();
+        bgInsert = new Set();
+        bgInsertCount = new Map();
+        bgRemove = new Set();
+        bgRemoveCount = new Map();
       }
     })();
   }

@@ -4,11 +4,25 @@
 //
 //   Run:  npx tsx src/mcp/server.ts   (dev)  ·  deltawright-mcp  (installed bin)
 //   Embed: import { startServer, DeltawrightSession } from 'deltawright/mcp'
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { DeltawrightSession, type McpAction } from './session';
+
+// Advertise the REAL package version in the MCP initialize handshake (not a stale hardcode). The
+// package.json sits two levels up from dist/mcp/server.js (and from src/mcp/server.ts in the dev tree).
+function packageVersion(): string {
+  try {
+    return (
+      JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version ??
+      '0.0.0'
+    );
+  } catch {
+    return '0.0.0';
+  }
+}
 
 // Re-exported so `deltawright/mcp` is a real importable module (embedders can drive a
 // session directly), not just a runnable bin.
@@ -39,7 +53,7 @@ function buildAction(
   }
 }
 
-const server = new McpServer({ name: 'deltawright', version: '0.1.0' });
+const server = new McpServer({ name: 'deltawright', version: packageVersion() });
 
 server.registerTool(
   'navigate',

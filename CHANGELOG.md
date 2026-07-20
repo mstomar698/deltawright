@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Repo hardening from a four-agent bug-hunt** (`docs/BUG-HUNT-2026-07-20.md`). (1) **Flaky
+  timing-assertion family** — five load-sensitive `settleMs < BUSY_MS-30` assertions
+  (`framework-quiescence`/`quiescence`/`wait` specs) widened to a 600ms busy window so the default
+  settle clears with margin under CI load. (2) **`live-routing` client-abort exclusion** narrowed from
+  `/ERR_ABORTED|aborted/i` to `/\bERR_ABORTED\b/i` — a genuine `net::ERR_CONNECTION_ABORTED` (connection
+  dropped by the server) is a real backend fault and is now KEPT/routed, not silently dropped.
+  (3) **`observeEffectSettled` baseline-footprint leak** — `waitForEffectSettle` now consumes the
+  pre-arm footprint (symmetric with `collect`), so a later `{baseline:false}` call is not measured
+  against stale background. (4) **Child-frame late-watch leak** — `actAndObserve({frames,lateWatchMs})`
+  no longer starts an un-torn-down `MutationObserver` per child frame. (5) **`pageMap` reconcile**
+  skips the Playwright trial for off-screen nodes (a trial auto-scrolls them in, fabricating a
+  disagreement + polluting the captured scroll). (6) **MCP `serverInfo.version`** now reads the real
+  package version instead of a hardcoded `0.1.0`. (7) **`release.yml`** gained a `concurrency:` group
+  to prevent a duplicate-publish race. Regression tests added for (2), (3), (5).
+
 ### Added
 
 - **`scoreSelectors(root, delta, opts?)` — durable-selector scoring** (`deltawright/matchers`). Phase 3

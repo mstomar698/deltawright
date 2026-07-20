@@ -218,12 +218,13 @@ export function attachLiveRouting(page: Page): LiveRoutingCollector {
   };
   const onRequestFailed = (req: Request): void => {
     const errorText = req.failure()?.errorText;
-    // EXCLUDE a client-side cancellation. `net::ERR_ABORTED` (and any "aborted" failure text) is the
-    // page/test cancelling its OWN request — a superseded fetch, an abandoned navigation, an
-    // AbortController — NOT a backend/infra fault. Counting it would flip the backend hint on a healthy
-    // page merely because a cancel co-occurred in the settle window. Genuine failures
-    // (ERR_CONNECTION_REFUSED, ERR_NAME_NOT_RESOLVED, ERR_TIMED_OUT, …) are kept.
-    if (errorText && /ERR_ABORTED|aborted/i.test(errorText)) return;
+    // EXCLUDE a client-side cancellation. `net::ERR_ABORTED` is the page/test cancelling its OWN request
+    // — a superseded fetch, an abandoned navigation, an AbortController — NOT a backend/infra fault.
+    // Counting it would flip the backend hint on a healthy page merely because a cancel co-occurred in
+    // the settle window. Match ONLY that sentinel (word-bounded): a genuine `net::ERR_CONNECTION_ABORTED`
+    // (a connection dropped by the network/server) contains "ABORTED" but is a REAL infra fault and must
+    // be kept — as are ERR_CONNECTION_REFUSED, ERR_NAME_NOT_RESOLVED, ERR_TIMED_OUT, ….
+    if (errorText && /\bERR_ABORTED\b/i.test(errorText)) return;
     raw.push({ kind: 'requestfailed', url: req.url(), text: errorText });
   };
   const onPageError = (err: Error): void => {
