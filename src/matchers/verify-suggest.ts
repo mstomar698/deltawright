@@ -82,7 +82,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 /** Rebuild the live Locator for a candidate from its delta node + tier (mirrors `selectorsForNode`). */
-function locatorFor(
+export function locatorFor(
   root: Page | Frame,
   tier: SelectorSuggestion['tier'],
   node: DeltaNode,

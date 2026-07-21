@@ -1,11 +1,12 @@
 import type { Page, Frame } from '@playwright/test';
 import {
   verifySuggestions,
+  locatorFor,
   type VerifiedSelectorSuggestion,
   type VerifiedSuggestResult,
   type VerifySuggestionsOptions,
 } from './verify-suggest';
-import type { AssertionSuggestion } from '../host/suggest';
+import type { AssertionSuggestion, SelectorTier } from '../host/suggest';
 import type { Delta, DeltaNode, Rect } from '../host/types';
 
 // R3 (Phase 3) — a DURABILITY recommender layered on `verifySuggestions`. verifySuggestions answers
@@ -35,6 +36,10 @@ export interface ScoredSelectorSuggestion extends VerifiedSelectorSuggestion {
   flags: string[];
   /** True when this candidate was SYNTHESIZED as a geometry-relative fallback (not from suggest()). */
   synthesized?: boolean;
+  /** The RAW Playwright selector string behind `code` — present only on synthesized candidates (the
+   *  semantic tiers rebuild their locator from the delta node). Used by {@link measureRetention} to
+   *  re-resolve the same layout locator on a later snapshot. */
+  rawSelector?: string;
 }
 
 export interface DurableSuggestResult {
@@ -292,6 +297,7 @@ export async function scoreSelectors(
           grade: s.grade,
           flags: s.flags,
           synthesized: true,
+          rawSelector: selector,
         };
       },
     );
@@ -341,4 +347,223 @@ export async function scoreSelectors(
   }
 
   return { selectors, bestDurable, assertions, warnings };
+}
+
+// --- measureRetention (R3 step 4) — the two-snapshot MEASURED cross-render signal --------------------
+//
+// scoreSelectors' `durability` is a single-page ESTIMATE — a brittleness proxy, explicitly NOT a claim
+// of stability across renders (see the warning it emits). The only sound cross-render signal is to
+// actually RE-CHECK a selector after the page changes: `measureRetention` re-resolves each snapshot-A
+// selector on a SECOND snapshot (after a re-render you supply, or the current DOM) and reports whether
+// it still resolves uniquely to a control in the same place.
+//
+// HONESTY (DW-03, load-bearing): the `data-dw-ref` identity marker does NOT survive a re-render (it is
+// a transient delta stamp on the ORIGINAL node), so DW cannot prove OBJECT identity across snapshots.
+// Identity is inferred from the selector's own semantics (a unique match — Playwright enforces role+
+// name / text / the layout anchor) PLUS geometry proximity to the recorded rect. A unique match that
+// jumped beyond `positionTolerance` is surfaced as `moved` (review it — possibly a different instance),
+// never silently counted as retained. The measurement is a real signal for the OBSERVED transition —
+// still NOT a guarantee of stability across future releases; the result says so.
+
+export interface MeasureRetentionOptions {
+  /** A re-render to run BETWEEN the two snapshots (a data refresh, an SPA in-place re-render, a reload).
+   *  Omit if you have already re-rendered — the CURRENT live DOM is taken as snapshot B. */
+  reRender?: () => Promise<void>;
+  /** Max center-shift (CSS px) for a uniquely re-resolved element to still count as the SAME control —
+   *  normal reflow stays under it; a larger jump is surfaced as `moved` (possibly a different instance)
+   *  rather than claimed retained. Default 250. */
+  positionTolerance?: number;
+  /** Bound on concurrent re-resolution round-trips (default 12). */
+  concurrency?: number;
+}
+
+/** Retention MEASURED across the observed re-render (snapshot A → B). */
+export type RetentionVerdict =
+  | 'retained' // still resolves uniquely AND to a control within `positionTolerance` of snapshot A
+  | 'moved' // resolves uniquely but the element jumped beyond tolerance (possibly a different instance)
+  | 'ambiguous' // now resolves to >1 element — lost uniqueness across the re-render
+  | 'lost'; // now resolves to 0 elements
+
+export interface SelectorRetention {
+  ref: string;
+  tier: SelectorTier;
+  code: string;
+  synthesized?: boolean;
+  /** Retention verdict measured on snapshot B. */
+  retention: RetentionVerdict;
+  /** `locator.count()` on snapshot B. */
+  matchesAfter: number;
+  /** Center-shift (CSS px) from snapshot A's recorded rect — null unless it re-resolved uniquely with a
+   *  measurable box on both snapshots. */
+  centerShift: number | null;
+  /** The single-page ESTIMATE from scoreSelectors (snapshot A). */
+  estimatedDurability: number;
+  /** Durability re-scored with the measured retention folded in. */
+  measuredDurability: number;
+  /** Estimate band recomputed from `measuredDurability`. */
+  grade: SelectorGrade;
+  flags: string[];
+}
+
+export interface RetentionResult {
+  /** Per re-checked selector (the snapshot-A `verified` ones), re-ranked by measured grade/durability. */
+  selectors: SelectorRetention[];
+  /** Fraction of re-checked selectors that RETAINED (0..1; 0 when none were re-checked). */
+  retentionRate: number;
+  /** The top measured selector that RETAINED and is non-brittle, else null. */
+  bestRetained: SelectorRetention | null;
+  /** The honest framing of what was (and was not) measured. */
+  warnings: string[];
+}
+
+function gradeFor(durability: number): SelectorGrade {
+  if (durability <= 0) return 'broken';
+  return durability >= DURABLE_MIN ? 'durable' : durability >= USABLE_MIN ? 'usable' : 'brittle';
+}
+
+const DEFAULT_POSITION_TOLERANCE = 250;
+
+/**
+ * Two-snapshot MEASURED cross-render check for the selectors {@link scoreSelectors} verified. Re-resolves
+ * each snapshot-A `verified` selector on a SECOND snapshot — after the `reRender` you pass, or the
+ * current DOM — and reports whether it still resolves UNIQUELY to a control in ~the same place
+ * (`retained`), resolves but relocated (`moved`), lost uniqueness (`ambiguous`), or vanished (`lost`).
+ *
+ * Pass the SAME `delta` and `scored` result you got from `scoreSelectors` (they carry snapshot-A's
+ * recorded rects + which selectors verified). Only the selectors that WORKED on snapshot A are
+ * re-checked — retention is about whether a working selector keeps working.
+ *
+ * HONESTY: this is a measured signal for the ONE transition observed, not a cross-release guarantee, and
+ * identity across the re-render is inferred (semantics + geometry), not proven — see the module header.
+ */
+export async function measureRetention(
+  root: Page | Frame,
+  delta: Delta,
+  scored: DurableSuggestResult,
+  opts: MeasureRetentionOptions = {},
+): Promise<RetentionResult> {
+  const tol = opts.positionTolerance ?? DEFAULT_POSITION_TOLERANCE;
+  const byRef = new Map(delta.nodes.map((n) => [n.ref, n] as const));
+  // Only re-check what WORKED on snapshot A (a broken/ambiguous candidate has nothing to "retain").
+  // Snapshot this list BEFORE the re-render — `scored`/`delta` are in-memory, unaffected by the DOM.
+  const targets = scored.selectors.filter((s) => s.verified);
+
+  // Snapshot B: run the caller's re-render (if any). A throw here is a real failure — propagate it.
+  if (opts.reRender) await opts.reRender();
+
+  const measured = await mapWithConcurrency(
+    targets,
+    opts.concurrency ?? DEFAULT_CONCURRENCY,
+    async (c): Promise<SelectorRetention> => {
+      const node = byRef.get(c.ref);
+      // Rebuild the SAME locator on snapshot B: synthesized layout locators carry their raw selector;
+      // the semantic tiers rebuild from the delta node (mirrors verifySuggestions).
+      const loc =
+        c.synthesized && c.rawSelector
+          ? root.locator(c.rawSelector)
+          : node
+            ? locatorFor(root, c.tier, node)
+            : null;
+
+      let matchesAfter = 0;
+      let box: { x: number; y: number; width: number; height: number } | null = null;
+      if (loc) {
+        try {
+          matchesAfter = await loc.count();
+          if (matchesAfter === 1) box = await loc.boundingBox();
+        } catch {
+          matchesAfter = 0; // detached page/frame or an invalid rebuilt selector
+        }
+      }
+
+      const flags = [...c.flags];
+      let retention: RetentionVerdict;
+      let centerShift: number | null = null;
+      if (matchesAfter === 0) {
+        retention = 'lost';
+        flags.push('lost-after-rerender');
+      } else if (matchesAfter > 1) {
+        retention = 'ambiguous';
+        if (!flags.includes('ambiguous')) flags.push('ambiguous');
+        flags.push('ambiguous-after-rerender');
+      } else {
+        const recorded = node?.geometry?.rect;
+        if (recorded && box) {
+          const dx = box.x + box.width / 2 - (recorded.x + recorded.width / 2);
+          const dy = box.y + box.height / 2 - (recorded.y + recorded.height / 2);
+          centerShift = Math.round(Math.hypot(dx, dy));
+          retention = centerShift <= tol ? 'retained' : 'moved';
+          flags.push(retention === 'retained' ? 'retained' : 'moved-after-rerender');
+        } else {
+          // Unique match, but position could not be measured on one of the snapshots — the unique match
+          // stands, but we cannot confirm it is the same instance, so we do not claim a clean retain.
+          retention = 'retained';
+          flags.push('retained', 'position-unmeasured');
+        }
+      }
+
+      const est = c.durability;
+      let measuredDurability: number;
+      switch (retention) {
+        case 'retained':
+          measuredDurability = Math.min(100, est + 10); // a modest confirmation nudge, never inflated
+          break;
+        case 'moved':
+          measuredDurability = Math.round(est * 0.7);
+          break;
+        case 'ambiguous':
+          measuredDurability = Math.round(est * 0.3);
+          break;
+        case 'lost':
+          measuredDurability = 0;
+          break;
+      }
+
+      return {
+        ref: c.ref,
+        tier: c.tier,
+        code: c.code,
+        synthesized: c.synthesized,
+        retention,
+        matchesAfter,
+        centerShift,
+        estimatedDurability: est,
+        measuredDurability,
+        grade: gradeFor(measuredDurability),
+        flags,
+      };
+    },
+  );
+
+  const selectors = measured
+    .map((v, i) => ({ v, i }))
+    .sort(
+      (a, b) =>
+        GRADE_RANK[a.v.grade] - GRADE_RANK[b.v.grade] ||
+        b.v.measuredDurability - a.v.measuredDurability ||
+        a.i - b.i,
+    )
+    .map(({ v }) => v);
+
+  const retainedCount = selectors.filter((s) => s.retention === 'retained').length;
+  const retentionRate = selectors.length > 0 ? retainedCount / selectors.length : 0;
+  const bestRetained =
+    selectors.find((s) => s.retention === 'retained' && s.grade !== 'brittle') ?? null;
+
+  const warnings: string[] = [
+    'measureRetention: `retention`/`measuredDurability` are MEASURED across the ONE re-render observed (snapshot A→B) — a real cross-render signal for THIS transition, NOT a guarantee of stability across future releases.',
+    'measureRetention: the `data-dw-ref` identity marker does not survive a re-render, so object identity is INFERRED from a unique semantic/layout match + geometry proximity (not proven) — a unique match that moved beyond `positionTolerance` is reported `moved` for review, never silently counted as retained.',
+  ];
+  if (!opts.reRender) {
+    warnings.push(
+      'measureRetention: no `reRender` supplied — the current live DOM was taken as snapshot B; ensure the re-render happened before this call.',
+    );
+  }
+  if (targets.length === 0) {
+    warnings.push(
+      'measureRetention: no snapshot-A `verified` selector to re-check — nothing that worked, so there is nothing to retain.',
+    );
+  }
+
+  return { selectors, retentionRate, bestRetained, warnings };
 }
