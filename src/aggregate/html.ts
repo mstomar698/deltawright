@@ -1,5 +1,5 @@
 import type { RootCauseCategory } from '../host/taxonomy';
-import type { FlakeReport, TestFlakeRecordView, TestFlakeSummary } from './index';
+import type { FlakeReport, PriorityQueue, TestFlakeRecordView, TestFlakeSummary } from './index';
 
 // The flake dashboard (#2, Wave-1) — a self-contained, theme-aware static HTML view over the
 // EXISTING FlakeReport (#59's deliberately-cut dashboard). VIEW-ONLY: `renderHtml` is a pure
@@ -195,6 +195,59 @@ function testsSection(tests: TestFlakeSummary[]): string {
     </section>`;
 }
 
+/**
+ * The fix-first Actionability Priority panel (reporting A). Renders the cause clusters ranked by shared
+ * blast radius × confidence — each row DECOMPOSED (blast radius · confidence · failures), never an opaque
+ * score — plus a separate "needs human triage" note for the unsure lane. Returns '' when no priority queue
+ * is supplied (the dashboard degrades to its existing panels). All dynamic text is HTML-escaped.
+ */
+function prioritySection(priority?: PriorityQueue): string {
+  if (!priority || (priority.rows.length === 0 && priority.humanLane.length === 0)) return '';
+  const rows = priority.rows
+    .map(
+      (r) => `
+            <tr>
+              <td class="num">${r.rank}</td>
+              <td class="num"><b>${r.blastRadius}</b></td>
+              <td>${escapeHtml(r.confidence)}</td>
+              <td><code>${escapeHtml(r.code)}</code> <span class="conf">[${escapeHtml(r.category)}]</span>
+                ${r.detailSample ? `<p class="rec-detail">${escapeHtml(r.detailSample)}</p>` : ''}</td>
+              <td class="num">${r.failures}</td>
+              <td class="num">${r.runs}</td>
+              <td>${escapeHtml(r.fingerprintSource)}</td>
+            </tr>`,
+    )
+    .join('');
+  const humanLane =
+    priority.humanLane.length > 0
+      ? `<p><b>${priority.humanLane.length}</b> unsure failure${priority.humanLane.length === 1 ? '' : 's'}
+         go to their OWN lane — routed to a human, never scored as a cause (silence beats a
+         confidently-wrong priority).</p>`
+      : '';
+  const table =
+    priority.rows.length > 0
+      ? `<div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th class="num">#</th><th class="num">Tests</th><th>Confidence</th><th>Cause</th>
+              <th class="num">Failures</th><th class="num">Runs</th><th>Fingerprint</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+      : '';
+  return `
+    <section class="panel">
+      <h2>Fix first — priority by shared root cause</h2>
+      <p>Ranked by <b>blast radius × confidence</b> (decomposed — each row shows its components, never one
+      opaque score). Blast radius = distinct tests sharing the cause: a <b>fix-once-fix-many candidate</b>,
+      a hypothesis, not a guarantee. Confidence is the cluster's <b>highest</b> band (the cause was confirmed
+      on at least one member). Playwright's verdict stays authoritative.</p>
+      ${humanLane}
+      ${table}
+    </section>`;
+}
+
 function unsurePanel(unsureBucket: number, totalRecords: number): string {
   const share = totalRecords > 0 ? unsureBucket / totalRecords : 0;
   return `
@@ -212,7 +265,7 @@ function unsurePanel(unsureBucket: number, totalRecords: number): string {
  * Render a FlakeReport as a self-contained, theme-aware HTML dashboard. Pure — returns a string,
  * writes nothing. Dynamic text (test IDs) is HTML-escaped; all other content is fixed taxonomy data.
  */
-export function renderHtml(report: FlakeReport): string {
+export function renderHtml(report: FlakeReport, priority?: PriorityQueue): string {
   const { tests, totalRecords, unsureBucket } = report;
   const subtitle = `${totalRecords} failure record${totalRecords === 1 ? '' : 's'} across ${tests.length} test${tests.length === 1 ? '' : 's'} · ${unsureBucket} unsure`;
 
@@ -337,6 +390,7 @@ export function renderHtml(report: FlakeReport): string {
     <div class="card"><div class="big">${tests.length}</div><div class="lbl">Flaky tests</div></div>
     <div class="card unsure"><div class="big">${unsureBucket}</div><div class="lbl">Unsure records</div></div>
   </section>
+${prioritySection(priority)}
 ${categorySection(tests, unsureBucket)}
 ${testsSection(tests)}
 ${unsurePanel(unsureBucket, totalRecords)}
