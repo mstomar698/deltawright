@@ -536,6 +536,13 @@ declare global {
     const regionRoots = new Set<Element>();
     let appearedMs: number | null = null;
     let lastEffectAt = 0;
+    // Latched when a TOP-LEVEL effect target (`<body>` / `<html>`) is seen — a real effect (e.g. a modal
+    // removed straight off `<body>`) whose only rect is the whole page. It marks "an effect appeared"
+    // WITHOUT seeding the region: inflating the region to the viewport would make every later mutation
+    // intersect it, degrading region-scoping back into global quiescence (the exact failure R1 avoids).
+    let sawUnlocalizedEffect = false;
+    const isUnlocalizable = (el: Element): boolean =>
+      el === document.body || el === document.documentElement;
 
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -544,10 +551,10 @@ declare global {
         const r = el.getBoundingClientRect();
         if (r.width <= 0 && r.height <= 0) return null;
         // Clamp to the viewport. A removal's effect locus is the (detached) node's FORMER PARENT rect,
-        // which for an overlay appended to <body> is the whole page (taller than the viewport) — an
-        // un-clamped region ≈ the page defeats region-scoping. Clamping keeps the region within view;
-        // a genuinely full-viewport removal still yields a coarse region (honest-inconclusive, not a
-        // fake settle). KNOWN LIMIT: a top-level removal cannot be localized tighter (no rect exists).
+        // which for a non-top-level container can still be larger than the viewport — an un-clamped region
+        // ≈ the page defeats region-scoping. Clamping keeps the region within view. (A removal off the
+        // top-level <body>/<html> never reaches here: drainEffects treats those as unlocalizable and never
+        // rect-measures them, so they can't inflate the region — see `isUnlocalizable`.)
         const left = Math.max(0, r.left);
         const top = Math.max(0, r.top);
         const right = Math.min(vw, r.right);
@@ -591,6 +598,14 @@ declare global {
       const hits: EffectRect[] = [];
       for (; processed < records.length; processed++) {
         for (const el of effectTargetsOf(records[processed]!)) {
+          // A top-level effect target has no informative rect (its box is the whole page). Latch that an
+          // effect occurred, but do NOT let it seed the region or reset the quiet timer — otherwise a
+          // top-level removal degrades the settle into whole-viewport quiescence (over-waits on any live
+          // page with unrelated non-background churn). Localizable follow-on effects still scope it.
+          if (isUnlocalizable(el)) {
+            sawUnlocalizedEffect = true;
+            continue;
+          }
           const r = rectOf(el);
           if (!r) continue;
           if (regionScoped && region && !intersects(r, region)) continue;
@@ -605,10 +620,13 @@ declare global {
 
     return (async (): Promise<EffectSettleResult> => {
       try {
-        // PHASE 1 — the effect APPEARS (the first-effect edge; nothing is named in advance).
+        // PHASE 1 — the effect APPEARS (the first-effect edge; nothing is named in advance). A localizable
+        // hit seeds the region; a purely top-level effect (`sawUnlocalizedEffect`, e.g. a modal removed off
+        // `<body>`) counts as appeared with region left null — honest "an effect happened, it can't be
+        // spatially localized", never a fake no-effect and never a viewport-sized region.
         for (;;) {
           const hits = drainEffects(false);
-          if (hits.length) {
+          if (hits.length || sawUnlocalizedEffect) {
             for (const r of hits) region = unite(region, r);
             appearedMs = round(performance.now() - t0);
             lastEffectAt = performance.now();
