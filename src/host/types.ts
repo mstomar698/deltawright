@@ -363,8 +363,11 @@ export interface EffectSettleResult {
   appearedMs: number | null;
   /** arm → the region went still (or the cap). */
   settledMs: number;
-  /** The suspected-effect rect (viewport coords) — CO-OCCURRENCE, not proven causation. Null when no
-   *  effect appeared. */
+  /** The suspected-effect rect (viewport coords) — CO-OCCURRENCE, not proven causation. Null in TWO
+   *  cases, distinguished by `effectAppeared`: (1) no effect appeared (`effectAppeared:false`); or (2) an
+   *  effect appeared but could not be spatially localized — a top-level `<body>`/`<html>` change such as a
+   *  modal removed straight off `<body>` (`effectAppeared:true`, `region:null`). Never read `region`
+   *  alone as "no effect": check `effectAppeared`. */
   region: Rect | null;
   /** true = the cap was hit before the region went quiet → treat the settle as INCONCLUSIVE. */
   hitMaxWait: boolean;
