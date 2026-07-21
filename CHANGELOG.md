@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **`observeEffectSettled` — a top-level removal no longer over-waits to the cap.** Closing a modal
+  appended straight to `<body>` made the effect target `<body>` itself, whose rect is the whole page —
+  so the region inflated to the full viewport and every later mutation reset the quiet timer, degrading
+  the region-scoped settle back into global quiescence (`hitMaxWait` on any live page with unrelated
+  churn). Top-level targets (`<body>` / `<html>`) are now treated as **unlocalizable**: they latch "an
+  effect appeared" (never a fake no-effect) but do not seed the region or reset the timer, so the settle
+  reports `region: null` and lands cleanly. A localizable follow-on effect still scopes the region
+  normally. (Bug-hunt backlog, `docs/BUG-HUNT-2026-07-20.md` §C.)
+
 ### Added
 
 - **`measureRetention` (in `deltawright/matchers`)** — the two-snapshot MEASURED cross-render signal that

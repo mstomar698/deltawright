@@ -35,6 +35,9 @@
     <button id="delayed-effect">Delayed effect (amid churn)</button>
     <button id="canvas-draw">Canvas draw (no DOM)</button>
     <button id="no-op">No-op</button>
+    <button id="open-modal">Open modal</button>
+    <button id="close-modal">Close modal (+ body churn)</button>
+    <button id="close-modal-then-effect">Close modal then localizable effect</button>
   </div>
 
   <script>
@@ -71,6 +74,45 @@
     });
 
     // (d) No-op: the click does nothing at all.
+
+    // (e) A TOP-LEVEL modal, appended directly to <body>. Closing it removes the modal OFF <body>, so the
+    //     effect target is <body> itself (a detached node has no rect; its former parent is the page).
+    document.getElementById('open-modal').addEventListener('click', () => {
+      const m = document.createElement('div');
+      m.id = 'modal';
+      m.setAttribute('role', 'dialog');
+      m.style.cssText =
+        'position:fixed;left:200px;top:120px;width:320px;height:200px;background:#fff;border:2px solid #333;';
+      m.textContent = 'Modal';
+      document.body.appendChild(m);
+    });
+
+    // Close the modal AND then churn a <body> attribute continuously (~1.3s, past a normal settle). A
+    // top-level removal + top-level attribute churn are BOTH unlocalizable: with the old viewport-sized
+    // region they would reset the settle to the cap; region-scoping must treat them as "an effect
+    // happened, unlocalizable" and settle cleanly (region null, no hitMaxWait).
+    document.getElementById('close-modal').addEventListener('click', () => {
+      const m = document.getElementById('modal');
+      if (m) m.remove();
+      let n = 0;
+      const t = setInterval(() => {
+        document.body.setAttribute('data-churn', String(n++));
+        if (n > 42) clearInterval(t);
+      }, 30);
+    });
+
+    // Close the modal (unlocalizable) and, 250ms later, make a LOCALIZABLE effect in #effect-area. The
+    // settle must attach its region to that follow-on (a real sub-viewport rect), not stay null.
+    document.getElementById('close-modal-then-effect').addEventListener('click', () => {
+      const m = document.getElementById('modal');
+      if (m) m.remove();
+      setTimeout(() => {
+        const d = document.createElement('div');
+        d.id = 'result';
+        d.textContent = 'Done';
+        document.getElementById('effect-area').appendChild(d);
+      }, 250);
+    });
 
     // The background ticker (scenario b): started on demand by the test so other scenarios stay clean.
     // Inserts a feed row every 30ms → the pre-action baseline sees it recur → classifies it background.

@@ -134,6 +134,48 @@ test('honesty: no `ready`/`safe`/`settled` boolean on the observation (a signal,
   for (const k of ['ready', 'safe', 'settled', 'ok']) expect(k in obs).toBe(false);
 });
 
+test('(e) a top-level modal removed off <body> settles cleanly (region null) despite continuous body-level churn', async ({
+  page,
+}) => {
+  await page.click('#open-modal');
+  await expect(page.locator('#modal')).toHaveCount(1);
+
+  const obs = await observeEffectSettled(page, (p) => p.click('#close-modal'), { maxWaitMs: 2500 });
+
+  expect(obs.observed).toBe(true);
+  // An effect DID happen (the modal was removed) — never a fake "no effect".
+  expect(obs.effectAppeared).toBe(true);
+  // A top-level removal has no informative rect, so the region is honestly null — NOT the whole viewport.
+  expect(obs.region).toBeNull();
+  // The continuous <body>-attribute churn is unlocalizable, so it never resets the settle → a clean
+  // settle, not hitMaxWait. (With the old viewport-sized region this over-waited to the cap.)
+  expect(obs.hitMaxWait).toBe(false);
+  await expect(page.locator('#modal')).toHaveCount(0);
+});
+
+test('(f) a localizable follow-on after a top-level removal scopes the region to the follow-on, not the viewport', async ({
+  page,
+}) => {
+  await page.click('#open-modal');
+
+  // Widen the quiet window so the 250ms follow-on reliably lands inside it (and resets/seeds the region)
+  // rather than the removal settling first.
+  const obs = await observeEffectSettled(page, (p) => p.click('#close-modal-then-effect'), {
+    quietMs: 400,
+    maxWaitMs: 3000,
+  });
+
+  expect(obs.observed).toBe(true);
+  expect(obs.effectAppeared).toBe(true);
+  expect(obs.hitMaxWait).toBe(false);
+  // The region attaches to the localizable follow-on in #effect-area — present and sub-viewport, proving
+  // the unlocalizable removal did not force a null/viewport region when a real effect followed.
+  expect(obs.region).not.toBeNull();
+  const vp = page.viewportSize()!;
+  expect(obs.region!.width).toBeLessThan(vp.width);
+  expect(obs.region!.height).toBeLessThan(vp.height);
+});
+
 test('degrades honestly under a strict CSP (observed:false, still performs the action)', async ({
   page,
 }) => {
