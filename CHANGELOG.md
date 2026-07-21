@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`toHaveCommittedValue(intended)` (in `deltawright/matchers`)** — an input-commit integrity matcher for
+  a case Playwright has no primitive for: telling a real value loss from an *intended* reformat mask, and
+  catching an async debounce / autocomplete / input-mask that silently clears, truncates, or drops a typed
+  value *after* `fill()`/`type()` returned success (a later submit intermittently fails while the fill site
+  looks green). It waits for the field's value to stop changing (catching the debounce-then-clear *window*
+  a synchronous `toHaveValue` poll can false-pass), then classifies it with the same `classifyInput` the
+  live/offline arms use: a benign reformat mask (`4111 1111`→`41111111`, trim, reorder) is `transformed`
+  and passes — where `toHaveValue` false-fails — while real character loss
+  (`never-committed`/`truncated`/`dropped`) fails loud with the named shape. Honest by construction: a
+  separate assertion that never overrides `fill()`, never repairs the value, never claims *why* the widget
+  dropped it; PII-safe (shape + lengths only, never the raw value); `settled` flags a value still changing
+  at the cap; a loss combined with a case/reorder transform is deliberately `transformed` (biased against
+  false-failing a legit mask). `checkCommittedValue(locator, intended)` exposes the structured result.
+  Hardening H1 from the SDLC research (`docs/research/sdlc-hardening.md`).
+
 ### Fixed
 
 - **`observeEffectSettled` — a top-level removal no longer over-waits to the cap.** Closing a modal

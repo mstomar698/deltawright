@@ -28,3 +28,6 @@ export const NORTHSTAR_AUTHORING_FIXTURE_URL = fixtureUrl('northstar-authoring.h
 
 /** file:// URL of the retention fixture (re-render → retained / moved / ambiguous / lost selectors). */
 export const RETENTION_FIXTURE_URL = fixtureUrl('retention.html');
+
+/** file:// URL of the committed-value fixture (clean / debounce-clear / mask / truncate / dropped inputs). */
+export const COMMITTED_VALUE_FIXTURE_URL = fixtureUrl('committed-value.html');

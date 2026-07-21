@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright toHaveCommittedValue fixture</title>
+</head>
+<body>
+  <label>clean <input id="clean" /></label>
+  <label>debounce-clear <input id="debounce-clear" /></label>
+  <label>mask-space <input id="mask-space" /></label>
+  <label>truncate <input id="truncate" /></label>
+  <label>dropped <input id="dropped" /></label>
+  <label>churn <input id="churn" /></label>
+  <script>
+    // Each input exhibits a distinct committed-value shape via an `input` listener (fill() dispatches
+    // one), mirroring the async widgets `toHaveCommittedValue` targets:
+    //   • #clean          — keeps the value                               → clean       (pass)
+    //   • #debounce-clear  — an async debounce clears it 150ms LATER       → never-committed (fail);
+    //                        a synchronous read (or toHaveValue's first poll) sees the value BEFORE the
+    //                        clear and would false-pass — the settle read is what catches it.
+    //   • #mask-space      — strips whitespace immediately (a card mask)   → transformed (pass); this is
+    //                        the key case: toHaveValue('4111 1111') FALSE-fails, toHaveCommittedValue passes.
+    //   • #truncate        — clamps to 5 chars                             → truncated   (fail)
+    //   • #dropped         — removes the first "l"                          → dropped      (fail)
+    const el = (id) => document.getElementById(id);
+
+    let clearTimer = null;
+    el('debounce-clear').addEventListener('input', (e) => {
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => { e.target.value = ''; }, 150);
+    });
+
+    el('mask-space').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\s/g, '');
+    });
+
+    el('truncate').addEventListener('input', (e) => {
+      if (e.target.value.length > 5) e.target.value = e.target.value.slice(0, 5);
+    });
+
+    el('dropped').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace('l', ''); // drop the first "l" — a non-prefix subsequence
+    });
+
+    // #churn never stops changing after the first input — a continuously-mutating field that never
+    // settles, so `settled` must come back false (the classification is on a mid-flight value).
+    el('churn').addEventListener('input', function start(e) {
+      const input = e.target;
+      if (input.dataset.churning) return;
+      input.dataset.churning = '1';
+      setInterval(() => { input.value = 'x' + Date.now(); }, 40);
+    });
+  </script>
+</body>
+</html>
