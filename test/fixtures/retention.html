@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright measureRetention fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    button, a, input { font-size: 14px; }
+    #panel { position: absolute; left: 100px; top: 100px; width: 360px; }
+    #panel > * { position: absolute; }
+  </style>
+</head>
+<body>
+  <button id="go">Build</button>
+  <button id="rerender">Re-render</button>
+  <script>
+    // Two-snapshot retention harness. Clicking #go inserts a panel of controls that ALL verify uniquely
+    // on snapshot A (each getByRole('button', { name }) resolves to exactly one element). Clicking
+    // #rerender then mutates them so each demonstrates a distinct retention verdict on snapshot B:
+    //   • "Save"    — untouched             → retained
+    //   • "Submit"  — moved far down        → moved         (unique, but jumped past positionTolerance)
+    //   • "Publish" — a duplicate is added  → ambiguous     (getByRole now matches two)
+    //   • "Cancel"  — removed               → lost
+    //   • "Docs"    — hidden (display:none) → inconclusive  (getByText still counts it, but no box)
+    //   • two unnamed inputs → getByRole('textbox') is ambiguous, so the one next to "Save" has only a
+    //     SYNTHESIZED geometry-relative fallback; both inputs stay put → that fallback re-resolves
+    //     uniquely on snapshot B → retained (exercises the rawSelector re-resolution path).
+    document.getElementById('go').addEventListener('click', () => {
+      const panel = document.createElement('div');
+      panel.id = 'panel';
+      panel.innerHTML =
+        '<button class="save" style="left:0;top:0;">Save</button>' +
+        '<a class="docs" href="#" style="left:200px;top:0;">Docs</a>' +
+        '<input class="near" style="left:0;top:28px;width:150px;" />' +
+        '<button class="submit" style="left:0;top:130px;">Submit</button>' +
+        '<button class="publish" style="left:0;top:170px;">Publish</button>' +
+        '<button class="cancel" style="left:0;top:210px;">Cancel</button>' +
+        '<input class="far" style="left:0;top:330px;width:150px;" />';
+      document.body.appendChild(panel);
+    });
+
+    document.getElementById('rerender').addEventListener('click', () => {
+      // Submit: relocate far below its recorded position (a ~450px center jump, well past the 250 default).
+      const submit = document.querySelector('#panel .submit');
+      if (submit) submit.style.top = '520px';
+      // Publish: introduce a second, identical "Publish" → the selector loses uniqueness.
+      const dup = document.createElement('button');
+      dup.textContent = 'Publish';
+      dup.setAttribute('style', 'left:180px;top:108px;');
+      document.getElementById('panel').appendChild(dup);
+      // Cancel: remove it entirely.
+      const cancel = document.querySelector('#panel .cancel');
+      if (cancel) cancel.remove();
+      // Docs: hide it (still in the DOM) — getByText still counts it (1) but it has no layout box, so
+      // its position is unmeasurable → `inconclusive`, not a fake retain. (getByRole drops it → lost.)
+      const docs = document.querySelector('#panel .docs');
+      if (docs) docs.style.display = 'none';
+    });
+  </script>
+</body>
+</html>

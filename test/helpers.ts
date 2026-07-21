@@ -25,3 +25,6 @@ export const SCORE_SELECTORS_FIXTURE_URL = fixtureUrl('score-selectors.html');
 
 /** file:// URL of the north-star authoring fixture (RPC-style delayed poor-a11y panel + occlusion). */
 export const NORTHSTAR_AUTHORING_FIXTURE_URL = fixtureUrl('northstar-authoring.html');
+
+/** file:// URL of the retention fixture (re-render → retained / moved / ambiguous / lost selectors). */
+export const RETENTION_FIXTURE_URL = fixtureUrl('retention.html');

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`measureRetention` (in `deltawright/matchers`)** — the two-snapshot MEASURED cross-render signal that
+  upgrades `scoreSelectors`' single-page durability *estimate*. Pass the `delta` + `scoreSelectors` result
+  (snapshot A) and a `reRender`; it re-resolves each verified selector on the resulting DOM (snapshot B)
+  and reports `retained` / `moved` / `ambiguous` / `lost` per selector, a `retentionRate`, and a
+  `bestRetained`. Honest by construction: it measures the ONE observed re-render (never a cross-release
+  guarantee), and since the `data-dw-ref` marker does not survive a re-render, identity is inferred from a
+  unique semantic/layout match + geometry proximity — a jump past `positionTolerance` (default 250px) is
+  surfaced as `moved` for review, never silently counted as retained. Completes R3 step 4 of the
+  authoring-enhancer plan.
+
 ## [1.0.0] - 2026-07-20
 
 **The authoring-enhancer release.** Deltawright grows from a diagnosis/triage layer into a categorical

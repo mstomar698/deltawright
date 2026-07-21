@@ -162,7 +162,25 @@ const { selectors, bestDurable, warnings } = await scoreSelectors(page, delta);
 
 Each candidate gets a `durability` (0–100), a `grade`, and brittleness `flags` — `unstable-id` (a generated accessible name like `item-10847`), `text-volatile` (a name with an order number/price/date), `ambiguous`, `heuristic-role-unverified`, `tag-only`, `occluded`/`offscreen`/`not-actionable`. When nothing semantic verifies for a node, it synthesizes a **delta-anchored geometry-relative fallback** (`<tag>:near(:text("<nearest verified anchor>"))`), re-verified and graded as the last-resort handle it is. `bestDurable` is the top verified, non-brittle candidate — or `null` (with a warning) rather than a brittle hand-off.
 
-**Honesty:** `durability` is a **single-page ESTIMATE** — a brittleness proxy, never a claim of stability across releases or re-renders. (The only sound cross-render signal is a two-snapshot re-check, a deliberate follow-up.)
+**Honesty:** `durability` is a **single-page ESTIMATE** — a brittleness proxy, never a claim of stability across releases or re-renders. The only sound cross-render signal is a two-snapshot re-check — `measureRetention` (below).
+
+#### Measured cross-render retention: `measureRetention`
+
+`measureRetention(root, delta, scored, opts?)` upgrades the *estimate* into a **measurement**. Give it the `delta` + `scoreSelectors` result you already have (snapshot A), a `reRender` to run (a data refresh, an SPA re-render, a reload), and it re-resolves each **verified** selector on the resulting DOM (snapshot B):
+
+```ts
+import { scoreSelectors, measureRetention } from 'deltawright/matchers';
+
+const delta = await actAndObserve(page, (p) => p.click('#save'));
+const scored = await scoreSelectors(page, delta);
+const { selectors, retentionRate, bestRetained } = await measureRetention(page, delta, scored, {
+  reRender: () => page.click('#refresh'),
+});
+// each: { retention: 'retained'|'moved'|'ambiguous'|'lost', matchesAfter, centerShift,
+//         estimatedDurability, measuredDurability, grade, flags }
+```
+
+`retained` = still resolves uniquely **and** to a control in ~the same place; `moved` = unique but jumped past `positionTolerance` (default 250px — possibly a different instance, flagged for review); `ambiguous` = lost uniqueness; `lost` = gone. **Honesty:** this is a measurement of the **one re-render you observed**, not a cross-release guarantee — and because the `data-dw-ref` marker doesn't survive a re-render, object identity is *inferred* (a unique semantic/layout match + geometry proximity), not proven. A big jump is surfaced as `moved`, never silently counted as retained.
 
 ### The three compose
 
