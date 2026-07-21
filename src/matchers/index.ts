@@ -16,11 +16,14 @@
 import { test } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
 import { toBeActionable } from './actionable';
+import { toHaveCommittedValue } from './committed-value';
 import { matchDeltaChecksum, type ChecksumMatchResult } from './checksum';
 import type { Delta } from '../host/types';
 
 export { preflight, toBeActionable } from './actionable';
 export type { PreflightOptions, PreflightResult } from './actionable';
+export { toHaveCommittedValue, checkCommittedValue } from './committed-value';
+export type { CommittedValueOptions, CommittedValueResult } from './committed-value';
 export { matchDeltaChecksum } from './checksum';
 export type { ChecksumMatchResult, MatchDeltaChecksumOptions } from './checksum';
 export { verifySuggestions } from './verify-suggest';
@@ -43,6 +46,7 @@ export type {
 } from './score-selectors';
 
 import type { PreflightOptions } from './actionable';
+import type { CommittedValueOptions } from './committed-value';
 
 const CHECKSUM_DIR = '__dw_checksums__';
 
@@ -101,7 +105,12 @@ export function toMatchDeltaSnapshot(delta: Delta, name?: string): ChecksumMatch
 }
 
 /** The matcher bag for `expect.extend(dwMatchers)`. */
-export const dwMatchers = { toBeActionable, toMatchDeltaChecksum, toMatchDeltaSnapshot };
+export const dwMatchers = {
+  toBeActionable,
+  toHaveCommittedValue,
+  toMatchDeltaChecksum,
+  toMatchDeltaSnapshot,
+};
 
 // Type the matchers onto Playwright's `expect` for consumers that import this module. Playwright's
 // custom-matcher interface is the global `PlaywrightTest.Matchers<R, T>`, so the augmentation MUST
@@ -114,6 +123,9 @@ declare global {
     interface Matchers<R, T = unknown> {
       /** Pass iff Playwright's role-aware actionability probe finds this locator actionable (#53). */
       toBeActionable(options?: PreflightOptions): Promise<R>;
+      /** Pass unless the field's settled value shows real character loss vs `intended`
+       *  (`never-committed`/`truncated`/`dropped`); a benign reformat mask passes (hardening H1). */
+      toHaveCommittedValue(intended: string, options?: CommittedValueOptions): Promise<R>;
       /** Pass iff the delta's geometry-tolerant checksum matches the `<id>` baseline (#54). */
       toMatchDeltaChecksum(id: string): R;
       /** Like `toMatchDeltaChecksum`, id derived from the current test's title path (#54). */

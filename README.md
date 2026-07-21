@@ -140,6 +140,15 @@ import { preflight } from 'deltawright/matchers';
 const { verdict, reason, geometryVerdict, agreed } = await preflight(locator);
 ```
 
+The same module adds an **input-commit integrity** matcher for a flake class Playwright has no primitive for — an async debounce / autocomplete / input-mask silently clearing, truncating, or dropping a typed value *after* `fill()` returned success:
+
+```ts
+await page.fill('#card', '4111 1111 1111 1111');
+await expect(page.locator('#card')).toHaveCommittedValue('4111 1111 1111 1111');
+```
+
+It waits for the field's value to **stop changing** (catching the async debounce-then-clear a synchronous read misses), then classifies it against what you *intended* to type: a benign reformat mask (`4111 1111`→`41111111`, trim, reorder) is `transformed` and **passes** — where `toHaveValue('4111 1111')` would false-fail — while real character loss (`never-committed` / `truncated` / `dropped`) **fails loud with the named shape**. It is a *separate* assertion: it never overrides `fill()`'s success, never repairs the value, and never claims *why* the widget dropped it; the message carries only the shape and lengths, never the raw value (PII-safe). `checkCommittedValue(locator, intended)` returns the structured result. (Because a value-property write fires no event, the settle is a bounded value-stability poll — set `quietMs` above your widget's debounce delay.)
+
 The same module adds a **delta checksum regression** matcher:
 
 ```ts
