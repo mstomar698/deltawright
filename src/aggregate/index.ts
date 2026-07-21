@@ -429,7 +429,7 @@ export function prioritize(report: CauseClusterReport): PriorityQueue {
       tests: c.tests,
       detailSample: c.detailSample,
     }));
-  return { rows, humanLane: report.unsure, totalRecords: report.totalRecords };
+  return { rows, humanLane: [...report.unsure], totalRecords: report.totalRecords };
 }
 
 /** Render the fix-first priority queue as text (the CLI `--priority` view). Decomposed — each row shows
@@ -438,9 +438,13 @@ export function renderPriorityQueue(queue: PriorityQueue): string {
   const lines = [
     `deltawright fix-first priority — ${queue.rows.length} cause clusters over ${queue.totalRecords} records`,
     `human-triage lane (unsure — route to a human, NOT scored as a cause): ${queue.humanLane.length} failures`,
-    '',
-    'fix these first (blast radius × confidence — decomposed, a hypothesis not a guarantee):',
   ];
+  if (queue.rows.length > 0) {
+    lines.push(
+      '',
+      'fix these first (blast radius × confidence [the cluster’s HIGHEST band] — decomposed, a hypothesis not a guarantee):',
+    );
+  }
   for (const r of queue.rows) {
     lines.push(
       `  #${r.rank}  ${r.blastRadius} tests · ${r.confidence} · ${r.code} [${r.category}] · ` +

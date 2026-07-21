@@ -241,7 +241,8 @@ function prioritySection(priority?: PriorityQueue): string {
       <h2>Fix first — priority by shared root cause</h2>
       <p>Ranked by <b>blast radius × confidence</b> (decomposed — each row shows its components, never one
       opaque score). Blast radius = distinct tests sharing the cause: a <b>fix-once-fix-many candidate</b>,
-      a hypothesis, not a guarantee. Playwright's verdict stays authoritative.</p>
+      a hypothesis, not a guarantee. Confidence is the cluster's <b>highest</b> band (the cause was confirmed
+      on at least one member). Playwright's verdict stays authoritative.</p>
       ${humanLane}
       ${table}
     </section>`;

@@ -14,7 +14,8 @@ All notable changes to this project are documented here. The format is based on
   a decomposed, auditable order (every row shows its blast radius, confidence band, and failure count),
   never one opaque score. Where incumbents sort by raw frequency / CI-time, DW ranks by *shared root-cause
   blast radius* (fix-once-fix-many candidate), which is only possible because DW owns the per-action
-  taxonomy. Honest: `unsure` is **never scored low or folded** — it goes to its own "route to a human" lane
+  taxonomy. The confidence axis is the cluster's *highest* band (the cause was confirmed on at least one
+  member). Honest: `unsure` is **never scored low or folded** — it goes to its own "route to a human" lane
   on par with the top; a high rank is a fix-first *hypothesis*, never a confirmed bug or a guarantee one fix
   clears the cluster; priority annotates, never overrides Playwright. Reporting A from the SDLC research
   (`docs/research/sdlc-reporting.md`).

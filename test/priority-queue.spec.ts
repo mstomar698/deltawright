@@ -82,7 +82,8 @@ test('renderPriorityQueue surfaces the human-triage lane and decomposed rows', (
   const text = renderPriorityQueue(prioritize(clusterByCause(corpus())));
   expect(text).toMatch(/human-triage lane .*route to a human/);
   expect(text).toMatch(/#1 .*off-screen/);
-  expect(text).toMatch(/blast radius × confidence — decomposed/);
+  expect(text).toMatch(/blast radius × confidence.*decomposed/);
+  expect(text).toMatch(/HIGHEST band/); // the confidence-is-max disclosure (review fix)
 });
 
 test('the HTML dashboard leads with the Fix-first panel when a priority queue is supplied', () => {
