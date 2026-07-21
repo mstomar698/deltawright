@@ -587,6 +587,10 @@ export function parseNetworkEvents(text: string): TraceNetworkEvent[] {
       };
       if (e.type !== 'resource-snapshot' || !e.snapshot) continue;
       const s = e.snapshot;
+      // ASSUMPTION (the one load-bearing bit of the undocumented format): `_monotonicTime` shares the
+      // clock of a TraceAction's startTime/endTime, so it window-correlates. The `backend-5xx` fixture
+      // test guards this — a future Playwright clock-base change fails there (a conservative MISS, not a
+      // false route) rather than mis-routing silently in the field.
       const time = s._monotonicTime;
       const status = s.response?.status;
       const url = s.request?.url;

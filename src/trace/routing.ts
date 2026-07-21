@@ -136,10 +136,9 @@ export function deriveRouting(info: TraceInfo, opts: { domCauseNamed: boolean })
     inWindow(e.time, chosen.startTime, rightEdge),
   );
   const networkErrorCount = netInScope.length;
-  const networkSignals = netInScope
-    .slice()
-    .sort((a, b) => a.time - b.time)
-    .slice(0, MAX_SIGNALS);
+  // networkEvents are already time-sorted by parseNetworkEvents, and a filter preserves order → the
+  // first MAX_SIGNALS are the earliest in-window errors (list-and-clamp; networkErrorCount is the total).
+  const networkSignals = netInScope.slice(0, MAX_SIGNALS);
   const suspectedBackendFromNetwork =
     networkErrorCount > 0 && !opts.domCauseNamed && rightEdge !== undefined;
 
