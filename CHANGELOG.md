@@ -14,9 +14,10 @@ All notable changes to this project are documented here. The format is based on
   maps an observed aria/state transition to the right assertion method). Maps `aria-expanded`→`toBeExpanded`,
   `aria-checked` on checkbox/radio→`toBeChecked` (else `toHaveAttribute`, dodging the `switch`-role trap),
   `disabled`→`toBeEnabled`/`toBeDisabled`, a `role=dialog` appearing→`toBeVisible`, a removal→`toHaveCount(0)`,
-  an `aria-live` announcement→`toContainText`. Each is re-read on the live page: an assertion that no longer
-  holds is flagged `transient` (surfaced, not dropped), one with no verified durable selector is dropped, and
-  results rank holding-first. Honest by construction: DW *grounds* the author — every assertion is a labeled
+  an `aria-live` announcement→`toContainText`. `state`/`presence` assertions are independently re-read on the
+  live page (`holds`): one that no longer holds is flagged `transient` (surfaced, not dropped); `text` (read
+  from the region) and `actionability` (the delta's verdict) report `holds: null`; one with no verified
+  durable selector is dropped; results rank holding-first. Honest by construction: DW *grounds* the author — every assertion is a labeled
   candidate from one observed transition, never authored/owned/run by DW, never a claim the behavior is
   correct/intended; Playwright's `expect` stays authoritative. Testgen A from the SDLC research
   (`docs/research/sdlc-testgen.md`).

@@ -46,11 +46,13 @@ test('maps state / presence / announcement transitions to the right candidate as
   expect(visible!.kind).toBe('presence');
   expect(visible!.holds).toBe(true);
 
-  // an aria-live region announced text → toContainText(observed).
+  // an aria-live region announced text → toContainText(observed). It is populated FROM the live region,
+  // so `holds` is null (not an independent re-verification) — an honest candidate, not a verified oracle.
   const text = find(assertions, 'toContainText');
   expect(text, 'a toContainText assertion was synthesized').toBeTruthy();
   expect(text!.kind).toBe('text');
-  expect(text!.holds).toBe(true);
+  expect(text!.holds).toBeNull();
+  expect(text!.code).toContain('Saved successfully');
 });
 
 test('a removed node becomes a toHaveCount(0) post-condition', async ({ page }) => {

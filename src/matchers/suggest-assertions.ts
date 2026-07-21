@@ -42,12 +42,16 @@ export interface SynthesizedAssertion {
   kind: 'state' | 'presence' | 'text' | 'actionability';
   /** The observed transition this assertion encodes (human-readable). */
   from: string;
-  /** Did the asserted condition still hold on a live re-read? null when it could not be checked. */
+  /** Did the asserted condition still hold on an INDEPENDENT live re-read? `true`/`false` only for the
+   *  `state` and `presence` kinds (re-read via getAttribute/isChecked/isVisible/count). `null` for `text`
+   *  (its assertion is populated FROM the live region — there is no independent oracle) and for
+   *  `actionability` (it carries the delta's action-time verdict, not a fresh re-read). */
   holds: boolean | null;
-  /** True when the transition was observed but has since reverted (`holds === false`) — assert with care. */
+  /** True when a live-re-read transition has since reverted (`holds === false`) — assert with care. */
   transient: boolean;
-  /** Durability grade of the bound selector (from scoreSelectors). */
-  selectorGrade: SelectorGrade;
+  /** Durability grade of the bound selector (from scoreSelectors); null when no selector was scored for it
+   *  (a removed-node count assertion, or a folded actionability assertion with no bound candidate). */
+  selectorGrade: SelectorGrade | null;
 }
 
 export interface AssertionSynthesisResult {
@@ -163,7 +167,6 @@ export async function suggestAssertions(
   opts: SuggestAssertionsOptions = {},
 ): Promise<AssertionSynthesisResult> {
   const scored = await scoreSelectors(root, delta, opts);
-  const byRef = new Map(delta.nodes.map((n) => [n.ref, n] as const));
   // Per-ref best VERIFIED selector (prefer non-brittle) to bind assertions onto — mirrors how
   // scoreSelectors re-points its own toBeActionable assertions.
   const bestByRef = new Map<string, (typeof scored.selectors)[number]>();
@@ -196,7 +199,7 @@ export async function suggestAssertions(
           from: 'the node was removed',
           holds,
           transient: holds === false,
-          selectorGrade: 'usable',
+          selectorGrade: null, // no selector was durability-scored for a removed node
         });
       }
       continue;
@@ -233,12 +236,16 @@ export async function suggestAssertions(
 
     // Announcement (aria-live) → toContainText(<announced text>). The observer does not reliably surface
     // the announced text as a name, so read it LIVE from the bound region and offer it as the candidate
-    // text the author would otherwise hand-write. holds=true by construction (the region contains it now);
-    // the author confirms it is the message they meant.
+    // text the author would otherwise hand-write. holds is null (NOT true): the assertion is populated
+    // FROM the region's live text, so re-asserting it contains that text is tautological — there is no
+    // independent oracle. The author confirms it is the message they meant.
     if (announced && loc) {
       let text = '';
       try {
-        text = ((await loc.textContent()) ?? '').trim().slice(0, MAX_ANNOUNCED_LEN);
+        // Code-point-safe truncation (never split a surrogate pair into a lone half in the emitted code).
+        text = Array.from(((await loc.textContent()) ?? '').trim())
+          .slice(0, MAX_ANNOUNCED_LEN)
+          .join('');
       } catch {
         // detached / unreadable region — leave text empty so no announcement assertion is emitted
       }
@@ -248,7 +255,7 @@ export async function suggestAssertions(
           code: `await expect(${best.code}).toContainText(${q(text)});`,
           kind: 'text',
           from: `aria-live=${node.ariaLive} announced text`,
-          holds: true,
+          holds: null, // populated from the live region — not an independent re-verification
           transient: false,
           selectorGrade: best.grade,
         });
@@ -256,17 +263,18 @@ export async function suggestAssertions(
     }
   }
 
-  // Fold in scoreSelectors' already-durable toBeActionable assertions as the actionability family.
+  // Fold in scoreSelectors' already-durable toBeActionable assertions as the actionability family. holds
+  // is null: this carries the delta's ACTION-TIME verdict (Playwright-authoritative, DW-02), not a fresh
+  // independent re-read like the state/presence kinds — so `holds:true` keeps one meaning across the set.
   for (const a of scored.assertions) {
-    const node = byRef.get(a.ref);
     assertions.push({
       ref: a.ref,
       code: a.code,
       kind: 'actionability',
-      from: 'the node is actionable',
-      holds: node?.actionability.verdict === 'ACTIONABLE' ? true : null,
+      from: 'the node was actionable at action time',
+      holds: null,
       transient: false,
-      selectorGrade: bestByRef.get(a.ref)?.grade ?? 'usable',
+      selectorGrade: bestByRef.get(a.ref)?.grade ?? null,
     });
   }
 
