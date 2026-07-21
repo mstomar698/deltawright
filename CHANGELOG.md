@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Trace-native network correlation in `diagnose-trace`** — the offline arm now reads the trace's own
+  `*.network` member (which it was previously blind to — it sourced backend signal only from the runner's
+  stdout, which most CI runs don't populate). An **HTTP error response (status ≥ 400)** that co-occurs in
+  the failing action's **own window** (correlated on the resource-snapshot's `_monotonicTime`, the same
+  clock as the action) fuses with DW's DOM-cause verdict into a **route-to-backend** hint — closing the
+  offline↔live asymmetry for the field-dominant failure class: a backend fault presenting as a DOM timeout.
+  Honest by construction: pure routing metadata (**no** new taxonomy code, touches no verdict), a
+  DW-named DOM cause suppresses it (then the 5xx is context, not a route), it flips only on a bounded
+  window, and it reports "co-occurrence, not proof" (page-wide/all-origin width disclosed). It deliberately
+  flags only `status ≥ 400` — a failed request with no response (`status: -1`) is dropped because the
+  offline snapshot has no failure text to exclude a client `net::ERR_ABORTED`. PII-safe (query-stripped URL
+  path only). Debug A from the SDLC research (`docs/research/sdlc-debug.md`).
 - **Actionability priority queue (`prioritize` in `deltawright/aggregate`; `deltawright aggregate --priority`,
   and it now leads the `--html` dashboard)** — turns the report from "here is all the data" into "fix THIS
   cluster first, and here is why". Ranks the cause clusters by shared-cause **blast radius × confidence** —

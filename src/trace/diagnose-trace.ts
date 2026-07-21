@@ -211,7 +211,7 @@ export function renderTraceReport(d: TraceDiagnosis): string {
   // Move 2 routing — additive: only rendered when in-page and/or harness errors were found, so a
   // clean trace's report is byte-unchanged. Framed as co-occurrence, never causation (DW-03).
   const r = d.routing;
-  if (r.signals.length > 0 || r.harnessSignals.length > 0) {
+  if (r.signals.length > 0 || r.harnessSignals.length > 0 || r.networkSignals.length > 0) {
     if (r.signals.length > 0) {
       lines.push(
         '',
@@ -219,6 +219,15 @@ export function renderTraceReport(d: TraceDiagnosis): string {
       );
       for (const s of r.signals) lines.push(`  · [${s.kind}] ${s.text}`);
       const hidden = r.windowCount - r.signals.length;
+      if (hidden > 0) lines.push(`  … and ${hidden} more (capped)`);
+    }
+    if (r.networkSignals.length > 0) {
+      lines.push(
+        '',
+        "HTTP error responses (status ≥ 400) in the failing action's own window (co-occurrence, NOT proof of cause):",
+      );
+      for (const s of r.networkSignals) lines.push(`  · [${s.status}] ${s.method} ${s.urlPath}`);
+      const hidden = r.networkErrorCount - r.networkSignals.length;
       if (hidden > 0) lines.push(`  … and ${hidden} more (capped)`);
     }
     if (r.harnessSignals.length > 0) {

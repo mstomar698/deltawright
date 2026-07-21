@@ -50,6 +50,28 @@ export interface TraceCoEvent {
 }
 
 /**
+ * An HTTP ERROR RESPONSE (status ≥ 400) recorded in the trace's own `*.network` member — the structured
+ * backend-fault channel the OFFLINE arm was previously blind to (it sourced backend signal only from the
+ * runner's stdout). Window-correlated to the failing action via `time` (the resource-snapshot's
+ * `_monotonicTime`, the SAME clock as an action's startTime/endTime). Only status ≥ 400 is retained — a
+ * genuine server-side error is unambiguous; a failed request with NO response (`status: -1`) is dropped
+ * because the offline snapshot carries no failure text, so a client-abort (`net::ERR_ABORTED`) cannot be
+ * distinguished from a real connection failure (unlike the live arm) → abstain rather than mis-route.
+ * PRIVACY: only the query-stripped URL path is kept, never the full URL / headers / body.
+ */
+export interface TraceNetworkEvent {
+  /** Monotonic time (ms) of the request — same clock as `TraceAction.startTime`/`endTime`. */
+  time: number;
+  /** HTTP response status (always ≥ 400 here). */
+  status: number;
+  method: string;
+  /** URL path only — origin + pathname, query string stripped (privacy). */
+  urlPath: string;
+  /** Playwright's resource type when present (fetch / xhr / document / …). */
+  resourceType?: string;
+}
+
+/**
  * A BACKEND/infra error line found in the test-runner's own output (`test.trace` stdout/stderr, or the
  * test-level `error` event) — Move 2 harness routing. On a backend-dominated legacy portal the fault
  * (a gateway 5xx, a refused connection) is logged HERE, not in the browser console. UNLIKE the in-page
@@ -192,6 +214,9 @@ export interface TraceInfo {
   coEvents: TraceCoEvent[];
   /** Backend/infra error lines from the test-runner's own output (test-scoped; Move 2 harness routing). */
   harnessSignals: HarnessSignal[];
+  /** HTTP error responses (status ≥ 400) from the trace's `*.network` member — the structured backend
+   *  channel, window-correlatable via `time`. Empty when the trace has no `*.network` member / no errors. */
+  networkEvents: TraceNetworkEvent[];
   /** Value-bearing fields per `after@…` frame-snapshot (v0.9 Move 1 offline input-integrity). */
   frameSnapshots: FrameSnapshotFields[];
   /**
@@ -521,20 +546,84 @@ export function parseTraceEvents(text: string): TraceInfo {
     failed,
     coEvents,
     harnessSignals,
+    networkEvents: [], // populated by readTraceZip from the `*.network` member (not in the trace text)
     frameSnapshots,
     chosenFailure: failed.length ? failed[failed.length - 1]! : null,
   };
 }
 
+/** Strip the query string (and userinfo) from a URL — surface only origin + path (privacy). Mirrors the
+ *  live arm's `urlPath` so the offline + live network channels redact identically. */
+function urlPath(raw: string): string {
+  try {
+    const u = new URL(raw);
+    return u.origin + u.pathname;
+  } catch {
+    return raw.split('?')[0] ?? raw;
+  }
+}
+
+/**
+ * Parse a trace's `*.network` member (JSONL of `resource-snapshot` events) into the HTTP ERROR responses
+ * (status ≥ 400) that matter for backend routing. Defensive by construction: any line that is not a
+ * parseable resource-snapshot with a numeric `_monotonicTime` + numeric `response.status ≥ 400` + a URL
+ * is SKIPPED (abstain, never guess) — the `*.network` event shape is undocumented, so unparseable input
+ * degrades to no signal rather than a wrong one. Exported for direct testing.
+ */
+export function parseNetworkEvents(text: string): TraceNetworkEvent[] {
+  const out: TraceNetworkEvent[] = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const e = JSON.parse(t) as {
+        type?: unknown;
+        snapshot?: {
+          _monotonicTime?: unknown;
+          _resourceType?: unknown;
+          request?: { url?: unknown; method?: unknown };
+          response?: { status?: unknown };
+        };
+      };
+      if (e.type !== 'resource-snapshot' || !e.snapshot) continue;
+      const s = e.snapshot;
+      const time = s._monotonicTime;
+      const status = s.response?.status;
+      const url = s.request?.url;
+      if (typeof time !== 'number' || typeof status !== 'number' || status < 400) continue;
+      if (typeof url !== 'string') continue;
+      out.push({
+        time,
+        status,
+        method: typeof s.request?.method === 'string' ? s.request.method : '',
+        urlPath: urlPath(url),
+        ...(typeof s._resourceType === 'string' ? { resourceType: s._resourceType } : {}),
+      });
+    } catch {
+      // not a parseable network event — skip (abstain on unknown shape, never fabricate a signal)
+    }
+  }
+  return out.sort((a, b) => a.time - b.time);
+}
+
 /**
  * Read a Playwright `trace.zip` buffer into {@link TraceInfo}. Merges every `*.trace` member
- * (the action stream can be split across more than one), then parses + version-guards.
+ * (the action stream can be split across more than one), then parses + version-guards. Also reads the
+ * `*.network` member (HTTP error responses) — the structured backend channel for offline routing.
  */
 export function readTraceZip(zipBuf: Buffer): TraceInfo {
-  const traceMembers = zipEntryNames(zipBuf).filter((n) => n.endsWith('.trace'));
+  const names = zipEntryNames(zipBuf);
+  const traceMembers = names.filter((n) => n.endsWith('.trace'));
   if (traceMembers.length === 0) {
     throw new TraceParseError('trace.zip has no *.trace member — not a Playwright trace archive');
   }
   const text = traceMembers.map((n) => readZipEntry(zipBuf, n)!.toString('utf8')).join('\n');
-  return parseTraceEvents(text);
+  const info = parseTraceEvents(text);
+  // The `*.network` member (may be absent / empty / split) carries the structured HTTP responses.
+  const networkText = names
+    .filter((n) => n.endsWith('.network'))
+    .map((n) => readZipEntry(zipBuf, n)?.toString('utf8') ?? '')
+    .join('\n');
+  if (networkText.trim()) info.networkEvents = parseNetworkEvents(networkText);
+  return info;
 }
