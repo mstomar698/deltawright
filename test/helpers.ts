@@ -31,3 +31,6 @@ export const RETENTION_FIXTURE_URL = fixtureUrl('retention.html');
 
 /** file:// URL of the committed-value fixture (clean / debounce-clear / mask / truncate / dropped inputs). */
 export const COMMITTED_VALUE_FIXTURE_URL = fixtureUrl('committed-value.html');
+
+/** file:// URL of the suggest-assertions fixture (expanded/checked/enabled/removed/announced/dialog transitions). */
+export const SUGGEST_ASSERTIONS_FIXTURE_URL = fixtureUrl('suggest-assertions.html');

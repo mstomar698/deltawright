@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright suggestAssertions fixture</title>
+</head>
+<body>
+  <button id="go">Go</button>
+
+  <button id="menu" aria-expanded="false">Menu</button>
+  <button id="flash" aria-expanded="false">Flash</button>
+  <div id="accept" role="checkbox" aria-checked="false" aria-label="Accept terms" tabindex="0">✔</div>
+  <button id="save" disabled>Save</button>
+  <button id="del">Delete</button>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <script>
+    // Clicking #go performs several state transitions in one action, so the delta carries a spread of
+    // observed edges — each maps to a distinct candidate assertion:
+    //   • #menu  aria-expanded false→true          → toBeExpanded()      (holds)
+    //   • #accept aria-checked false→true (role=checkbox) → toBeChecked() (holds)
+    //   • #save  disabled removed                  → toBeEnabled()       (holds)
+    //   • #del   removed                            → toHaveCount(0)      (holds)
+    //   • #status aria-live text appears           → toContainText(...)   (holds)
+    //   • a role=dialog is appended                 → toBeVisible()        (holds)
+    //   • #flash aria-expanded false→true, then the TEST reverts it       → transient
+    document.getElementById('go').addEventListener('click', () => {
+      document.getElementById('menu').setAttribute('aria-expanded', 'true');
+      document.getElementById('flash').setAttribute('aria-expanded', 'true');
+      document.getElementById('accept').setAttribute('aria-checked', 'true');
+      document.getElementById('save').removeAttribute('disabled');
+      document.getElementById('del').remove();
+      document.getElementById('status').textContent = 'Saved successfully';
+
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-label', 'Confirm changes');
+      dialog.textContent = 'Confirm';
+      document.body.appendChild(dialog);
+    });
+  </script>
+</body>
+</html>

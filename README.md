@@ -191,6 +191,20 @@ const { selectors, retentionRate, bestRetained } = await measureRetention(page, 
 
 `retained` = still resolves uniquely **and** to a control in ~the same place; `moved` = unique but jumped past `positionTolerance` (default 250px — possibly a different instance, flagged for review); `ambiguous` = lost uniqueness; `lost` = gone. **Honesty:** this is a measurement of the **one re-render you observed**, not a cross-release guarantee — and because the `data-dw-ref` marker doesn't survive a re-render, object identity is *inferred* (a unique semantic/layout match + geometry proximity), not proven. A big jump is surfaced as `moved`, never silently counted as retained.
 
+### Candidate assertions from a transition: `suggestAssertions`
+
+Codegen records *actions but not assertions* (the oracle gap), and even Playwright has no feature that maps an observed aria/state **transition** to the right assertion method — you hand-write it. `suggestAssertions(root, delta)` (in `deltawright/matchers`) turns the delta's observed transition into **candidate, live-verified** assertions, each bound to a durable selector:
+
+```ts
+import { suggestAssertions } from 'deltawright/matchers';
+
+const delta = await actAndObserve(page, (p) => p.click('#menu'));
+const { assertions } = await suggestAssertions(page, delta);
+// each: { code, kind: 'state'|'presence'|'text'|'actionability', from, holds, transient, selectorGrade }
+```
+
+It maps `aria-expanded`→`toBeExpanded()`, `aria-checked` on a checkbox/radio→`toBeChecked()` (else `toHaveAttribute`), `disabled`→`toBeEnabled()`/`toBeDisabled()`, a `role=dialog` appearing→`toBeVisible()`, a removal→`toHaveCount(0)`, and an `aria-live` announcement→`toContainText(...)` — the state edge the a11y tree never shows. The `state` and `presence` assertions are **independently re-read on the live page** (`holds`): one that no longer holds is flagged `transient` (surfaced, not dropped); one with no verified durable selector is dropped. The `text` assertion is populated *from* the live region and the `actionability` one carries the delta's action-time verdict, so both report `holds: null` (not an independent re-verification) — a candidate the author confirms. **Honesty:** DW *grounds* the author — every assertion is a **candidate** from one observed transition, bound to a Playwright-verified selector; it never authors, owns, or runs the test, never claims the observed behavior is *correct/intended*, and Playwright's `expect` stays authoritative.
+
 ### The three compose
 
 `observeEffectSettled` (readiness), `pageMap` (the picture), and `scoreSelectors` (the durable handle) are one primitive family — *see what changed → know when it's ready → get a durable handle* — aimed at legacy / poor-a11y / heavy-RPC apps where the a11y tree degrades and `networkidle` never fires:
