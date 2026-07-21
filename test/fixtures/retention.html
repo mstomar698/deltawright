@@ -19,10 +19,11 @@
     // Two-snapshot retention harness. Clicking #go inserts a panel of controls that ALL verify uniquely
     // on snapshot A (each getByRole('button', { name }) resolves to exactly one element). Clicking
     // #rerender then mutates them so each demonstrates a distinct retention verdict on snapshot B:
-    //   • "Save"    — untouched            → retained
-    //   • "Submit"  — moved far down       → moved      (unique, but jumped past positionTolerance)
-    //   • "Publish" — a duplicate is added → ambiguous  (getByRole now matches two)
-    //   • "Cancel"  — removed              → lost
+    //   • "Save"    — untouched             → retained
+    //   • "Submit"  — moved far down        → moved         (unique, but jumped past positionTolerance)
+    //   • "Publish" — a duplicate is added  → ambiguous     (getByRole now matches two)
+    //   • "Cancel"  — removed               → lost
+    //   • "Docs"    — hidden (display:none) → inconclusive  (getByText still counts it, but no box)
     //   • two unnamed inputs → getByRole('textbox') is ambiguous, so the one next to "Save" has only a
     //     SYNTHESIZED geometry-relative fallback; both inputs stay put → that fallback re-resolves
     //     uniquely on snapshot B → retained (exercises the rawSelector re-resolution path).
@@ -31,6 +32,7 @@
       panel.id = 'panel';
       panel.innerHTML =
         '<button class="save" style="left:0;top:0;">Save</button>' +
+        '<a class="docs" href="#" style="left:200px;top:0;">Docs</a>' +
         '<input class="near" style="left:0;top:28px;width:150px;" />' +
         '<button class="submit" style="left:0;top:130px;">Submit</button>' +
         '<button class="publish" style="left:0;top:170px;">Publish</button>' +
@@ -51,6 +53,10 @@
       // Cancel: remove it entirely.
       const cancel = document.querySelector('#panel .cancel');
       if (cancel) cancel.remove();
+      // Docs: hide it (still in the DOM) — getByText still counts it (1) but it has no layout box, so
+      // its position is unmeasurable → `inconclusive`, not a fake retain. (getByRole drops it → lost.)
+      const docs = document.querySelector('#panel .docs');
+      if (docs) docs.style.display = 'none';
     });
   </script>
 </body>

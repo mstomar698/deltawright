@@ -80,6 +80,30 @@ test('re-resolves a SYNTHESIZED geometry-relative fallback (rawSelector path) an
   expect(measuredSynth!.retention).toBe('retained');
 });
 
+test('reports `inconclusive` (not a fake retain) for a unique match with no measurable box', async ({
+  page,
+}) => {
+  const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'build' });
+  const scored = await scoreSelectors(page, delta);
+  const result = await measureRetention(page, delta, scored, {
+    reRender: () => page.click('#rerender'),
+  });
+
+  // The text-tier "Docs" candidate resolves uniquely on snapshot B (getByText counts the hidden link),
+  // but it is display:none → boundingBox() is null → position unmeasurable → `inconclusive`.
+  const docsText = result.selectors.find((s) => s.tier === 'text' && s.code.includes('Docs'));
+  expect(docsText, 'the text-tier Docs candidate was re-checked').toBeTruthy();
+  expect(docsText!.matchesAfter).toBe(1);
+  expect(docsText!.retention).toBe('inconclusive');
+  expect(docsText!.flags).toContain('position-unmeasured');
+  expect(docsText!.flags).not.toContain('retained');
+  // Honest: unmeasured → the estimate is left untouched, never given the +10 retain nudge.
+  expect(docsText!.measuredDurability).toBe(docsText!.estimatedDurability);
+  // It is neither counted as a retain nor picked as bestRetained, and the exclusion is warned.
+  expect(result.bestRetained?.code).not.toBe(docsText!.code);
+  expect(result.warnings.join('\n')).toMatch(/inconclusive/);
+});
+
 test('reports a retentionRate and picks a non-brittle bestRetained', async ({ page }) => {
   const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'build' });
   const scored = await scoreSelectors(page, delta);
@@ -115,6 +139,9 @@ test('folds the measurement into durability without inflating past the estimate 
       expect(s.measuredDurability).toBe(Math.min(100, s.estimatedDurability + 10));
     } else if (s.retention === 'lost') {
       expect(s.measuredDurability).toBe(0);
+    } else if (s.retention === 'inconclusive') {
+      // nothing measured → the estimate is left exactly as-is (neither nudged nor knocked down).
+      expect(s.measuredDurability).toBe(s.estimatedDurability);
     } else {
       // moved / ambiguous only ever KNOCK DOWN the estimate.
       expect(s.measuredDurability).toBeLessThanOrEqual(s.estimatedDurability);

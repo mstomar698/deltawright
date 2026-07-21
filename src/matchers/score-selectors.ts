@@ -379,10 +379,12 @@ export interface MeasureRetentionOptions {
 
 /** Retention MEASURED across the observed re-render (snapshot A → B). */
 export type RetentionVerdict =
-  | 'retained' // still resolves uniquely AND to a control within `positionTolerance` of snapshot A
+  | 'retained' // resolves uniquely AND to a control within `positionTolerance` of snapshot A
   | 'moved' // resolves uniquely but the element jumped beyond tolerance (possibly a different instance)
   | 'ambiguous' // now resolves to >1 element — lost uniqueness across the re-render
-  | 'lost'; // now resolves to 0 elements
+  | 'lost' // now resolves to 0 elements
+  | 'inconclusive'; // resolved uniquely but position was unmeasurable (no box — hidden/detached), or the
+// selector could not be rebuilt — a unique match we will NOT dress up as a confirmed in-place retain
 
 export interface SelectorRetention {
   ref: string;
@@ -394,7 +396,10 @@ export interface SelectorRetention {
   /** `locator.count()` on snapshot B. */
   matchesAfter: number;
   /** Center-shift (CSS px) from snapshot A's recorded rect — null unless it re-resolved uniquely with a
-   *  measurable box on both snapshots. */
+   *  measurable box. NOTE: snapshot-A rects are the observer's VIEWPORT coordinates while `boundingBox()`
+   *  is main-frame-viewport coordinates, so this assumes a stable viewport — a page SCROLL between
+   *  snapshots, or a `root` that is an offset child Frame, inflates the shift (mislabeling a retained
+   *  element `moved`, never the reverse). Widen `positionTolerance` or keep the viewport stable. */
   centerShift: number | null;
   /** The single-page ESTIMATE from scoreSelectors (snapshot A). */
   estimatedDurability: number;
@@ -465,40 +470,45 @@ export async function measureRetention(
             ? locatorFor(root, c.tier, node)
             : null;
 
+      const flags = [...c.flags];
       let matchesAfter = 0;
-      let box: { x: number; y: number; width: number; height: number } | null = null;
-      if (loc) {
+      let retention: RetentionVerdict;
+      let centerShift: number | null = null;
+      if (!loc) {
+        // The candidate could not be rebuilt (a synthesized fallback with no rawSelector, or a tier with
+        // no locator). Unique-match unknown — report honest `inconclusive`, never a silent `lost`.
+        retention = 'inconclusive';
+        flags.push('unresolvable');
+      } else {
+        let box: { x: number; y: number; width: number; height: number } | null = null;
         try {
           matchesAfter = await loc.count();
           if (matchesAfter === 1) box = await loc.boundingBox();
         } catch {
           matchesAfter = 0; // detached page/frame or an invalid rebuilt selector
         }
-      }
-
-      const flags = [...c.flags];
-      let retention: RetentionVerdict;
-      let centerShift: number | null = null;
-      if (matchesAfter === 0) {
-        retention = 'lost';
-        flags.push('lost-after-rerender');
-      } else if (matchesAfter > 1) {
-        retention = 'ambiguous';
-        if (!flags.includes('ambiguous')) flags.push('ambiguous');
-        flags.push('ambiguous-after-rerender');
-      } else {
-        const recorded = node?.geometry?.rect;
-        if (recorded && box) {
-          const dx = box.x + box.width / 2 - (recorded.x + recorded.width / 2);
-          const dy = box.y + box.height / 2 - (recorded.y + recorded.height / 2);
-          centerShift = Math.round(Math.hypot(dx, dy));
-          retention = centerShift <= tol ? 'retained' : 'moved';
-          flags.push(retention === 'retained' ? 'retained' : 'moved-after-rerender');
+        if (matchesAfter === 0) {
+          retention = 'lost';
+          flags.push('lost-after-rerender');
+        } else if (matchesAfter > 1) {
+          retention = 'ambiguous';
+          if (!flags.includes('ambiguous')) flags.push('ambiguous');
+          flags.push('ambiguous-after-rerender');
         } else {
-          // Unique match, but position could not be measured on one of the snapshots — the unique match
-          // stands, but we cannot confirm it is the same instance, so we do not claim a clean retain.
-          retention = 'retained';
-          flags.push('retained', 'position-unmeasured');
+          const recorded = node?.geometry?.rect;
+          if (recorded && box) {
+            const dx = box.x + box.width / 2 - (recorded.x + recorded.width / 2);
+            const dy = box.y + box.height / 2 - (recorded.y + recorded.height / 2);
+            centerShift = Math.round(Math.hypot(dx, dy));
+            retention = centerShift <= tol ? 'retained' : 'moved';
+            flags.push(retention === 'retained' ? 'retained' : 'moved-after-rerender');
+          } else {
+            // Resolves uniquely but has no measurable box (hidden / zero-layout / detached between the
+            // count and the box read) — we CANNOT confirm it is the same control in the same place, so we
+            // refuse to count it as a clean retain. It is excluded from retentionRate and bestRetained.
+            retention = 'inconclusive';
+            flags.push('position-unmeasured');
+          }
         }
       }
 
@@ -516,6 +526,9 @@ export async function measureRetention(
           break;
         case 'lost':
           measuredDurability = 0;
+          break;
+        case 'inconclusive':
+          measuredDurability = est; // nothing measured → leave the snapshot-A estimate untouched
           break;
       }
 
@@ -545,15 +558,25 @@ export async function measureRetention(
     )
     .map(({ v }) => v);
 
-  const retainedCount = selectors.filter((s) => s.retention === 'retained').length;
-  const retentionRate = selectors.length > 0 ? retainedCount / selectors.length : 0;
+  // retentionRate is over CONCLUSIVE selectors only — an `inconclusive` (unique but unmeasurable) match
+  // is neither a retain nor a failure, so counting it either way would misstate the rate.
+  const conclusive = selectors.filter((s) => s.retention !== 'inconclusive');
+  const retainedCount = conclusive.filter((s) => s.retention === 'retained').length;
+  const retentionRate = conclusive.length > 0 ? retainedCount / conclusive.length : 0;
+  const inconclusiveCount = selectors.length - conclusive.length;
   const bestRetained =
     selectors.find((s) => s.retention === 'retained' && s.grade !== 'brittle') ?? null;
 
   const warnings: string[] = [
     'measureRetention: `retention`/`measuredDurability` are MEASURED across the ONE re-render observed (snapshot A→B) — a real cross-render signal for THIS transition, NOT a guarantee of stability across future releases.',
     'measureRetention: the `data-dw-ref` identity marker does not survive a re-render, so object identity is INFERRED from a unique semantic/layout match + geometry proximity (not proven) — a unique match that moved beyond `positionTolerance` is reported `moved` for review, never silently counted as retained.',
+    "measureRetention: `centerShift` compares the observer's snapshot-A viewport rect against Playwright's boundingBox() (main-frame-viewport coordinates), so it assumes a stable viewport — a page scroll between snapshots, or a `root` that is an offset child Frame, can inflate the shift and mislabel a retained element `moved` (never the reverse). Widen `positionTolerance` or keep the viewport stable.",
   ];
+  if (inconclusiveCount > 0) {
+    warnings.push(
+      `measureRetention: ${inconclusiveCount} selector(s) resolved uniquely but could not be position-measured (hidden/detached/unrebuildable) → \`inconclusive\`, excluded from retentionRate and bestRetained rather than counted as retained.`,
+    );
+  }
   if (!opts.reRender) {
     warnings.push(
       'measureRetention: no `reRender` supplied — the current live DOM was taken as snapshot B; ensure the re-render happened before this call.',
