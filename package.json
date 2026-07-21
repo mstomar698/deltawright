@@ -1,6 +1,6 @@
 {
   "name": "deltawright",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A delta-and-actionability layer for Playwright agents: it tells the agent what changed after an action and whether it can act on it.",
   "license": "MIT",
   "type": "module",

@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-21
+
+**The SDLC-usefulness release.** Built from a five-block research pass (`docs/research/sdlc-*.md`) on making
+Deltawright more useful across the whole test SDLC, every added capability reuses a shipped primitive and
+introduces **no new taxonomy code** — a composition chapter, not a from-scratch one. **testgen:**
+`suggestAssertions` turns a delta's observed transition into candidate, live-verified assertions (the oracle
+gap codegen leaves). **hardening:** `toHaveCommittedValue` — a loud input-commit integrity gate for a case
+Playwright has no primitive for. **triage:** `clusterByCause` collapses a failure corpus into root-cause
+clusters keyed on (taxonomy code × delta fingerprint), now persisted on each side-car. **reporting:** an
+Actionability priority queue ranks those clusters by blast radius × confidence (`unsure` in its own
+human-triage lane). **debug:** `diagnose-trace` now reads the trace's `*.network` member and window-correlates
+a 5xx to the failing action → a route-to-backend hint. Plus two carried-forward pieces: `measureRetention`
+(the two-snapshot measured cross-render selector signal) and a fix so `observeEffectSettled` no longer
+over-waits on a top-level removal. Every change was two-lens reviewed (correctness + honesty/anti-reskin).
+
 ### Added
 
 - **Trace-native network correlation in `diagnose-trace`** — the offline arm now reads the trace's own
@@ -69,6 +84,15 @@ All notable changes to this project are documented here. The format is based on
   at the cap; a loss combined with a case/reorder transform is deliberately `transformed` (biased against
   false-failing a legit mask). `checkCommittedValue(locator, intended)` exposes the structured result.
   Hardening H1 from the SDLC research (`docs/research/sdlc-hardening.md`).
+- **`measureRetention` (in `deltawright/matchers`)** — the two-snapshot MEASURED cross-render signal that
+  upgrades `scoreSelectors`' single-page durability *estimate*. Pass the `delta` + `scoreSelectors` result
+  (snapshot A) and a `reRender`; it re-resolves each verified selector on the resulting DOM (snapshot B)
+  and reports `retained` / `moved` / `ambiguous` / `lost` per selector, a `retentionRate`, and a
+  `bestRetained`. Honest by construction: it measures the ONE observed re-render (never a cross-release
+  guarantee), and since the `data-dw-ref` marker does not survive a re-render, identity is inferred from a
+  unique semantic/layout match + geometry proximity — a jump past `positionTolerance` (default 250px) is
+  surfaced as `moved` for review, never silently counted as retained. Completes R3 step 4 of the
+  authoring-enhancer plan.
 
 ### Fixed
 
@@ -80,18 +104,6 @@ All notable changes to this project are documented here. The format is based on
   effect appeared" (never a fake no-effect) but do not seed the region or reset the timer, so the settle
   reports `region: null` and lands cleanly. A localizable follow-on effect still scopes the region
   normally. (Bug-hunt backlog, `docs/BUG-HUNT-2026-07-20.md` §C.)
-
-### Added
-
-- **`measureRetention` (in `deltawright/matchers`)** — the two-snapshot MEASURED cross-render signal that
-  upgrades `scoreSelectors`' single-page durability *estimate*. Pass the `delta` + `scoreSelectors` result
-  (snapshot A) and a `reRender`; it re-resolves each verified selector on the resulting DOM (snapshot B)
-  and reports `retained` / `moved` / `ambiguous` / `lost` per selector, a `retentionRate`, and a
-  `bestRetained`. Honest by construction: it measures the ONE observed re-render (never a cross-release
-  guarantee), and since the `data-dw-ref` marker does not survive a re-render, identity is inferred from a
-  unique semantic/layout match + geometry proximity — a jump past `positionTolerance` (default 250px) is
-  surfaced as `moved` for review, never silently counted as retained. Completes R3 step 4 of the
-  authoring-enhancer plan.
 
 ## [1.0.0] - 2026-07-20
 
