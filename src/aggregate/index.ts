@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync, realpathSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { ROOT_CAUSE_TAXONOMY, type RootCauseCategory, type RootCauseCode } from '../host/taxonomy';
-import type { Confidence } from '../host/confidence';
+import { CONFIDENCE_ORDER, atLeastAsConfident, type Confidence } from '../host/confidence';
 
 // Flake-priority aggregator (#59) — `deltawright/aggregate` (+ the `deltawright aggregate` bin). A
 // READ-ONLY pass over the #55 reporter's side-car artifacts (`*.deltawright-sidecar.json`) across
@@ -46,6 +46,11 @@ export interface FlakeRecord {
   detail: string;
   /** Where the diagnosis came from (`delta-attachment` / `error-text`). Retained for the dashboard. */
   source: string;
+  /** The side-car's cross-test clustering fingerprint (empty on an old/foreign side-car — then a coarse
+   *  key is recomputed from the record at cluster time). */
+  fingerprint: string;
+  /** `delta` (structural) / `coarse` (error-shape) / `none` (absent on an old/foreign side-car). */
+  fingerprintSource: 'delta' | 'coarse' | 'none';
   /** Every diagnosis the side-car carried, so the dashboard can explain the failure, not just count it. */
   diagnoses: FlakeDiagnosis[];
 }
@@ -102,6 +107,8 @@ interface SidecarShape {
   detached?: unknown;
   lateWave?: unknown;
   staleRect?: unknown;
+  fingerprint?: unknown;
+  fingerprintSource?: unknown;
   diagnoses?: Array<{ code?: unknown; confidence?: unknown; scope?: unknown; detail?: unknown }>;
 }
 
@@ -149,6 +156,11 @@ export function recordFromSidecar(sidecar: unknown, runId: string): FlakeRecord 
     staleRect: s.staleRect === true,
     detail: str(s.detail),
     source: str(s.source),
+    fingerprint: str(s.fingerprint),
+    fingerprintSource:
+      s.fingerprintSource === 'delta' || s.fingerprintSource === 'coarse'
+        ? s.fingerprintSource
+        : 'none',
     diagnoses,
   };
 }
@@ -221,6 +233,129 @@ export function aggregate(records: FlakeRecord[]): FlakeReport {
 /** One JSON object per line — the machine-readable stream. Pure. */
 export function toJSONL(records: FlakeRecord[]): string {
   return records.map((r) => JSON.stringify(r)).join('\n');
+}
+
+// --- Cross-test cause-clustering (triage T1) — suite-scale "one root cause, N-test blast radius" -------
+//
+// Incumbents cluster on TEST IDENTITY (per-test flakiness) or a TEXT signature (message/stack — which
+// provably over- and under-groups). This clusters on the OBSERVED STRUCTURAL MECHANISM, a key no one else
+// has: the closed taxonomy CODE (Level 1, the anti-over-group firewall — two different codes NEVER merge)
+// × the geometry/timing/message-tolerant delta FINGERPRINT (Level 2, the anti-under-group key — "same
+// cause" collapses even when the error text jitters). HONESTY (DW-03/04): a cluster is a HYPOTHESIS of a
+// shared cause, never "the same bug"; `unsure` is NEVER clustered (you can't fingerprint an absence of
+// evidence) — each unsure record stays a singleton, exactly as `aggregate` refuses to fold unsure into a
+// category.
+
+export interface CauseCluster {
+  /** The shared taxonomy code (never `unsure` — those are not clustered). */
+  code: RootCauseCode;
+  category: RootCauseCategory;
+  /** The shared clustering fingerprint (Level 2 key). */
+  fingerprint: string;
+  /** Resolution of the fingerprint: structural `delta` vs error-shape `coarse` — surfaced, never hidden. */
+  fingerprintSource: 'delta' | 'coarse';
+  /** Distinct tests sharing this cause+fingerprint — the fix-once-fix-many blast radius. */
+  blastRadius: number;
+  /** Total failure records in the cluster. */
+  failures: number;
+  /** Distinct runs the cluster spans. */
+  runs: number;
+  /** The highest confidence band across the cluster's records. */
+  confidence: Confidence;
+  /** The distinct tests in the cluster (sorted). */
+  tests: string[];
+  /** A representative `detail` (from the highest-confidence record). */
+  detailSample: string;
+}
+
+export interface CauseClusterReport {
+  /** Real-cause clusters, ranked by blast-radius (then failures, then code) — highest-leverage first. */
+  clusters: CauseCluster[];
+  /** `unsure`/untaxonomized records, listed apart and NEVER merged into a cause — each its own. */
+  unsure: Array<{ testId: string; runId: string; detail: string }>;
+  totalRecords: number;
+}
+
+/** The effective clustering fingerprint for a record: the persisted one, or a coarse key recomputed from
+ *  the record when a side-car predates fingerprinting (so old corpora still cluster at the cause level). */
+function effectiveFingerprint(r: FlakeRecord): { fp: string; source: 'delta' | 'coarse' } {
+  if (r.fingerprint && r.fingerprintSource !== 'none') {
+    return { fp: r.fingerprint, source: r.fingerprintSource };
+  }
+  const codes = [...new Set(r.diagnoses.map((d) => d.code))].sort().join(',');
+  const f = `${r.detached ? 'd' : ''}${r.lateWave ? 'l' : ''}${r.staleRect ? 's' : ''}`;
+  return { fp: `${r.code}#${codes}#${f}`, source: 'coarse' };
+}
+
+/**
+ * Cluster a corpus of flake records into root-cause clusters keyed on (taxonomy code × delta fingerprint).
+ * Read-only + pure. `unsure`/untaxonomized records are never clustered — they are returned as singletons
+ * (a cluster is a hypothesis of a shared cause, and you cannot fingerprint an absence of evidence).
+ */
+export function clusterByCause(records: FlakeRecord[]): CauseClusterReport {
+  const unsure: Array<{ testId: string; runId: string; detail: string }> = [];
+  const groups = new Map<string, FlakeRecord[]>();
+  for (const r of records) {
+    if (r.category === null) {
+      unsure.push({ testId: r.testId, runId: r.runId, detail: r.detail });
+      continue;
+    }
+    const { fp } = effectiveFingerprint(r);
+    const key = `${r.code}::${fp}`; // code FIRST — two different codes can never share a cluster
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
+  }
+
+  const clusters: CauseCluster[] = [];
+  for (const recs of groups.values()) {
+    const first = recs[0]!;
+    const { fp, source } = effectiveFingerprint(first);
+    const tests = [...new Set(recs.map((r) => r.testId))].sort();
+    const runs = new Set(recs.map((r) => r.runId)).size;
+    let confidence: Confidence = 'unknown';
+    for (const r of recs)
+      if (atLeastAsConfident(r.confidence, confidence)) confidence = r.confidence;
+    const detailSample = recs
+      .slice()
+      .sort(
+        (a, b) => CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence),
+      )[0]!.detail;
+    clusters.push({
+      code: first.code as RootCauseCode,
+      category: first.category!,
+      fingerprint: fp,
+      fingerprintSource: source,
+      blastRadius: tests.length,
+      failures: recs.length,
+      runs,
+      confidence,
+      tests,
+      detailSample,
+    });
+  }
+
+  // Rank by fix-once-fix-many leverage: blast radius, then total failures, then code (deterministic).
+  clusters.sort(
+    (a, b) =>
+      b.blastRadius - a.blastRadius || b.failures - a.failures || a.code.localeCompare(b.code),
+  );
+  return { clusters, unsure, totalRecords: records.length };
+}
+
+/** Render a compact human summary of the cause clusters (for the CLI `--clusters` view). */
+export function renderClusters(report: CauseClusterReport): string {
+  const lines = [
+    `deltawright cause clusters — ${report.clusters.length} clusters over ${report.totalRecords} records`,
+    `unsure singletons (never clustered — route to a human): ${report.unsure.length}`,
+    '',
+    'highest blast-radius first (fix-once-fix-many):',
+  ];
+  for (const c of report.clusters) {
+    lines.push(
+      `  ${c.blastRadius} tests ×  ${c.code}  [${c.category}]  ` +
+        `(${c.confidence}, ${c.fingerprintSource}; ${c.failures} failures / ${c.runs} runs)`,
+    );
+  }
+  return lines.join('\n');
 }
 
 /**

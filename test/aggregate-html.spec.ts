@@ -20,6 +20,8 @@ function rec(over: Partial<FlakeRecord> = {}): FlakeRecord {
     staleRect: false,
     detail: 'the target <button> is disabled',
     source: 'error-text',
+    fingerprint: '',
+    fingerprintSource: 'none',
     diagnoses: [
       {
         code: 'disabled',

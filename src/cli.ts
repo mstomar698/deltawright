@@ -9,7 +9,7 @@ Usage:
   deltawright mcp                        Start the MCP server on stdio (same as deltawright-mcp)
   deltawright checksum --update -- <cmd> Run <cmd> with delta-checksum baselines set to UPDATE
                                          (e.g. deltawright checksum --update -- npx playwright test)
-  deltawright aggregate [--report|--html] <dir>
+  deltawright aggregate [--report|--html|--clusters] <dir>
                                          Read-only: rank flaky tests from triage side-cars (#55) —
                                          JSONL by default, --report for a ranked summary, --html for
                                          a self-contained dashboard (redirect: > flakes.html)
@@ -77,25 +77,37 @@ async function main(argv: string[]): Promise<number> {
       const rest = argv.slice(1);
       const html = rest.includes('--html');
       const report = rest.includes('--report');
+      const clusters = rest.includes('--clusters');
       const dirs = rest.filter((a) => !a.startsWith('--'));
       if (dirs.length === 0) {
-        console.error('usage: deltawright aggregate [--report | --html] <dir> [<dir> ...]\n');
+        console.error(
+          'usage: deltawright aggregate [--report | --html | --clusters] <dir> [<dir> ...]\n',
+        );
         console.error(
           '  (each <dir> is scanned for *.deltawright-sidecar.json; one run = one dir)\n' +
+            '  --clusters groups failures by shared root cause (code × delta fingerprint)\n' +
             '  --html prints a static dashboard to stdout — redirect it, e.g. > flakes.html',
         );
         return 1;
       }
-      const { readSidecars, aggregate, toJSONL, renderReport, renderHtml } = await import(
-        new URL('./aggregate/index.js', import.meta.url).href
-      );
+      const {
+        readSidecars,
+        aggregate,
+        toJSONL,
+        renderReport,
+        renderHtml,
+        clusterByCause,
+        renderClusters,
+      } = await import(new URL('./aggregate/index.js', import.meta.url).href);
       const records = readSidecars(dirs);
-      // --html wins over --report; both derive from the same aggregate(records).
-      const out = html
-        ? renderHtml(aggregate(records))
-        : report
-          ? renderReport(aggregate(records))
-          : toJSONL(records);
+      // --clusters and --html win over --report; all derive from the same records.
+      const out = clusters
+        ? renderClusters(clusterByCause(records))
+        : html
+          ? renderHtml(aggregate(records))
+          : report
+            ? renderReport(aggregate(records))
+            : toJSONL(records);
       console.log(out);
       return 0;
     }

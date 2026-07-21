@@ -36,6 +36,7 @@ import type { TestInfo } from '@playwright/test';
 import type { Delta } from '../host/types';
 import {
   DELTA_ATTACHMENT_NAME,
+  coarseSignature,
   renderTriageText,
   triageFailure,
   type Sidecar,
@@ -125,6 +126,12 @@ function coverageSidecar(title: string, status: string): Sidecar {
     detached: false,
     lateWave: false,
     staleRect: false,
+    fingerprint: coarseSignature('unsure', [], {
+      detached: false,
+      lateWave: false,
+      staleRect: false,
+    }),
+    fingerprintSource: 'coarse',
     diagnoses: [],
   };
 }

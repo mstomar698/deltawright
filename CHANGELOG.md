@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Cross-test cause-clustering (`clusterByCause` in `deltawright/aggregate`; `deltawright aggregate --clusters`)** —
+  suite-scale triage that collapses a corpus of failures into root-cause clusters on a key no incumbent has:
+  the closed taxonomy **code** (Level 1 — two different codes never merge, the anti-over-group firewall) ×
+  the geometry/timing/message-tolerant delta **fingerprint** (Level 2 — "same cause" collapses even when the
+  error text jitters, the anti-under-group key). Each cluster reports its **blast radius** (distinct tests
+  sharing the cause — fix-once-fix-many), failures, runs, and highest confidence; clusters rank by blast
+  radius. The side-car now persists a `fingerprint` + `fingerprintSource` (`delta` = structural checksum in
+  rich mode, `coarse` = error-shape signature in passive mode — resolution surfaced, not hidden); old
+  side-cars still cluster via a recomputed coarse key. Honest: a cluster is a *hypothesis* of a shared cause
+  (never "the same bug"), and `unsure` is **never** clustered — each stays a singleton routed to a human.
+  Triage T1 from the SDLC research (`docs/research/sdlc-triage.md`).
 - **`suggestAssertions(root, delta)` (in `deltawright/matchers`)** — turns a delta's observed state/presence
   transition into **candidate, live-verified** Playwright assertions bound to a durable selector, filling
   the oracle gap codegen leaves (it records actions but not assertions, and Playwright has no feature that

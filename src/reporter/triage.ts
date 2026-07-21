@@ -2,6 +2,7 @@ import { diagnose } from '../host/diagnose';
 import { type Confidence } from '../host/confidence';
 import { summarizeDiagnoses, DEFAULT_MIN_CONFIDENCE } from '../host/summarize';
 import { isActionabilityError, looksDetached, syntheticDelta } from '../host/synthetic-delta';
+import { checksum } from '../host/checksum';
 import type { Delta, Diagnosis } from '../host/types';
 import type { RootCauseCode } from '../host/taxonomy';
 
@@ -48,8 +49,31 @@ export interface Sidecar {
   lateWave: boolean;
   /** A post-settle rect move was flagged (rich mode; needs a delta with rectRecheck). */
   staleRect: boolean;
+  /**
+   * A cross-test CLUSTERING key for suite-scale triage — "the same observed failure mechanism". In rich
+   * mode it is the geometry/timing/message-TOLERANT delta `checksum` (a structural fingerprint that stays
+   * stable across the jitter Sentry-style text signatures trip on); in passive mode it is a COARSE
+   * signature over the cause + diagnosis-code multiset + flags. `fingerprintSource` makes the resolution
+   * visible, not hidden. Grouped only WITHIN a cause code (never across) — see `clusterByCause`.
+   */
+  fingerprint: string;
+  /** `delta` = high-resolution structural fingerprint; `coarse` = error-shape signature (passive mode). */
+  fingerprintSource: 'delta' | 'coarse';
   /** Every diagnosis produced, for the machine-readable side-car. */
   diagnoses: Array<Pick<Diagnosis, 'code' | 'confidence' | 'scope' | 'detail'>>;
+}
+
+/** A COARSE, passive-mode clustering signature: the cause + the sorted diagnosis-code multiset + the
+ *  flags. Deliberately low-resolution (no geometry — a synthetic delta from error text has none), and
+ *  labeled `coarse` so consumers never mistake it for the structural delta fingerprint. */
+export function coarseSignature(
+  cause: Sidecar['cause'],
+  diagnosisCodes: readonly string[],
+  flags: { detached: boolean; lateWave: boolean; staleRect: boolean },
+): string {
+  const codes = [...new Set(diagnosisCodes)].sort().join(',');
+  const f = `${flags.detached ? 'd' : ''}${flags.lateWave ? 'l' : ''}${flags.staleRect ? 's' : ''}`;
+  return `${cause}#${codes}#${f}`;
 }
 
 const FAIL_STATUSES = new Set(['failed', 'timedOut']);
@@ -89,6 +113,7 @@ function assemble(
   diagnoses: Diagnosis[],
   flags: { detached: boolean; reason?: string },
   minConfidence: Confidence,
+  delta: Delta | null,
 ): Sidecar {
   const lateWave = diagnoses.some((d) => d.code === 'late-wave-suspected');
   const staleRect = diagnoses.some((d) => d.code === 'stale-rect-suspected');
@@ -103,6 +128,20 @@ function assemble(
     : crosses
       ? summary.primary!.detail
       : (flags.reason ?? 'no cause crossed the confidence threshold');
+  // The cross-test clustering key: the structural delta checksum in rich mode; a coarse error-shape
+  // signature in passive mode (a synthetic delta has no real geometry to fingerprint).
+  const fingerprint = delta
+    ? checksum(delta)
+    : coarseSignature(
+        cause,
+        diagnoses.map((d) => d.code),
+        {
+          detached: flags.detached,
+          lateWave,
+          staleRect,
+        },
+      );
+  const fingerprintSource: Sidecar['fingerprintSource'] = delta ? 'delta' : 'coarse';
   return {
     test: input.title,
     status: input.status,
@@ -113,6 +152,8 @@ function assemble(
     detached: flags.detached,
     lateWave,
     staleRect,
+    fingerprint,
+    fingerprintSource,
     diagnoses: diagnoses.map((d) => ({
       code: d.code,
       confidence: d.confidence,
@@ -142,13 +183,14 @@ export function triageFailure(input: TriageInput, opts: TriageOptions = {}): Sid
       diagnose(attached).diagnoses,
       { detached: false },
       minConfidence,
+      attached,
     );
   }
 
   // PASSIVE mode (zero-edit). Guard against fabrication:
   //  1) a locator that never resolved → detached + unsure (never invent a cause for a gone element);
   if (looksDetached(primaryError)) {
-    return assemble(input, 'error-text', [], { detached: true }, minConfidence);
+    return assemble(input, 'error-text', [], { detached: true }, minConfidence, null);
   }
   //  2) only a GENUINE Playwright actionability error is diagnosable from text — otherwise a failure
   //     whose message merely contains a taxonomy word (an assertion diff, an app error, a stack
@@ -164,6 +206,7 @@ export function triageFailure(input: TriageInput, opts: TriageOptions = {}): Sid
           'the failure was not a recognized Playwright actionability error — no cause inferred',
       },
       minConfidence,
+      null,
     );
   }
   //  3) a real actionability failure → wrap its error in a synthetic delta and diagnose it.
@@ -173,6 +216,7 @@ export function triageFailure(input: TriageInput, opts: TriageOptions = {}): Sid
     diagnose(syntheticDelta(primaryError)).diagnoses,
     { detached: false },
     minConfidence,
+    null,
   );
 }
 
