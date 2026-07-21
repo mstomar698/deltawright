@@ -254,13 +254,15 @@ export interface CauseCluster {
   fingerprint: string;
   /** Resolution of the fingerprint: structural `delta` vs error-shape `coarse` — surfaced, never hidden. */
   fingerprintSource: 'delta' | 'coarse';
-  /** Distinct tests sharing this cause+fingerprint — the fix-once-fix-many blast radius. */
+  /** Distinct tests sharing this cause+fingerprint — the blast radius. A CANDIDATE fix-once-fix-many
+   *  (a shared-cause hypothesis: one fix MAY clear them all, not a guarantee it will). */
   blastRadius: number;
   /** Total failure records in the cluster. */
   failures: number;
   /** Distinct runs the cluster spans. */
   runs: number;
-  /** The highest confidence band across the cluster's records. */
+  /** The HIGHEST confidence band across the cluster's records (a deliberate MAX, not a consensus): the
+   *  cause was confirmed on at least one member, so the cluster carries that band. */
   confidence: Confidence;
   /** The distinct tests in the cluster (sorted). */
   tests: string[];
@@ -277,7 +279,11 @@ export interface CauseClusterReport {
 }
 
 /** The effective clustering fingerprint for a record: the persisted one, or a coarse key recomputed from
- *  the record when a side-car predates fingerprinting (so old corpora still cluster at the cause level). */
+ *  the record when a side-car predates fingerprinting (so old corpora still cluster at the cause level).
+ *  MIXED-CORPUS NOTE: an OLD rich side-car (a delta attachment but no persisted fingerprint) recomputes a
+ *  `coarse` key here, while a NEW rich side-car of the same failure keys on the `delta` checksum — so the
+ *  same failure can split into a `coarse` and a `delta` cluster across a mixed corpus. `fingerprintSource`
+ *  on each cluster makes that resolution difference visible. */
 function effectiveFingerprint(r: FlakeRecord): { fp: string; source: 'delta' | 'coarse' } {
   if (r.fingerprint && r.fingerprintSource !== 'none') {
     return { fp: r.fingerprint, source: r.fingerprintSource };
@@ -333,10 +339,14 @@ export function clusterByCause(records: FlakeRecord[]): CauseClusterReport {
     });
   }
 
-  // Rank by fix-once-fix-many leverage: blast radius, then total failures, then code (deterministic).
+  // Rank by leverage: blast radius, then total failures, then code, then fingerprint — the last two make
+  // the order fully deterministic (independent of Map insertion / stable-sort) even on full ties.
   clusters.sort(
     (a, b) =>
-      b.blastRadius - a.blastRadius || b.failures - a.failures || a.code.localeCompare(b.code),
+      b.blastRadius - a.blastRadius ||
+      b.failures - a.failures ||
+      a.code.localeCompare(b.code) ||
+      a.fingerprint.localeCompare(b.fingerprint),
   );
   return { clusters, unsure, totalRecords: records.length };
 }
@@ -347,7 +357,7 @@ export function renderClusters(report: CauseClusterReport): string {
     `deltawright cause clusters — ${report.clusters.length} clusters over ${report.totalRecords} records`,
     `unsure singletons (never clustered — route to a human): ${report.unsure.length}`,
     '',
-    'highest blast-radius first (fix-once-fix-many):',
+    'highest blast-radius first (a shared-cause hypothesis — one fix MAY clear several, not a guarantee):',
   ];
   for (const c of report.clusters) {
     lines.push(

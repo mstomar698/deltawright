@@ -13,8 +13,8 @@ All notable changes to this project are documented here. The format is based on
   the closed taxonomy **code** (Level 1 — two different codes never merge, the anti-over-group firewall) ×
   the geometry/timing/message-tolerant delta **fingerprint** (Level 2 — "same cause" collapses even when the
   error text jitters, the anti-under-group key). Each cluster reports its **blast radius** (distinct tests
-  sharing the cause — fix-once-fix-many), failures, runs, and highest confidence; clusters rank by blast
-  radius. The side-car now persists a `fingerprint` + `fingerprintSource` (`delta` = structural checksum in
+  sharing the cause — a fix-once-fix-many *candidate*: one fix may clear them all, not a guarantee),
+  failures, runs, and highest confidence; clusters rank by blast radius. The side-car now persists a `fingerprint` + `fingerprintSource` (`delta` = structural checksum in
   rich mode, `coarse` = error-shape signature in passive mode — resolution surfaced, not hidden); old
   side-cars still cluster via a recomputed coarse key. Honest: a cluster is a *hypothesis* of a shared cause
   (never "the same bug"), and `unsure` is **never** clustered — each stays a singleton routed to a human.
