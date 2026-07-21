@@ -11,6 +11,7 @@
   <label>mask-space <input id="mask-space" /></label>
   <label>truncate <input id="truncate" /></label>
   <label>dropped <input id="dropped" /></label>
+  <label>churn <input id="churn" /></label>
   <script>
     // Each input exhibits a distinct committed-value shape via an `input` listener (fill() dispatches
     // one), mirroring the async widgets `toHaveCommittedValue` targets:
@@ -40,6 +41,15 @@
 
     el('dropped').addEventListener('input', (e) => {
       e.target.value = e.target.value.replace('l', ''); // drop the first "l" — a non-prefix subsequence
+    });
+
+    // #churn never stops changing after the first input — a continuously-mutating field that never
+    // settles, so `settled` must come back false (the classification is on a mid-flight value).
+    el('churn').addEventListener('input', function start(e) {
+      const input = e.target;
+      if (input.dataset.churning) return;
+      input.dataset.churning = '1';
+      setInterval(() => { input.value = 'x' + Date.now(); }, 40);
     });
   </script>
 </body>

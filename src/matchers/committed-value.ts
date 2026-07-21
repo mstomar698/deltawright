@@ -4,18 +4,23 @@ import type { InputShape } from '../host/types';
 
 // Input-commit integrity matcher (hardening H1) — `expect(locator).toHaveCommittedValue(intended)`.
 //
-// A LOUD, LOCATED post-fill gate for a flake class Playwright has no primitive for: an async
-// debounce / autocomplete / input-mask / framework listener silently CLEARS, TRUNCATES, or DROPS the
-// value AFTER fill()/type() returned success, so a later submit intermittently fails while the fill
-// site looks green. This matcher waits for the field's value to STOP CHANGING (catching the async
-// debounce-then-clear a synchronous read misses), then names the loss shape via the SAME
-// `classifyInput` the live + offline arms use — so all three can't drift.
+// A LOUD, LOCATED post-fill gate. `toHaveValue` fails on a value that stayed lost, but Playwright has
+// no primitive that (a) distinguishes real character loss from an INTENDED reformat mask, (b) names
+// WHICH loss shape, or (c) catches the async debounce-WINDOW false-pass — when a debounce / autocomplete
+// / input-mask CLEARS/TRUNCATES/DROPS the value AFTER fill()/type() returned success (so a later submit
+// intermittently fails while the fill site looks green, and a synchronous `toHaveValue` poll can land on
+// the brief pre-clear value and go green). This matcher waits for the field's value to STOP CHANGING,
+// then names the shape via the SAME `classifyInput` the live + offline arms use — so all three can't drift.
 //
 // It is NOT `toHaveValue` reskinned: `toHaveValue` retries toward a value you must SPECIFY and cannot
 // tell a benign reformat mask from real loss — asserting `toHaveValue('4111 1111')` FALSE-fails when
 // the field intentionally strips the space to `41111111`. This matcher classifies against the value
 // you INTENDED to type: a subtractive separator/whitespace mask or a case/reorder reformat is
 // `transformed` and PASSES; only real character loss (`never-committed`/`truncated`/`dropped`) fails.
+// BLIND SPOT (deliberate, disclosed): a real loss that co-occurs with a NON-subtractive transform
+// (case/reorder/insertion — e.g. `hello`→`HLLO`) is not a shorter subsequence, so it is `transformed`
+// and PASSES. The check is intentionally biased against ever false-failing a legit mask (DW-03 "unsure
+// beats confidently wrong"), so it can false-NEGATIVE a mask-shaped loss — never a false-positive.
 //
 // HONESTY (load-bearing): DW-02 — a SEPARATE assertion, it never overrides fill()'s success or
 // auto-retypes/repairs the value. DW-03 — it names WHAT happened to the value (the shape), never WHY
@@ -46,6 +51,10 @@ export interface CommittedValueResult {
   committedLen: number;
   /** True iff `shape` is a real character-loss shape (`never-committed`/`truncated`/`dropped`). */
   isLoss: boolean;
+  /** True iff the value went stable for `quietMs` before the read (a confirmed settle); false when the
+   *  `settleMs` cap was hit while the value was still changing — then `shape` reflects a MID-FLIGHT value
+   *  and a still-mutating field is itself a signal (raise `settleMs`/`quietMs`). */
+  settled: boolean;
 }
 
 const DEFAULT_SETTLE_MS = 700;
@@ -59,15 +68,19 @@ const cpLen = (s: string) => Array.from(s).length;
  * Read the locator's value once it has stopped changing (bounded by `settleMs`), so an async
  * debounce-then-clear is observed at its SETTLED value rather than mid-flight. Value changes on an
  * input are `.value`-property writes that a MutationObserver never sees, so this polls the value
- * directly (also CSP-safe — no injection). Returns the settled value.
+ * directly (also CSP-safe — no injection). Returns the value plus whether it CONFIRMED a settle (went
+ * quiet for `quietMs`) or hit the `settleMs` cap while still changing. `inputValue()` throws Playwright's
+ * own error if the locator is not an input (a usage error) or is detached mid-poll (a real fault) — both
+ * propagate rather than being masked as a value.
  */
 async function readSettledValue(
   locator: Locator,
   o: Required<CommittedValueOptions>,
-): Promise<string> {
+): Promise<{ value: string; settled: boolean }> {
   let value = await locator.inputValue();
   const deadline = Date.now() + o.settleMs;
   let lastChangeAt = Date.now();
+  let settled = false;
   while (Date.now() < deadline) {
     await sleep(o.pollMs);
     const v = await locator.inputValue();
@@ -75,10 +88,11 @@ async function readSettledValue(
       value = v;
       lastChangeAt = Date.now();
     } else if (Date.now() - lastChangeAt >= o.quietMs) {
-      break; // the value has been stable for quietMs — treat it as committed
+      settled = true; // stable for quietMs — a confirmed settle
+      break;
     }
   }
-  return value;
+  return { value, settled };
 }
 
 /**
@@ -96,13 +110,14 @@ export async function checkCommittedValue(
     quietMs: opts.quietMs ?? DEFAULT_QUIET_MS,
     pollMs: opts.pollMs ?? DEFAULT_POLL_MS,
   };
-  const committed = await readSettledValue(locator, o);
+  const { value: committed, settled } = await readSettledValue(locator, o);
   const shape = classifyInput(intended, committed);
   return {
     shape,
     intendedLen: cpLen(intended),
     committedLen: cpLen(committed),
     isLoss: LOSS_SHAPES.has(shape),
+    settled,
   };
 }
 
@@ -120,9 +135,12 @@ export async function toHaveCommittedValue(
   const r = await checkCommittedValue(locator, intended, opts);
   const pass = !r.isLoss;
   const lens = `${r.intendedLen} intended → ${r.committedLen} committed chars`;
+  const unsettled = r.settled
+    ? ''
+    : ' (value had NOT stopped changing at the settleMs cap — raise it)';
   const message = () =>
     pass
-      ? `expected the field NOT to commit the intended value, but it committed \`${r.shape}\` (${lens})`
-      : `expected the field to commit the intended value, but it was \`${r.shape}\` — real character loss after the async settle, not a formatting mask (${lens})`;
+      ? `expected the field NOT to commit the intended value, but it committed \`${r.shape}\` (${lens})${unsettled}`
+      : `expected the field to commit the intended value, but it was \`${r.shape}\` — real character loss after the async settle, not a formatting mask (${lens})${unsettled}`;
   return { pass, message };
 }

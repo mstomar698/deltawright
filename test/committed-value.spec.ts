@@ -14,7 +14,18 @@ test.beforeEach(async ({ page }) => {
 test('passes when the field commits the intended value cleanly', async ({ page }) => {
   await page.fill('#clean', 'hello');
   await expect(page.locator('#clean')).toHaveCommittedValue('hello');
-  expect((await checkCommittedValue(page.locator('#clean'), 'hello')).shape).toBe('clean');
+  const r = await checkCommittedValue(page.locator('#clean'), 'hello');
+  expect(r.shape).toBe('clean');
+  expect(r.settled).toBe(true); // a stable field confirms a settle
+});
+
+test('reports settled:false for a field that never stops changing (an honest signal)', async ({
+  page,
+}) => {
+  await page.fill('#churn', 'hello');
+  // The field mutates every 40ms forever → the poll hits the settleMs cap without a confirmed settle.
+  const r = await checkCommittedValue(page.locator('#churn'), 'hello', { settleMs: 350 });
+  expect(r.settled).toBe(false);
 });
 
 test('PASSES a benign reformat mask (transformed) where toHaveValue FALSE-fails', async ({

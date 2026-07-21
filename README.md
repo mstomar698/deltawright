@@ -140,14 +140,14 @@ import { preflight } from 'deltawright/matchers';
 const { verdict, reason, geometryVerdict, agreed } = await preflight(locator);
 ```
 
-The same module adds an **input-commit integrity** matcher for a flake class Playwright has no primitive for — an async debounce / autocomplete / input-mask silently clearing, truncating, or dropping a typed value *after* `fill()` returned success:
+The same module adds an **input-commit integrity** matcher for a case Playwright has no primitive for — telling a real value loss from an *intended* reformat mask, and catching an async debounce / autocomplete / input-mask that silently clears, truncates, or drops a typed value *after* `fill()` returned success:
 
 ```ts
 await page.fill('#card', '4111 1111 1111 1111');
 await expect(page.locator('#card')).toHaveCommittedValue('4111 1111 1111 1111');
 ```
 
-It waits for the field's value to **stop changing** (catching the async debounce-then-clear a synchronous read misses), then classifies it against what you *intended* to type: a benign reformat mask (`4111 1111`→`41111111`, trim, reorder) is `transformed` and **passes** — where `toHaveValue('4111 1111')` would false-fail — while real character loss (`never-committed` / `truncated` / `dropped`) **fails loud with the named shape**. It is a *separate* assertion: it never overrides `fill()`'s success, never repairs the value, and never claims *why* the widget dropped it; the message carries only the shape and lengths, never the raw value (PII-safe). `checkCommittedValue(locator, intended)` returns the structured result. (Because a value-property write fires no event, the settle is a bounded value-stability poll — set `quietMs` above your widget's debounce delay.)
+It waits for the field's value to **stop changing** (catching the async debounce-then-clear window where a synchronous `toHaveValue` poll can land on the brief pre-clear value and go green), then classifies it against what you *intended* to type: a benign reformat mask (`4111 1111`→`41111111`, trim, reorder) is `transformed` and **passes** — where `toHaveValue('4111 1111')` would false-fail — while real character loss (`never-committed` / `truncated` / `dropped`) **fails loud with the named shape**. It is a *separate* assertion: it never overrides `fill()`'s success, never repairs the value, and never claims *why* the widget dropped it; the message carries only the shape and lengths, never the raw value (PII-safe). `checkCommittedValue(locator, intended)` returns the structured result, including `settled` (false when the value was still changing at the cap). Two honest limits: because a value-property write fires no event, the settle is a bounded value-stability poll — set `quietMs` above your widget's debounce delay; and a loss that *co-occurs* with a case/reorder/insertion transform (`hello`→`HLLO`) is classified `transformed` and passes — the check is deliberately biased against ever false-failing a legit mask, so it can miss a mask-shaped loss but never flags a real one.
 
 The same module adds a **delta checksum regression** matcher:
 
