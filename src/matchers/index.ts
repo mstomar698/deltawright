@@ -44,6 +44,12 @@ export type {
   RetentionVerdict,
   SelectorRetention,
 } from './score-selectors';
+export { suggestAssertions } from './suggest-assertions';
+export type {
+  SynthesizedAssertion,
+  AssertionSynthesisResult,
+  SuggestAssertionsOptions,
+} from './suggest-assertions';
 
 import type { PreflightOptions } from './actionable';
 import type { CommittedValueOptions } from './committed-value';
