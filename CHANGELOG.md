@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Actionability priority queue (`prioritize` in `deltawright/aggregate`; `deltawright aggregate --priority`,
+  and it now leads the `--html` dashboard)** — turns the report from "here is all the data" into "fix THIS
+  cluster first, and here is why". Ranks the cause clusters by shared-cause **blast radius × confidence** —
+  a decomposed, auditable order (every row shows its blast radius, confidence band, and failure count),
+  never one opaque score. Where incumbents sort by raw frequency / CI-time, DW ranks by *shared root-cause
+  blast radius* (fix-once-fix-many candidate), which is only possible because DW owns the per-action
+  taxonomy. Honest: `unsure` is **never scored low or folded** — it goes to its own "route to a human" lane
+  on par with the top; a high rank is a fix-first *hypothesis*, never a confirmed bug or a guarantee one fix
+  clears the cluster; priority annotates, never overrides Playwright. Reporting A from the SDLC research
+  (`docs/research/sdlc-reporting.md`).
 - **Cross-test cause-clustering (`clusterByCause` in `deltawright/aggregate`; `deltawright aggregate --clusters`)** —
   suite-scale triage that collapses a corpus of failures into root-cause clusters on a key no incumbent has:
   the closed taxonomy **code** (Level 1 — two different codes never merge, the anti-over-group firewall) ×

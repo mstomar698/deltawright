@@ -9,7 +9,7 @@ Usage:
   deltawright mcp                        Start the MCP server on stdio (same as deltawright-mcp)
   deltawright checksum --update -- <cmd> Run <cmd> with delta-checksum baselines set to UPDATE
                                          (e.g. deltawright checksum --update -- npx playwright test)
-  deltawright aggregate [--report|--html|--clusters] <dir>
+  deltawright aggregate [--report|--html|--clusters|--priority] <dir>
                                          Read-only: rank flaky tests from triage side-cars (#55) —
                                          JSONL by default, --report for a ranked summary, --html for
                                          a self-contained dashboard (redirect: > flakes.html)
@@ -78,15 +78,17 @@ async function main(argv: string[]): Promise<number> {
       const html = rest.includes('--html');
       const report = rest.includes('--report');
       const clusters = rest.includes('--clusters');
+      const priority = rest.includes('--priority');
       const dirs = rest.filter((a) => !a.startsWith('--'));
       if (dirs.length === 0) {
         console.error(
-          'usage: deltawright aggregate [--report | --html | --clusters] <dir> [<dir> ...]\n',
+          'usage: deltawright aggregate [--report | --html | --clusters | --priority] <dir> [<dir> ...]\n',
         );
         console.error(
           '  (each <dir> is scanned for *.deltawright-sidecar.json; one run = one dir)\n' +
+            '  --priority ranks a fix-first queue by shared-cause blast radius × confidence\n' +
             '  --clusters groups failures by shared root cause (code × delta fingerprint)\n' +
-            '  --html prints a static dashboard to stdout — redirect it, e.g. > flakes.html',
+            '  --html prints a static dashboard (leading with the priority queue) to stdout — redirect it',
         );
         return 1;
       }
@@ -98,16 +100,21 @@ async function main(argv: string[]): Promise<number> {
         renderHtml,
         clusterByCause,
         renderClusters,
+        prioritize,
+        renderPriorityQueue,
       } = await import(new URL('./aggregate/index.js', import.meta.url).href);
       const records = readSidecars(dirs);
-      // --clusters and --html win over --report; all derive from the same records.
-      const out = clusters
-        ? renderClusters(clusterByCause(records))
-        : html
-          ? renderHtml(aggregate(records))
-          : report
-            ? renderReport(aggregate(records))
-            : toJSONL(records);
+      // --priority / --clusters / --html win over --report; all derive from the same records. The HTML
+      // dashboard leads with the priority queue (its "fix first" panel).
+      const out = priority
+        ? renderPriorityQueue(prioritize(clusterByCause(records)))
+        : clusters
+          ? renderClusters(clusterByCause(records))
+          : html
+            ? renderHtml(aggregate(records), prioritize(clusterByCause(records)))
+            : report
+              ? renderReport(aggregate(records))
+              : toJSONL(records);
       console.log(out);
       return 0;
     }

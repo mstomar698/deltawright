@@ -259,12 +259,14 @@ For each finally-failed / timed-out test it writes `*.deltawright-sidecar.json` 
 `deltawright aggregate` folds the reporter's side-cars into a ranked, most-flaky-first report — **read-only, it writes nothing itself**:
 
 ```bash
-deltawright aggregate <dir> [<dir> ...]            # JSONL to stdout (default)
-deltawright aggregate --report <dir> [<dir> ...]   # compact human-readable summary
-deltawright aggregate --html   <dir> [<dir> ...]   # self-contained, theme-aware HTML dashboard
+deltawright aggregate <dir> [<dir> ...]              # JSONL to stdout (default)
+deltawright aggregate --report   <dir> [<dir> ...]   # compact human-readable summary
+deltawright aggregate --clusters <dir> [<dir> ...]   # group failures by shared root cause (code × fingerprint)
+deltawright aggregate --priority <dir> [<dir> ...]   # fix-first queue ranked by blast radius × confidence
+deltawright aggregate --html     <dir> [<dir> ...]   # HTML dashboard (leads with the priority queue)
 ```
 
-Unrecognized or below-threshold causes land in a separate **unsure** bucket rather than being force-labeled.
+**Suite-scale triage.** `--clusters` collapses the corpus into **root-cause clusters** keyed on the closed taxonomy **code** × the geometry/timing/message-tolerant delta **fingerprint** (persisted on each side-car) — so "same cause" collapses even when the error text jitters, while two different codes never merge. `--priority` then ranks those clusters into a **fix-first queue by shared-cause blast radius × confidence** — a decomposed order where each row shows its components, never one opaque score. A cluster is a *hypothesis* of a shared cause (a fix-once-fix-many candidate, not a guarantee), and unsure failures are **never** clustered or scored — each goes to its own "route to a human" lane. Unrecognized or below-threshold causes land in a separate **unsure** bucket rather than being force-labeled.
 
 ### CI in one step — the GitHub Action
 

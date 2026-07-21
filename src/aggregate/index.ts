@@ -368,6 +368,89 @@ export function renderClusters(report: CauseClusterReport): string {
   return lines.join('\n');
 }
 
+// --- Actionability priority queue (reporting A) — "fix THIS cluster first, and here is why" -----------
+//
+// Incumbents rank by FREQUENCY / CI-time; DW ranks by shared-cause BLAST RADIUS × CONFIDENCE — only
+// possible because DW owns the per-action taxonomy they don't. The rank is DECOMPOSED (blast radius, then
+// confidence band, then failures) and every row shows its components — never one opaque score that "looks
+// decisive". HONESTY: `unsure` is NOT scored low (which would bury it); it goes to its OWN human-triage
+// lane, on par with the top lane (DW-04); a high rank is a fix-first HYPOTHESIS, never a confirmed bug or
+// a guarantee one fix clears the cluster (DW-03); priority annotates, never overrides Playwright (DW-02).
+
+export interface PriorityRow {
+  /** 1-based fix-first rank. */
+  rank: number;
+  code: RootCauseCode;
+  category: RootCauseCategory;
+  /** Distinct tests sharing the cause — the leverage axis (a fix-once-fix-many candidate). */
+  blastRadius: number;
+  /** Highest confidence band in the cluster — the second ranking axis. */
+  confidence: Confidence;
+  failures: number;
+  runs: number;
+  fingerprintSource: 'delta' | 'coarse';
+  tests: string[];
+  detailSample: string;
+}
+
+export interface PriorityQueue {
+  /** Fix-first rows, DECOMPOSED-ranked (blast radius, then confidence, then failures) — no opaque score. */
+  rows: PriorityRow[];
+  /** The human-triage lane: `unsure` failures, on par with the top lane — never scored as a cause. */
+  humanLane: Array<{ testId: string; runId: string; detail: string }>;
+  totalRecords: number;
+}
+
+/**
+ * Rank cause clusters into a fix-first priority queue by shared-cause blast radius × confidence. Pure.
+ * The order is decomposed/auditable (blast radius, then confidence band, then failures — every row shows
+ * its components); `unsure` never enters the ranking — it is surfaced apart in a human-triage lane.
+ */
+export function prioritize(report: CauseClusterReport): PriorityQueue {
+  const rows: PriorityRow[] = report.clusters
+    .slice()
+    .sort(
+      (a, b) =>
+        b.blastRadius - a.blastRadius || // 1) leverage: how many tests one fix could clear
+        CONFIDENCE_ORDER.indexOf(a.confidence) - CONFIDENCE_ORDER.indexOf(b.confidence) || // 2) confidence
+        b.failures - a.failures || // 3) volume
+        a.code.localeCompare(b.code) ||
+        a.fingerprint.localeCompare(b.fingerprint),
+    )
+    .map((c, i) => ({
+      rank: i + 1,
+      code: c.code,
+      category: c.category,
+      blastRadius: c.blastRadius,
+      confidence: c.confidence,
+      failures: c.failures,
+      runs: c.runs,
+      fingerprintSource: c.fingerprintSource,
+      tests: c.tests,
+      detailSample: c.detailSample,
+    }));
+  return { rows, humanLane: report.unsure, totalRecords: report.totalRecords };
+}
+
+/** Render the fix-first priority queue as text (the CLI `--priority` view). Decomposed — each row shows
+ *  its blast radius, confidence, and failures, never a single opaque priority number. */
+export function renderPriorityQueue(queue: PriorityQueue): string {
+  const lines = [
+    `deltawright fix-first priority — ${queue.rows.length} cause clusters over ${queue.totalRecords} records`,
+    `human-triage lane (unsure — route to a human, NOT scored as a cause): ${queue.humanLane.length} failures`,
+    '',
+    'fix these first (blast radius × confidence — decomposed, a hypothesis not a guarantee):',
+  ];
+  for (const r of queue.rows) {
+    lines.push(
+      `  #${r.rank}  ${r.blastRadius} tests · ${r.confidence} · ${r.code} [${r.category}] · ` +
+        `${r.failures} failures / ${r.runs} runs (${r.fingerprintSource})`,
+    );
+    if (r.detailSample) lines.push(`      — ${r.detailSample}`);
+  }
+  return lines.join('\n');
+}
+
 /**
  * Recursively collect `*.deltawright-sidecar.json` paths under `dir` (read-only). `seenDirs` holds
  * the REAL (symlink-resolved) path of every directory already walked, so a symlink cycle (e.g. a CI
