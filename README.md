@@ -140,6 +140,8 @@ import { preflight } from 'deltawright/matchers';
 const { verdict, reason, geometryVerdict, agreed } = await preflight(locator);
 ```
 
+### Input-commit integrity matcher: `toHaveCommittedValue`
+
 The same module adds an **input-commit integrity** matcher for a case Playwright has no primitive for — telling a real value loss from an *intended* reformat mask, and catching an async debounce / autocomplete / input-mask that silently clears, truncates, or drops a typed value *after* `fill()` returned success:
 
 ```ts
@@ -267,6 +269,16 @@ deltawright aggregate --html     <dir> [<dir> ...]   # HTML dashboard (leads wit
 ```
 
 **Suite-scale triage.** `--clusters` collapses the corpus into **root-cause clusters** keyed on the closed taxonomy **code** × the geometry/timing/message-tolerant delta **fingerprint** (persisted on each side-car) — so "same cause" collapses even when the error text jitters, while two different codes never merge. `--priority` then ranks those clusters into a **fix-first queue by shared-cause blast radius × confidence** — a decomposed order where each row shows its components, never one opaque score. A cluster is a *hypothesis* of a shared cause (a fix-once-fix-many candidate, not a guarantee), and unsure failures are **never** clustered or scored — each goes to its own "route to a human" lane. Unrecognized or below-threshold causes land in a separate **unsure** bucket rather than being force-labeled.
+
+The same functions are exported from **`deltawright/aggregate`** for programmatic use — build your own gate or dashboard over the cluster / priority data:
+
+```ts
+import { readSidecars, clusterByCause, prioritize } from 'deltawright/aggregate';
+
+const records = readSidecars(['deltawright-triage']);            // read-only, across run dirs
+const { clusters, unsure } = clusterByCause(records);            // root-cause clusters (code × fingerprint) + the unsure singletons
+const { rows, humanLane } = prioritize(clusterByCause(records)); // fix-first queue (rank·blastRadius·confidence·failures) + the human-triage lane
+```
 
 ### CI in one step — the GitHub Action
 

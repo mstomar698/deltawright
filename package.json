@@ -1,7 +1,7 @@
 {
   "name": "deltawright",
-  "version": "1.1.0",
-  "description": "A delta-and-actionability layer for Playwright agents: it tells the agent what changed after an action and whether it can act on it.",
+  "version": "1.1.1",
+  "description": "A delta + actionability layer for Playwright test suites and agents: names what changed after an action and whether it is actionable, plus a zero-edit flake-triage reporter, suite-scale cause-clustering, and offline trace diagnosis.",
   "license": "MIT",
   "type": "module",
   "keywords": [
