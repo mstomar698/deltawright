@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-07-28
+
+**Docs-only.** No code changes. Corrects the package framing so adopters (and npm) see the v1.1 test-suite
+value, not just the agent story.
+
+### Changed
+
+- **npm `description`** rewritten from the agent-only line to lead with the test-suite/triage value
+  (zero-edit flake triage, suite-scale cause-clustering, offline trace diagnosis).
+- **README** now documents the **programmatic `deltawright/aggregate` API** (`readSidecars`,
+  `clusterByCause`, `prioritize`) — previously only the `aggregate --clusters`/`--priority` CLI flags were
+  shown — and gives `toHaveCommittedValue` its own discoverable section header.
+
 ## [1.1.0] - 2026-07-21
 
 **The SDLC-usefulness release.** Built from a five-block research pass (`docs/research/sdlc-*.md`) on making
