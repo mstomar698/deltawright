@@ -426,6 +426,10 @@ Deltawright **observes and explains**. It is deliberately *not* an actionability
 - Settle is a **labeled, tunable heuristic** (`quietMs` / `maxWaitMs` / `animMaxMs`), not a hard readiness guarantee — an empty delta at the cap is reported as a *suspected miss*, not silence.
 - The screenshot fallback is opt-in and **coarse**: one pixel region with verdict `n/a`, for canvas/WebGL/cross-origin areas the DOM can't describe.
 
+## Examples
+
+- **[`examples/flake-triage-benchmark/`](examples/flake-triage-benchmark/)** — a **runnable, ground-truthed** example: Deltawright wired into a realistic ~300-test Playwright suite over a synthetic app with seeded fault injection. Run `npm install && FAULT_PROFILE=faults DW=1 npx playwright test` to watch the zero-edit reporter name causes, then `deltawright aggregate --clusters/--priority` to cluster and fix-first-rank them, and `--project=greenfield` to see the per-test primitives (`toHaveCommittedValue`, `preflight`) catch the silent input-commit bugs a plain suite ships green. Every DW label is scored against a manifest of ground truth — measured, not asserted. Findings in [`examples/flake-triage-benchmark/results/RESULTS.md`](examples/flake-triage-benchmark/results/RESULTS.md): **0 false-positives, 100% precision, stable clustering + fix-first priority + cross-run flake trends.** Fully offline and synthetic.
+
 ## Project docs
 
 - **[`docs/cookbook.md`](docs/cookbook.md)** — problem → capability → one-line wiring, plus the honest-limits matrix (Chromium-only, CSP skip-with-reason, overhead, ephemeral refs, corpus-relative accuracy).

@@ -1,0 +1,50 @@
+{
+  "runs": 3,
+  "totalRecords": 370,
+  "precision": {
+    "named": 144,
+    "correct": 144,
+    "wrong": 0,
+    "pct": 100
+  },
+  "hardFalsePositives": 0,
+  "abstained": 226,
+  "perCauseNamed": {
+    "covered-by-overlay": 54,
+    "off-screen": 90
+  },
+  "clusters": [
+    {
+      "code": "off-screen",
+      "blastRadius": 30,
+      "runs": 3,
+      "confidence": "confirmed"
+    },
+    {
+      "code": "covered-by-overlay",
+      "blastRadius": 18,
+      "runs": 3,
+      "confidence": "confirmed"
+    }
+  ],
+  "unsureSingletons": 226,
+  "priority": [
+    {
+      "rank": 1,
+      "code": "off-screen",
+      "blastRadius": 30
+    },
+    {
+      "rank": 2,
+      "code": "covered-by-overlay",
+      "blastRadius": 18
+    }
+  ],
+  "flake": {
+    "distinctFlakyTests": 18,
+    "failsInNofRuns": {
+      "1": 11,
+      "2": 7
+    }
+  }
+}

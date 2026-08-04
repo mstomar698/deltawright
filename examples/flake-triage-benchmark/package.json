@@ -1,0 +1,17 @@
+{
+  "name": "deltawright-example-flake-triage-benchmark",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable example + ground-truth benchmark: deltawright wired into a ~300-test Playwright suite with seeded fault injection (zero-edit triage + per-test primitives).",
+  "scripts": {
+    "server": "node server/server.mjs",
+    "test:control": "playwright test --project=control",
+    "test:greenfield": "playwright test --project=greenfield",
+    "score": "node harness/score.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "deltawright": "^1.1.1"
+  }
+}

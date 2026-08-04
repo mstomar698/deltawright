@@ -6,6 +6,7 @@ playwright-report
 bench/corpus
 package-lock.json
 test/fixtures
+examples
 docs
 *.md
 ideation-agent-delta-layer.md

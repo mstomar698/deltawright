@@ -13,6 +13,7 @@ export default tseslint.config(
       'playwright-report/',
       'bench/corpus/**',
       '.claude/worktrees/',
+      'examples/', // standalone runnable examples with their own deps/tsconfig — not part of the lib build
     ],
   },
   js.configs.recommended,

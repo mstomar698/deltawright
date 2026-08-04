@@ -1,0 +1,13 @@
+node_modules/
+test-results/
+playwright-report/
+# Regenerable run outputs (re-run to reproduce). The durable findings live in results/RESULTS.md +
+# results/matrix.json + ground-truth/manifest.json, which ARE committed.
+results/*-sidecars/
+results/*.log
+results/*.results.json
+results/*.json
+!results/matrix.json
+
+# stray debug output location
+suite/results/
