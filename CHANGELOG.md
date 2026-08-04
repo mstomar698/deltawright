@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/flake-triage-benchmark/`** — a runnable, ground-truthed example: Deltawright wired into a
+  realistic ~300-test Playwright suite over a synthetic app with seeded fault injection, with the zero-edit
+  triage/reporting band and the per-test primitives both exercised and **scored against a manifest of ground
+  truth** (0 false-positives, 100% precision, stable clustering + fix-first priority + cross-run flake
+  trends). Fully offline and synthetic; not shipped in the npm package. Repo-only, linked from the README.
+
 ## [1.1.1] - 2026-07-28
 
 **Docs-only.** No code changes. Corrects the package framing so adopters (and npm) see the v1.1 test-suite

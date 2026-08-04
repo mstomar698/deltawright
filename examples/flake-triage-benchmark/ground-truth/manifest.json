@@ -1,0 +1,974 @@
+{
+  "totalTests": 296,
+  "injectedCount": 124,
+  "groups": [
+    {
+      "id": "covered-overlay",
+      "cause": "covered-by-overlay",
+      "kind": "hard",
+      "blastRadius": 18
+    },
+    {
+      "id": "input-debounce-clear",
+      "cause": "input-not-committed",
+      "kind": "hard",
+      "blastRadius": 20
+    },
+    {
+      "id": "input-mask-truncate",
+      "cause": "input-not-committed",
+      "kind": "hard",
+      "blastRadius": 16
+    },
+    {
+      "id": "offscreen",
+      "cause": "off-screen",
+      "kind": "hard",
+      "blastRadius": 30
+    },
+    {
+      "id": "disabled-stuck",
+      "cause": "disabled",
+      "kind": "hard",
+      "blastRadius": 12
+    },
+    {
+      "id": "app-js-error",
+      "cause": "app-js",
+      "kind": "hard",
+      "blastRadius": 16
+    },
+    {
+      "id": "backend-500",
+      "cause": "backend",
+      "kind": "hard",
+      "blastRadius": 12
+    },
+    {
+      "id": "rpc-settle",
+      "cause": "settle",
+      "kind": "slow",
+      "blastRadius": 8
+    },
+    {
+      "id": "flaky-appear",
+      "cause": "flaky",
+      "kind": "flaky",
+      "blastRadius": 20
+    }
+  ],
+  "injected": [
+    {
+      "title": "dashboard > flaky load [1]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [2]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [3]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [4]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [5]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [6]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [7]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [8]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [9]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [10]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [11]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [12]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [13]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [14]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [15]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [16]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [17]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [18]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [19]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "dashboard > flaky load [20]",
+      "cause": "flaky",
+      "faultId": "flaky-appear",
+      "kind": "flaky"
+    },
+    {
+      "title": "login > enable [1]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [2]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [3]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [4]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [5]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [6]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [7]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [8]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [9]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [10]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [11]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "login > enable [12]",
+      "cause": "disabled",
+      "faultId": "disabled-stuck",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [1]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [2]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [3]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [4]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [5]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [6]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [7]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [8]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [9]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [10]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [11]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [12]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [13]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [14]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [15]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [16]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [17]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "modal > confirm [18]",
+      "cause": "covered-by-overlay",
+      "faultId": "covered-overlay",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [1]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [2]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [3]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [4]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [5]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [6]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [7]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [8]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [9]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [10]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [11]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [12]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [13]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [14]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [15]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [16]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [17]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [18]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [19]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > notes [20]",
+      "cause": "input-not-committed",
+      "faultId": "input-debounce-clear",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [1]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [2]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [3]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [4]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [5]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [6]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [7]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [8]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [9]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [10]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [11]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [12]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [13]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [14]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [15]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > card [16]",
+      "cause": "input-not-committed",
+      "faultId": "input-mask-truncate",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [1]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [2]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [3]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [4]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [5]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [6]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [7]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [8]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [9]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [10]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [11]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > post amount [12]",
+      "cause": "backend",
+      "faultId": "backend-500",
+      "kind": "hard"
+    },
+    {
+      "title": "record > slow save [1]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [2]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [3]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [4]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [5]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [6]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [7]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "record > slow save [8]",
+      "cause": "settle",
+      "faultId": "rpc-settle",
+      "kind": "slow"
+    },
+    {
+      "title": "settings > apply [1]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [2]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [3]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [4]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [5]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [6]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [7]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [8]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [9]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [10]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [11]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [12]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [13]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [14]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [15]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [16]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [17]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [18]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [19]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [20]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [21]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [22]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [23]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [24]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [25]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [26]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [27]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [28]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [29]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "settings > apply [30]",
+      "cause": "off-screen",
+      "faultId": "offscreen",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [1]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [2]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [3]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [4]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [5]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [6]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [7]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [8]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [9]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [10]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [11]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [12]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [13]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [14]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [15]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    },
+    {
+      "title": "wizard > complete [16]",
+      "cause": "app-js",
+      "faultId": "app-js-error",
+      "kind": "hard"
+    }
+  ]
+}
