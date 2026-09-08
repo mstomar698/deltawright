@@ -200,10 +200,10 @@ const { selectors, retentionRate, bestRetained } = await measureRetention(page, 
 
 | | `centerShift` small | `centerShift` large |
 |---|---|---|
-| **agreement ≈ 1** | it simply didn't move | the page moved, the element didn't — a scroll or a re-layout, not a regression |
-| **agreement low** | ⚠️ same spot, different neighbourhood — the selector may have re-resolved onto a **look-alike** | the element genuinely left its context |
+| **agreement ≈ 1** | it simply didn't move | the page moved, the element probably didn't — a scroll or a whole-block re-layout |
+| **agreement low** | ⚠️ same spot, different neighbourhood — the selector may have re-resolved onto a **look-alike** | it moved *and* left its context |
 
-The bottom-left cell is the one position alone cannot see. `relationalAnchorsCompared` is the denominator (1-of-1 is not the evidence 1-of-6 is), and `relationalStatus` is a closed union saying exactly why a reading is absent (`frame-root`, `page-map-blocked`, `candidate-unmapped`, `candidate-unmeasurable`, `not-re-resolved`, `no-anchors`, `disabled`). Opt out with `relational: false`; tune K with `relationalAnchors`.
+The bottom-left cell is the one position alone cannot see — and seeing it is all this does. The verdict stays `retained`, and `retentionRate`/`bestRetained` still count it, so the candidate is named in `warnings` instead. Acting on it is your call, deliberately (DW-02/03). `relationalAnchorsCompared` is the denominator (1-of-1 is not the evidence 1-of-6 is), and `relationalStatus` is a closed union saying exactly why a reading is absent (`frame-root`, `page-map-blocked`, `candidate-unmapped`, `candidate-unmeasurable`, `not-re-resolved`, `no-anchors`, `disabled`). Opt out with `relational: false`; tune K with `relationalAnchors`.
 
 **Honesty:** it is **evidence, never a verdict.** It never changes `retention`, never touches Playwright's uniqueness result, and folds into `measuredDurability` only *additively* and only in the `moved` band — capped at the snapshot-A estimate, so it can never mint durability the estimate never granted. Its limits, stated like `centerShift`'s: anchor identity is *inferred* from DW's lightweight (role, name) and used only where that key is unique on **both** snapshots (anchors are dropped, never mismatched); only `pageMap()`'s salient set is visible; and it is invariant to whole-block translation, **not** to reflow inside the candidate's own neighbourhood.
 

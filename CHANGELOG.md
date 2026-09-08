@@ -10,9 +10,10 @@ All notable changes to this project are documented here. The format is based on
 
 - **Relational geometric fingerprint on `measureRetention` (`relationalAgreement`)** — a SECOND position
   witness reported alongside `centerShift`, never replacing it. `centerShift` tracks one ABSOLUTE point,
-  and its own doc comment already admitted the gap: a page scroll (or a responsive breakpoint, or a row
-  inserted above the target) moves that point hundreds of px while the element has not changed position
-  relative to anything around it. The fingerprint asks the other question — how much of the candidate's
+  and its own doc comment already admitted the gap: a page scroll, a row inserted above the target, or a
+  breakpoint that slides a whole block moves that point hundreds of px while the element has not changed
+  position relative to anything around it. (A breakpoint that re-lays-out the target's OWN neighbourhood
+  — stacking or wrapping its row — is a real context change and scores low, correctly.) The fingerprint asks the other question — how much of the candidate's
   position **relative to its K=6 nearest identifiable salient neighbours** survived the re-render — and
   the two together separate "the page moved" from "this is a different element". New fields on
   `SelectorRetention`: `relationalAgreement` (0..1 | null), `relationalAnchorsCompared` (the denominator,
@@ -20,10 +21,17 @@ All notable changes to this project are documented here. The format is based on
   a reading is absent). New options: `relational` (default on) and `relationalAnchors`.
   `measureRetention`'s signature is unchanged. Reuses a shipped primitive — `pageMap()` is the only
   geometry source, with **no** new capture code and **no** new taxonomy code (DW-04 untouched).
+  **Because it is on by default, every existing `measureRetention` call now performs two extra
+  `pageMap()` reads** (one per snapshot; offline, unreconciled, no Playwright trial actions) **which
+  stamp `data-dw-map-ref` on the salient nodes they scan** — a write to the page under test, clearing
+  only its own prior stamps and never touching the delta's `data-dw-ref`. Pass `relational: false` for a
+  byte-identical pre-v1.2 measurement on a page that must not be written to.
   Every tolerance is traced to the research briefs in `docs/research/geometric-identification/deep/`
   (GWALI's validated 45° direction α, X-PERT's shipped 5px gap `diffThreshold`, X-PERT/ReDeCheck's 5×5px
-  box filter, CLS's ~3px significance floor) or carries an explicit `// UNCALIBRATED — chosen, not
-  measured` mark. Honest by construction (DW-02/03): it is **evidence, never a verdict** — it never
+  box filter) or carries an explicit `// UNCALIBRATED — chosen, not measured` mark — including where a
+  source supplied only the *shape* of a rule and not a transferable number, and where a source's own
+  published retraction of a constant (GWALI's flat-α false-positive post-mortem) applies to DW's use of
+  it too. Those retractions are recorded next to the constants they qualify, not omitted. Honest by construction (DW-02/03): it is **evidence, never a verdict** — it never
   changes `retention`, never touches Playwright's uniqueness result, and folds into `measuredDurability`
   **additively and only in the `moved` band**, where it can recover part of the `moved` penalty but is
   capped at the snapshot-A estimate, so it can never mint durability the estimate never granted. It
@@ -31,8 +39,10 @@ All notable changes to this project are documented here. The format is based on
   main document, a different coordinate space), a blocked observer reports `page-map-blocked`, an anchor
   whose (role, name) key is not unique on both snapshots is **dropped rather than mismatched** (the
   false-heal mode VON Similo documents), and a hidden/zero-layout candidate reports null rather than a 0
-  that would read as "context destroyed". Its own limits are stated the way `centerShift` states its
-  own: anchor identity is inferred, only `pageMap()`'s salient set is visible, and the signal is
+  that would read as "context destroyed". When a candidate re-resolves with a broken context it is
+  **named in the warnings** — loudly when it also measured `retained`, since `retentionRate` and
+  `bestRetained` still count it and that is precisely the case position alone cannot see. Its own limits
+  are stated the way `centerShift` states its own: anchor identity is inferred, only `pageMap()`'s salient set is visible, and the signal is
   invariant to whole-block translation but **not** to reflow inside the candidate's own neighbourhood.
 
 - **`examples/flake-triage-benchmark/`** — a runnable, ground-truthed example: Deltawright wired into a

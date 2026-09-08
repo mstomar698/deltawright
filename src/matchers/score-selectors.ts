@@ -670,20 +670,25 @@ export async function measureRetention(
         } else if (!fingerprints.has(c.ref) || !afterNode || !snapshotB) {
           relationalStatus = 'candidate-unmapped';
         } else if (!fingerprint || !hasMeasurableBox(afterNode)) {
-          // Hidden / zero-layout on one of the two snapshots. Refusing to score here is the same call
-          // `centerShift` makes when `boundingBox()` returns null — an unmeasurable position must not
-          // masquerade as a measured 0.
+          // The candidate's box did not clear the 5x5px floor on one of the two snapshots — hidden,
+          // zero-layout, or genuinely tiny. Refusing to score here is the same call `centerShift`
+          // makes when `boundingBox()` returns null: an unmeasurable position must not masquerade as
+          // a measured 0.
           relationalStatus = 'candidate-unmeasurable';
-        } else if (fingerprint.relations.length === 0) {
-          relationalStatus = 'no-anchors';
         } else {
-          const cmp = compareFingerprint(fingerprint, afterNode, snapshotB!);
-          relationalAgreement = cmp.agreement;
-          relationalAnchorsCompared = cmp.anchors;
-          if (relationalAgreement >= RELATIONAL_PRESERVED_MIN) {
-            flags.push('relational-context-preserved');
-          } else if (relationalAgreement <= RELATIONAL_BROKEN_MAX) {
-            flags.push('relational-context-broken');
+          const cmp = compareFingerprint(fingerprint, afterNode, snapshotB);
+          if (cmp.agreement === null) {
+            // No anchor carried an identity key usable on both snapshots. Nothing was measured, so
+            // nothing is reported — never a 0, which would read as "its context was destroyed".
+            relationalStatus = 'no-anchors';
+          } else {
+            relationalAgreement = cmp.agreement;
+            relationalAnchorsCompared = cmp.anchors;
+            if (cmp.agreement >= RELATIONAL_PRESERVED_MIN) {
+              flags.push('relational-context-preserved');
+            } else if (cmp.agreement <= RELATIONAL_BROKEN_MAX) {
+              flags.push('relational-context-broken');
+            }
           }
         }
       }
@@ -770,7 +775,21 @@ export async function measureRetention(
     );
     if (mapA?.stats.capped || mapB?.stats.capped) {
       warnings.push(
-        'measureRetention: the salient page map hit `maxNodes` on at least one snapshot, so an anchor may be absent for capping reasons rather than because the page changed — read `relationalAgreement` as a floor on those candidates.',
+        "measureRetention: the salient page map hit its default `maxNodes` cap on at least one snapshot, so an anchor may be absent for capping reasons rather than because the page changed — read `relationalAgreement` as a FLOOR on those candidates. The cap is `pageMap()`'s own default and is not currently exposed through `MeasureRetentionOptions`.",
+      );
+    }
+    // The whole point of the signal is the candidate whose position looks fine and whose CONTEXT does
+    // not — a selector that may have re-resolved onto a look-alike standing in the right place. That
+    // never moves `retention` (DW-02/03), so if it were not said out loud here the caller reading
+    // `retentionRate`/`bestRetained` would never see it.
+    const brokenContext = measured.filter((m) => m.flags.includes('relational-context-broken'));
+    if (brokenContext.length > 0) {
+      const suspect = brokenContext.filter((m) => m.retention === 'retained');
+      warnings.push(
+        `measureRetention: ${brokenContext.length} selector(s) re-resolved with a BROKEN relational context (\`relationalAgreement\` <= ${RELATIONAL_BROKEN_MAX}) — their neighbourhood is not the one they were fingerprinted in.` +
+          (suspect.length > 0
+            ? ` ${suspect.length} of those still measured \`retained\` on position alone: review them first — a selector re-resolving onto a DIFFERENT element that happens to sit in the same place is exactly what \`centerShift\` cannot see, and \`retentionRate\`/\`bestRetained\` still count them as retained.`
+            : ''),
       );
     }
   } else if (readStatus === 'frame-root') {

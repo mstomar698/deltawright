@@ -208,7 +208,7 @@ test('an anchor whose key stopped being UNIQUE is not silently matched to a look
   expect(cmp.agreement).toBeCloseTo(4 / 5, 10);
 });
 
-test('a candidate torn out of its context scores near zero even with the SAME absolute position', () => {
+test('a candidate torn out of its context scores 0 even with the SAME absolute position', () => {
   const before = card();
   const fp = fingerprintFor(save(before), indexSnapshot(before), DEFAULT_ANCHOR_COUNT);
   // Same rect for Save (centerShift would read 0 — a perfect "retained"), entirely new neighbourhood.
@@ -284,13 +284,16 @@ test('the tolerance constants stay traceable to the briefs that justify them', (
   expect(MIN_ANCHOR_DIMENSION_PX).toBe(5);
 });
 
-test('a candidate with no identifiable neighbour yields an empty fingerprint, not a fake score', () => {
+test('no identifiable neighbour yields null, never a 0 that would read as "context destroyed"', () => {
   const nodes = [
     node('m1', 'button', 'Save', r(0, 0, 60, 24)),
     node('m2', null, null, r(0, 40, 60, 24)), // no role/name → unusable as an anchor
   ];
   const fp = fingerprintFor(nodes[0]!, indexSnapshot(nodes), DEFAULT_ANCHOR_COUNT);
   expect(fp.relations).toHaveLength(0);
+  // `agreement: 0` here would be a lie with a number attached — it would say the candidate's context
+  // was destroyed, when in truth there was never a context to measure. This is the public-API boundary
+  // (`compareFingerprint` is exported), so the refusal has to live here, not only in measureRetention.
   const cmp = compareFingerprint(fp, nodes[0]!, indexSnapshot(nodes));
-  expect(cmp).toEqual({ agreement: 0, anchors: 0, preserved: 0 });
+  expect(cmp).toEqual({ agreement: null, anchors: 0, preserved: 0 });
 });

@@ -1,16 +1,18 @@
 import type { PageMapNode } from '../host/page-map';
 import type { Rect } from '../host/types';
 
-// The RELATIONAL geometric fingerprint (v1.2) — the invariant `centerShift` is not.
+// The RELATIONAL geometric fingerprint (v1.2) — a second, differently-fragile position witness.
 //
 // `measureRetention`'s existing position signal is ONE absolute point: the candidate's center, in the
 // observer's viewport coordinates. Its own doc comment already names the gap — "a page SCROLL between
 // snapshots, or an offset child Frame, inflates the shift" — and the research sweep behind this module
-// (`docs/research/geometric-identification/`) found the same failure at scale: absolute position is not
-// the right invariant, position RELATIVE TO NEARBY ANCHORS is. X-PERT's relational alignment graph
-// reaches 76% precision where an absolute-position comparator on the identical 14-site corpus manages
-// 18% (`deep/relational-layout-models.md` §5); Similo's own tuned weighting demotes raw location to a
-// fast-decaying, low-weight signal for the same reason (`deep/similo-family.md` §6).
+// (`docs/research/geometric-identification/`) found the same failure at scale: absolute position is a
+// far weaker key than position RELATIVE TO NEARBY ANCHORS. On one 14-site corpus, X-PERT's
+// relative-layout detector scores 60 TP / 23 FP — 72% precision — where CrossCheck+, built on absolute
+// position/size features, manages 18% (86 TP / 389 FP) (`deep/relational-layout-models.md` §5; X-PERT's
+// often-quoted 76% is the whole tool across ALL XBI classes, not the relational detector alone). Similo
+// likewise puts raw `location` in its low-weight group (hand weight 0.5, against 1.5 for name and
+// visible text — `deep/similo-family.md` §2).
 //
 // So: describe a candidate by how it sits relative to its K nearest identifiable salient neighbours,
 // and ask on snapshot B how many of those relations still hold. A page that merely SCROLLED, or a
@@ -31,7 +33,8 @@ import type { Rect } from '../host/types';
 //     candidate or an anchor outside that set is reported unmeasured, never assumed preserved.
 //   • Every relation is derived from the same `getBoundingClientRect()` read the delta uses, so it
 //     inherits box-geometry-vs-painted-geometry error (padding, `overflow: hidden`) exactly as the
-//     research cluster documents (`deep/invariance-evidence-table.md` §7, "NOIs").
+//     research cluster documents (`deep/relational-layout-models.md` §7: 83 "non-observable issue"
+//     reports from boxes padded by invisible CSS padding and protrusions clipped by overflow:hidden).
 
 /**
  * The direction of an anchor from the candidate, as GWALI's 4-bucket alphabet (North/South/East/West at
@@ -85,8 +88,9 @@ export type RelationalStatus =
   | 'page-map-blocked' // `pageMap()` could not scan (observer injection blocked — e.g. a strict CSP)
   | 'not-re-resolved' // the selector did not re-resolve to exactly one element — nothing to compare
   | 'candidate-unmapped' // the candidate was outside `pageMap()`'s salient set on A or on B
-  | 'candidate-unmeasurable' // the candidate was in the salient set but had no usable box (hidden /
-  // zero-layout), so its relations are degenerate — the relational twin of `centerShift`'s null
+  | 'candidate-unmeasurable' // the candidate was in the salient set but its box did not clear
+  // MIN_ANCHOR_DIMENSION_PX on one of the snapshots (hidden, zero-layout, or genuinely tiny), so its
+  // relations are degenerate — the relational twin of `centerShift`'s null
   | 'no-anchors'; // no salient neighbour carried an identity key usable on both snapshots
 
 /** A candidate's snapshot-A relational fingerprint: its relations to the K nearest usable anchors. */
@@ -96,10 +100,12 @@ export interface RelationalFingerprint {
 
 /** The outcome of re-scoring a snapshot-A fingerprint against snapshot B. */
 export interface RelationalComparison {
-  /** Fraction of snapshot-A anchor relations still holding on B (0..1). An anchor that VANISHED, or
-   *  whose identity key stopped being unique, counts as NOT preserved — losing your neighbourhood is
-   *  a context change, not a missing measurement. */
-  agreement: number;
+  /** Fraction of snapshot-A anchor relations still holding on B (0..1), or null when the fingerprint
+   *  had no anchors to score. An anchor that VANISHED, or whose identity key stopped being unique,
+   *  counts as NOT preserved — losing your neighbourhood is a context change, not a missing
+   *  measurement. Having had no anchors in the first place is the opposite, and reports null rather
+   *  than a 0 that would read as "context destroyed". */
+  agreement: number | null;
   /** Denominator: how many snapshot-A anchor relations were re-scored. */
   anchors: number;
   /** Numerator: how many of them held within tolerance. */
@@ -111,26 +117,54 @@ export interface RelationalComparison {
 // briefs' own §9 is blunt that the literature's constants "are unexplained constants and the papers do
 // not even state them" — so an UNCALIBRATED mark here means exactly that: chosen, not measured.
 
-/** Anchors per candidate. GWALI scores k-NN *neighbourhoods* rather than a complete graph, and that
- *  scoping is what lifts its precision to 91% vs X-PERT's 55% on identical pages
- *  (`deep/relational-layout-models.md` §5) — but GWALI sizes k ∝ |V| and never publishes the constant.
+/** Anchors per candidate. GWALI scores k-NN *neighbourhoods* rather than the complete graph, and
+ *  reaches 91% precision against X-PERT-structure's 55% on the identical 54-site corpus
+ *  (`deep/relational-layout-models.md` §5). Neighbourhood scoping is one of three changes GWALI makes
+ *  at once — it also adds the 45° angular filter and a text-alignment exemption — so the lift is not
+ *  attributable to k alone. GWALI sizes k ∝ |V| and never publishes the constant.
  *  // UNCALIBRATED — chosen, not measured. */
 export const DEFAULT_ANCHOR_COUNT = 6;
 
-/** A direction relation counts as preserved while the centre-to-centre angle moved less than this.
- *  GWALI's validated α: it ignores direction changes under 45°, and that filter is load-bearing for its
- *  91%/100% precision/recall (`deep/relational-layout-models.md` §3, §5). */
+/**
+ * A direction relation counts as preserved while the centre-to-centre angle moved less than this.
+ * GWALI's α, validated end-to-end at 91% precision / 100% recall over 54 apps
+ * (`deep/relational-layout-models.md` §3, §5).
+ *
+ * THE SAME BRIEFS RETRACT HALF OF THAT, and the retraction applies here in full. A flat degree cutoff
+ * is GWALI's own named false-positive cause #2 — "large text-shrink cases can legitimately exceed it
+ * without a real IPF" — and `deep/invariance-evidence-table.md` §5 rec 4 concludes the constant "must
+ * be normalised by the elements' separation distance, not left as a flat degree cutoff", while §9
+ * records that there is "no reported sensitivity analysis of the α=45° constant across a wider corpus".
+ * DW ships the flat form knowingly: normalising by separation is itself an unmeasured design, and a
+ * borrowed constant with a published validation beats an invented one. Expect the same false positives
+ * GWALI reports — a neighbour that changes size a lot can swing the bearing past 45° with no real
+ * layout break.
+ */
 export const DIRECTION_ANGLE_TOLERANCE_DEG = 45;
 
-/** Below this centre separation the angle is numerically meaningless (a wrapper concentric with its
- *  child), so the relation is bucketed `coincident` instead. Matches the ~3 px significance floor
- *  Chromium's own Layout Instability spec uses to decide a box "meaningfully moved"
- *  (`deep/invariance-evidence-table.md` §6). */
+/**
+ * Below this centre separation the angle is numerically meaningless (a wrapper concentric with its
+ * child), so the relation is bucketed `coincident` instead.
+ *
+ * The CONCEPT is borrowed — "a small fixed-px floor before any comparison runs", which
+ * `deep/invariance-evidence-table.md` §5 rec 1 recommends and Chromium's Layout Instability spec ships
+ * (Chrome's "pixels to significance" = 3 px). The NUMBER is not transferable and is not claimed to be:
+ * CLS floors ONE box's displacement between two frames, whereas this floors the SEPARATION between two
+ * different boxes' centres. No source measures the latter.
+ * // UNCALIBRATED — chosen, not measured.
+ */
 export const DIRECTION_MIN_CENTRE_DISTANCE_PX = 3;
 
-/** Absolute floor on a tolerated gap change. X-PERT's shipped `diffThreshold`: it reports a direction
- *  flip only when the inter-box gap ALSO moved by more than 5 px
- *  (`deep/relational-layout-models.md` §3). */
+/**
+ * Absolute floor on a tolerated gap change. The number is X-PERT's shipped `diffThreshold`
+ * (`deep/relational-layout-models.md` §3).
+ *
+ * ITS ROLE HERE IS NOT X-PERT'S. X-PERT uses the 5 px as an ADDITIONAL requirement before flagging a
+ * direction flip — it never flags on a gap change alone. {@link relationHolds} makes it an INDEPENDENT
+ * necessary condition, so a gap change past tolerance breaks the relation even with the direction
+ * unchanged. That makes DW strictly more sensitive than the source it borrows the constant from; the
+ * error direction is toward reporting a broken relation, never toward a false "preserved".
+ */
 export const GAP_ABSOLUTE_TOLERANCE_PX = 5;
 
 /** Relative arm of the gap tolerance. The invariance brief's §8 is explicit that flat unnormalised px
@@ -147,8 +181,9 @@ export const GAP_RELATIVE_TOLERANCE = 0.5;
 export const BAND_OVERLAP_THRESHOLD = 0.5;
 
 /** Rects with either dimension at or below this are dropped as anchors. Both X-PERT ("boxes with any
- *  dimension ≤ 5 px") and ReDeCheck ("elements under 5×5 px") filter at exactly this
- *  (`deep/relational-layout-models.md` §2). */
+ *  dimension ≤ 5 px") and ReDeCheck ("elements under 5×5 px") filter at this size
+ *  (`deep/relational-layout-models.md` §2); their boundaries differ by a pixel (≤ 5 vs < 5) and this
+ *  takes X-PERT's, dropping a rect whose width or height is exactly 5. */
 export const MIN_ANCHOR_DIMENSION_PX = 5;
 
 /** Agreement at or above this earns the `relational-context-preserved` flag.
@@ -196,19 +231,24 @@ function bucketFor(angle: number): DirectionBucket {
 
 // --- Node selection ---------------------------------------------------------------------------------
 
-/**
- * A salient node's cross-snapshot identity key, or null when it has none.
- *
- * (role, name) — the two attributes that survive every weighting in the Similo family (Kluge's tuned
- * weights: name 2.85–2.90, visible text 2.50–2.95, versus absolute XPath 0.05–1.05;
- * `deep/similo-family.md` §6). DW's role/name is its own lightweight in-page derivation, NOT
- * Playwright's ARIA name computation, so this key is deliberately used only where it is UNIQUE — see
- * {@link keyedNodes}.
- */
 /** Separator inside an identity key. A control character, so it can never occur inside a role or a
  *  name and two different (role, name) pairs can never collide into one key. */
 export const IDENTITY_KEY_SEPARATOR = '\u0000';
 
+/**
+ * A salient node's cross-snapshot identity key, or null when it has none.
+ *
+ * The KEY IS DW'S OWN — (role, name), the two fields `pageMap()` already derives. It is not Similo's
+ * feature vector: Similo has no role attribute at all, and its `name` is the HTML `name=` attribute
+ * compared for equality (`deep/similo-family.md` §2). What the Similo family does support is the
+ * PRINCIPLE — the name-like and text-like attributes are the ones that hold their weight under every
+ * tuning (Kluge's optimised weights: name 2.85–2.90 and visible text 2.50–2.95, against absolute XPath
+ * 0.05–1.05; §6) — and that principle is why this key is built from role+name rather than from
+ * position, size or DOM path.
+ *
+ * DW's role/name is a lightweight in-page derivation, NOT Playwright's ARIA name computation, so it is
+ * deliberately used only where it is UNIQUE — see {@link keyedNodes}.
+ */
 export function identityKey(node: Pick<PageMapNode, 'role' | 'name'>): string | null {
   const role = node.role?.trim();
   const name = node.name?.trim();
@@ -239,8 +279,9 @@ export function hasMeasurableBox(node: Pick<PageMapNode, 'geometry'>): boolean {
 /**
  * Index the salient nodes that carry an identity key that is UNIQUE within this snapshot. A key held by
  * two nodes is dropped from the index entirely rather than resolved arbitrarily: picking one would be
- * exactly VON Similo's documented "selects a random element from the visual overlap" failure
- * (`deep/similo-family.md` §4), which is how a relational score turns into a confident false heal.
+ * exactly the failure Kluge & Stocco's threat T4 records against VON Similo — every node in an overlap
+ * group scores the same, so it "selects a random element from the visual overlap"
+ * (`deep/similo-family.md` §4). That is how a relational score turns into a confident false heal.
  */
 function keyedNodes(nodes: readonly PageMapNode[]): Map<string, PageMapNode> {
   const byKey = new Map<string, PageMapNode>();
@@ -369,8 +410,15 @@ export function fingerprintFor(
   return { relations: allRelations(candidate, snapshot).slice(0, Math.max(0, k)) };
 }
 
-/** Does one snapshot-A relation still hold on snapshot B, within the documented tolerances? All four
- *  components must agree — the edge-label-set semantics X-PERT and GWALI both diff on. */
+/**
+ * Does one snapshot-A relation still hold on snapshot B, within the documented tolerances?
+ *
+ * All four components must agree. That conjunction is STRICTER than either source it draws on: GWALI
+ * diffs edges as a graded symmetric difference (Σ|δ| over the label sets) and X-PERT gates each
+ * justification flag behind an error ratio, so neither collapses an edge to a single boolean. DW does,
+ * which trades away their gradation for a number a caller can act on. The error direction is toward
+ * declaring a relation broken, never toward a false "preserved".
+ */
 export function relationHolds(a: AnchorRelation, b: AnchorRelation): boolean {
   if (a.direction === 'coincident' || b.direction === 'coincident') {
     // An angle between near-concentric centres is noise; the only honest test is that BOTH sides are
@@ -407,7 +455,8 @@ export function compareFingerprint(
   snapshot: RelationalSnapshot,
 ): RelationalComparison {
   const anchors = fingerprint.relations.length;
-  if (anchors === 0) return { agreement: 0, anchors: 0, preserved: 0 };
+  // Nothing was measurable, so nothing is reported — the same refusal {@link hasMeasurableBox} makes.
+  if (anchors === 0) return { agreement: null, anchors: 0, preserved: 0 };
   const { keyed, containers } = snapshot;
   const candidateContainer = containers.get(candidate.ref) ?? null;
   let preserved = 0;

@@ -176,11 +176,13 @@ test('folds into measuredDurability ADDITIVELY: it recovers the `moved` penalty,
   expect(withRelational.retention).toBe(without.retention);
 });
 
-test('the `retained` / `ambiguous` / `lost` bands stay byte-identical to pre-v1.2', async ({
+test('outside the `moved` band, measuredDurability is numerically unchanged from pre-v1.2', async ({
   page,
 }) => {
   // Only the `moved` band folds relational evidence in. A `retained` candidate keeps the exact modest
   // +10 confirmation nudge it had before — including the false-heal case, whose agreement is 0.33.
+  // (`flags` DO gain relational entries in every band; it is the SCORE that is unchanged, not the whole
+  // record — the false-heal case below carries `relational-context-broken` while scoring as before.)
   const save = targetOf((await measure(page, () => page.click('#swap-panel'))).selectors);
   expect(save.retention).toBe('retained');
   expect(save.measuredDurability).toBe(Math.min(100, save.estimatedDurability + 10));
@@ -270,6 +272,11 @@ test('HONESTY: the warnings state what the relational signal is, and is not', as
   // Its two load-bearing limits are stated, not buried.
   expect(w).toMatch(/anchors are dropped, never mismatched/);
   expect(w).toMatch(/NOT to reflow within the candidate's own neighbourhood/);
+  // The TARGET's context is fully preserved here, so nothing claims otherwise about it. (The page-wide
+  // warning may still fire for a different element, and correctly does: <main> itself grew by the
+  // inserted banner, so <main>'s own relations to its neighbours really did change. Only elements whose
+  // own context changed should score low, and only those do.)
+  expect(targetOf(result.selectors).flags).not.toContain('relational-context-broken');
   // The pre-v1.2 caveats are all still there.
   expect(w).toMatch(/MEASURED across the ONE re-render/);
   expect(w).toMatch(/object identity is INFERRED/i);
@@ -279,6 +286,24 @@ test('HONESTY: the warnings state what the relational signal is, and is not', as
     expect(s).not.toHaveProperty('sameElement');
     expect(s).not.toHaveProperty('identityProven');
   }
+});
+
+test('a broken context is NAMED in the warnings — otherwise nothing surfaces it', async ({
+  page,
+}) => {
+  // The relational reading never moves `retention` (DW-02/03), so `retentionRate` and `bestRetained`
+  // still count the impostor. A caller reading only those numbers would never learn what the
+  // fingerprint saw. The warning is the one place that says it out loud.
+  const result = await measure(page, () => page.click('#swap-panel'));
+  const save = targetOf(result.selectors);
+  expect(save.retention).toBe('retained');
+  expect(save.flags).toContain('relational-context-broken');
+
+  const w = result.warnings.join('\n');
+  expect(w).toMatch(/BROKEN relational context/);
+  // …and it says specifically that some of them still measured `retained` on position alone.
+  expect(w).toMatch(/still measured `retained` on position alone/);
+  expect(w).toMatch(/`retentionRate`\/`bestRetained` still count them as retained/);
 });
 
 test.describe('a CHILD frame stands down rather than comparing two coordinate spaces', () => {
