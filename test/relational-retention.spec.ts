@@ -187,8 +187,26 @@ test('outside the `moved` band, measuredDurability is numerically unchanged from
   expect(save.retention).toBe('retained');
   expect(save.measuredDurability).toBe(Math.min(100, save.estimatedDurability + 10));
 
-  for (const s of (await measure(page, async () => {})).selectors) {
-    if (s.retention === 'retained') {
+  // …and across the v1.1 retention fixture, which is the only one that actually produces all five
+  // verdicts — including `ambiguous`, which this fixture never generates.
+  await page.goto(RETENTION_FIXTURE_URL);
+  const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'build' });
+  const scored = await scoreSelectors(page, delta);
+  const all = await measureRetention(page, delta, scored, {
+    reRender: () => page.click('#rerender'),
+  });
+  const seen = new Set(all.selectors.map((s) => s.retention));
+  expect(seen).toContain('retained');
+  expect(seen).toContain('moved');
+  expect(seen).toContain('ambiguous');
+  expect(seen).toContain('lost');
+  expect(seen).toContain('inconclusive');
+
+  for (const s of all.selectors) {
+    if (s.retention === 'ambiguous') {
+      // Pinned exactly, not just "<= estimate": `round(est * 0.3)` is what shipped in v1.1.
+      expect(s.measuredDurability).toBe(Math.round(s.estimatedDurability * 0.3));
+    } else if (s.retention === 'retained') {
       expect(s.measuredDurability).toBe(Math.min(100, s.estimatedDurability + 10));
     } else if (s.retention === 'lost') {
       expect(s.measuredDurability).toBe(0);
@@ -301,9 +319,78 @@ test('a broken context is NAMED in the warnings — otherwise nothing surfaces i
 
   const w = result.warnings.join('\n');
   expect(w).toMatch(/BROKEN relational context/);
-  // …and it says specifically that some of them still measured `retained` on position alone.
-  expect(w).toMatch(/still measured `retained` on position alone/);
-  expect(w).toMatch(/`retentionRate`\/`bestRetained` still count them as retained/);
+  // …and a second, WIDER warning names every `retained` candidate whose context did not hold, not just
+  // those under the broken bar — otherwise a false heal scoring in the 0.4-0.8 gap between the two
+  // thresholds would produce no flag and no warning at all.
+  expect(w).toMatch(/measured `retained` on position while their relational context did NOT hold/);
+  expect(w).toMatch(/`retentionRate` and `bestRetained` still count them as retained/);
+});
+
+test('a REMOUNTED subtree never yields a confidently wrong score (stale `data-dw-map-ref`)', async ({
+  page,
+}) => {
+  // `data-dw-map-ref` is assigned POSITIONALLY (m1..mN, document order) and cleared with a document
+  // query that cannot reach a DETACHED subtree — so a card that re-mounts while the snapshot-B scan
+  // runs comes back wearing a snapshot-A ref that now names a DIFFERENT element. Before this was
+  // checked, that produced a confident `relationalAgreement` of 0.167 and a `relational-context-broken`
+  // flag on a page whose DOM was byte-identical to snapshot A.
+  const result = await measure(page, () => page.click('#remount'));
+  const save = targetOf(result.selectors);
+
+  // The page really is unchanged — position says so unambiguously.
+  expect(save.retention).toBe('retained');
+  expect(save.centerShift).toBe(0);
+
+  // So the ONLY honest answers are "preserved" or "could not measure". A measured low score here is a
+  // fabrication about a different element's neighbourhood.
+  if (save.relationalStatus === 'measured') {
+    expect(save.relationalAgreement).toBe(1);
+  } else {
+    expect(save.relationalStatus).toBe('candidate-unmapped');
+    expect(save.relationalAgreement).toBeNull();
+  }
+  expect(save.flags).not.toContain('relational-context-broken');
+});
+
+test('`no-anchors`: a fingerprint with nothing to anchor on reports null, not 0', async ({
+  page,
+}) => {
+  // K=0 is the deterministic way to reach the branch; the page-shaped route to it is a candidate whose
+  // every salient neighbour lacks a unique (role, name).
+  const result = await measure(page, () => page.click('#insert-above'), { relationalAnchors: 0 });
+  const save = targetOf(result.selectors);
+  expect(save.relationalStatus).toBe('no-anchors');
+  expect(save.relationalAgreement).toBeNull();
+  expect(save.relationalAnchorsCompared).toBe(0);
+  // The verdict and its score are exactly what they would be with the feature off.
+  expect(save.retention).toBe('moved');
+  expect(save.measuredDurability).toBe(Math.round(save.estimatedDurability * 0.7));
+});
+
+test('`page-map-blocked`: a scan that cannot run degrades to pre-v1.2, it does not throw', async ({
+  page,
+}) => {
+  const delta = await actAndObserve(page, (p) => p.click('#go'), { label: 'build' });
+  const scored = await scoreSelectors(page, delta);
+  // Stand in for a strict CSP / a detached page: the observer is present but its scan cannot complete.
+  await page.evaluate(() => {
+    (window as unknown as { __deltawright: { scan: () => never } }).__deltawright.scan = () => {
+      throw new Error('scan unavailable');
+    };
+  });
+  const result = await measureRetention(page, delta, scored, {
+    reRender: () => page.click('#insert-above'),
+  });
+
+  const save = targetOf(result.selectors);
+  expect(save.relationalStatus).toBe('page-map-blocked');
+  expect(save.relationalAgreement).toBeNull();
+  // Everything that worked before v1.2 still works — the relational read is additional evidence and
+  // must never be able to break the measurement it was added to.
+  expect(save.retention).toBe('moved');
+  expect(save.centerShift).toBeGreaterThan(250);
+  expect(save.measuredDurability).toBe(Math.round(save.estimatedDurability * 0.7));
+  expect(result.warnings.join('\n')).toMatch(/salient page map could not be read/);
 });
 
 test.describe('a CHILD frame stands down rather than comparing two coordinate spaces', () => {

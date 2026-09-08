@@ -115,22 +115,42 @@ test('anchors under the 5x5 px floor (incl. display:none 0x0 rects) are dropped'
   expect([...keyed.keys()]).toEqual([key('button', 'Real')]);
 });
 
-test('the geometric container is the innermost containing box, and equal boxes never nest', () => {
+test('the geometric container is the innermost containing box, resolved acyclically', () => {
   const containers = indexSnapshot(card()).containers;
   expect(containers.get('m4')).toBe('m1'); // Save sits inside the card
   expect(containers.get('m5')).toBe('m1');
   expect(containers.get('m1')).toBeNull(); // the card itself is top level here
   expect(containers.get('m6')).toBeNull(); // Help is outside the card
 
-  // A wrapper with the EXACT same rect must not be reported as a container (that would make the
-  // relation cyclic and the "same container" answer arbitrary).
+  // Two boxes with the EXACT same rect: the one earlier in document order is the ancestor, so it is
+  // the container — and the relation does NOT hold in reverse, so the map stays acyclic.
   const twins = [
     node('m1', 'region', 'Wrapper', r(0, 0, 100, 100)),
     node('m2', 'region', 'Inner', r(0, 0, 100, 100)),
   ];
   const twinContainers = indexSnapshot(twins).containers;
+  expect(twinContainers.get('m2')).toBe('m1');
   expect(twinContainers.get('m1')).toBeNull();
-  expect(twinContainers.get('m2')).toBeNull();
+});
+
+test('a child that exactly fills its wrapper does not skip it — no 1px container flip', () => {
+  // Without the document-order tie-break, an element whose rect EQUALS its wrapper's would skip the
+  // wrapper and take the grandparent, while a sibling one pixel smaller took the wrapper — so a 1px
+  // layout change would flip the container label and break every relation the node participates in.
+  // ReDeCheck lost 22% of its small-range reports to exactly that class of coincidental flip.
+  const build = (fillHeight: number) => [
+    node('m1', 'region', 'Page', r(0, 0, 400, 400)),
+    node('m2', 'region', 'Card', r(10, 10, 200, 100)),
+    node('m3', 'button', 'Fill', r(10, 10, 200, fillHeight)), // 100 = exactly fills the card
+  ];
+  const exact = indexSnapshot(build(100)).containers;
+  const oneLess = indexSnapshot(build(99)).containers;
+
+  // Both readings name the card. The answer does not depend on the last pixel, so `sameContainer` —
+  // an equality test in `relationHolds` — cannot flip across a re-render that only nudges a rect.
+  expect(oneLess.get('m3')).toBe('m2');
+  expect(exact.get('m3')).toBe('m2');
+  expect(exact.get('m3')).toBe(oneLess.get('m3'));
 });
 
 test('the fingerprint takes the K nearest anchors and never includes the candidate itself', () => {

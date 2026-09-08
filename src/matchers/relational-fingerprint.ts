@@ -263,6 +263,48 @@ function isAnchorSized(rect: Rect): boolean {
 }
 
 /**
+ * Max per-edge disagreement (CSS px) still counted as "the same box". `pageMap()` rounds each rect
+ * component with `Math.round` while Playwright's `boundingBox()` does not, so an identical element can
+ * legitimately differ by half a pixel per edge; 1px covers that with a margin, and a wrong element is
+ * off by far more than this in practice.
+ * // UNCALIBRATED — chosen, not measured.
+ */
+export const SAME_BOX_TOLERANCE_PX = 2;
+
+/**
+ * Is `rect` (from `pageMap()`) the same box as `box` (from Playwright's `boundingBox()`)?
+ *
+ * This is an IDENTITY CROSS-CHECK, not a geometry comparison, and it exists because
+ * `data-dw-map-ref` is not a safe cross-snapshot identity token on its own. The injected `scan`
+ * assigns refs POSITIONALLY (`m1..mN`, in document order) and clears its previous stamps with
+ * `document.querySelectorAll('[data-dw-map-ref]')` — which cannot reach a DETACHED subtree. So an
+ * element that is out of the document while the snapshot-B scan runs and back in before its
+ * attribute is read still carries its snapshot-A ref, and that ref now names a DIFFERENT element.
+ * Trusting it produces a confidently wrong relational verdict in either direction: a fabricated
+ * "context broken" on an unchanged page, or a fabricated "context preserved" that would feed the
+ * `moved` durability bonus. Re-mounting subtrees (a tab panel, a modal, a virtualised row) make that
+ * routine in exactly the SPAs this API is for; a concurrent `pageMap()` call re-stamping mid-flight
+ * does the same thing.
+ *
+ * So the stamp is treated as a HINT and confirmed against geometry the caller already read for the
+ * same locator. A mismatch degrades to `candidate-unmapped` — the fingerprint declines to score
+ * rather than score the wrong element. Residual risk, stated plainly: a stale ref that happens to
+ * name a node of the same size at the same place is indistinguishable from the real one, and would
+ * pass. That is a far smaller target than "any re-mounted subtree".
+ */
+export function sameBox(
+  rect: Rect,
+  box: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    Math.abs(rect.x - box.x) <= SAME_BOX_TOLERANCE_PX &&
+    Math.abs(rect.y - box.y) <= SAME_BOX_TOLERANCE_PX &&
+    Math.abs(rect.width - box.width) <= SAME_BOX_TOLERANCE_PX &&
+    Math.abs(rect.height - box.height) <= SAME_BOX_TOLERANCE_PX
+  );
+}
+
+/**
  * Does this node have a box worth reasoning about relationally?
  *
  * The CANDIDATE has to clear the same 5×5 px floor its anchors do. A hidden or zero-layout node still
@@ -308,20 +350,38 @@ function keyedNodes(nodes: readonly PageMapNode[]): Map<string, PageMapNode> {
  */
 function containerIndex(nodes: readonly PageMapNode[]): Map<string, string | null> {
   const sized = nodes.filter((n) => isAnchorSized(n.geometry.rect));
+  // `pageMap()` returns its nodes in DOCUMENT order, so a node's index is its document position and an
+  // ancestor always precedes its descendant. That is the tie-break for two EQUAL rects, standing in for
+  // X-PERT's "tie-break by XPath prefix" (we have no XPath). It matters: without it, an element that
+  // exactly fills its wrapper would skip that wrapper and take the grandparent as its container, while
+  // a sibling one pixel smaller took the wrapper — so a 1px layout change would flip the container
+  // label and break every relation that node participates in at once. Coincidental flips of exactly
+  // that kind cost ReDeCheck 22% of its small-range reports to false positives
+  // (`deep/relational-layout-models.md` §7).
+  const order = new Map(nodes.map((n, i) => [n.ref, i] as const));
   const out = new Map<string, string | null>();
   for (const n of nodes) {
     const r = n.geometry.rect;
     const area = r.width * r.height;
+    const rank = order.get(n.ref) ?? -1;
     let best: PageMapNode | null = null;
     let bestArea = Infinity;
+    let bestRank = -1;
     for (const c of sized) {
       if (c.ref === n.ref) continue;
       const cr = c.geometry.rect;
       const cArea = cr.width * cr.height;
-      if (cArea <= area || cArea >= bestArea) continue;
-      if (cr.x <= r.x && cr.y <= r.y && right(cr) >= right(r) && bottom(cr) >= bottom(r)) {
+      const cRank = order.get(c.ref) ?? -1;
+      // Strictly larger, or exactly equal AND earlier in the document (the ancestor of the two). Never
+      // true both ways round for one pair, so the container map stays acyclic.
+      if (cArea < area || (cArea === area && cRank >= rank)) continue;
+      if (!(cr.x <= r.x && cr.y <= r.y && right(cr) >= right(r) && bottom(cr) >= bottom(r)))
+        continue;
+      // Innermost wins: smallest area, and among equal areas the one DEEPEST in the document.
+      if (cArea < bestArea || (cArea === bestArea && cRank > bestRank)) {
         best = c;
         bestArea = cArea;
+        bestRank = cRank;
       }
     }
     out.set(n.ref, best ? best.ref : null);

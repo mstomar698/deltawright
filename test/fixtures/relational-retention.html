@@ -29,6 +29,7 @@
   <button id="go">Build</button>
   <button id="insert-above">Insert row above</button>
   <button id="swap-panel">Swap panel</button>
+  <button id="remount">Remount card</button>
   <div id="app"></div>
   <!-- Tall enough that the page can actually scroll 600px. Not salient, so it anchors nothing. -->
   <div style="height: 1600px"></div>
@@ -88,6 +89,30 @@
       var banner = document.createElement('div');
       banner.id = 'banner';
       main.insertBefore(banner, main.firstChild);
+    });
+
+    // A framework re-mounting a subtree (a tab panel, a modal, a virtualised row) — the Account card is
+    // detached and put straight back, unchanged, in the window while Deltawright's snapshot-B page scan
+    // runs. The final DOM is IDENTICAL to snapshot A, so any relational answer other than "preserved"
+    // or "could not measure" is a fabrication. It is a trap for `data-dw-map-ref`: the injected scan
+    // clears its old stamps with a document query, which cannot reach a detached subtree, so the card
+    // comes back still wearing a snapshot-A ref that scan B has since given to some other element.
+    document.getElementById('remount').addEventListener('click', function () {
+      var main = document.querySelector('main');
+      var account = document.getElementById('account');
+      var next = account.nextSibling;
+      main.removeChild(account);
+      var mo = new MutationObserver(function () {
+        if (document.querySelector('[data-dw-map-ref]')) {
+          mo.disconnect();
+          main.insertBefore(account, next);
+        }
+      });
+      mo.observe(document.documentElement, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-dw-map-ref'],
+      });
     });
 
     document.getElementById('swap-panel').addEventListener('click', function () {

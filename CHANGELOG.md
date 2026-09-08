@@ -35,8 +35,14 @@ All notable changes to this project are documented here. The format is based on
   changes `retention`, never touches Playwright's uniqueness result, and folds into `measuredDurability`
   **additively and only in the `moved` band**, where it can recover part of the `moved` penalty but is
   capped at the snapshot-A estimate, so it can never mint durability the estimate never granted. It
-  refuses to guess rather than degrade silently: a child-Frame root stands down (`pageMap()` scans the
-  main document, a different coordinate space), a blocked observer reports `page-map-blocked`, an anchor
+  refuses to guess rather than degrade silently: the `data-dw-map-ref` stamp that ties a re-resolved
+  candidate to its snapshot-B node is treated as a HINT and **confirmed against the geometry Playwright
+  already measured for the same locator** — the injected scan assigns those refs positionally and clears
+  them with a document query that cannot reach a DETACHED subtree, so a subtree that re-mounts mid-scan
+  (a tab panel, a modal, a virtualised row) would otherwise come back wearing a stale ref naming a
+  different element and produce a confidently wrong score in either direction; a child-Frame root stands
+  down (`pageMap()` scans the main document, a different coordinate space), a blocked observer reports
+  `page-map-blocked`, an anchor
   whose (role, name) key is not unique on both snapshots is **dropped rather than mismatched** (the
   false-heal mode VON Similo documents), and a hidden/zero-layout candidate reports null rather than a 0
   that would read as "context destroyed". When a candidate re-resolves with a broken context it is

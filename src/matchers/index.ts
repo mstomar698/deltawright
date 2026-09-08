@@ -54,12 +54,14 @@ export {
   MIN_ANCHOR_DIMENSION_PX,
   RELATIONAL_BROKEN_MAX,
   RELATIONAL_PRESERVED_MIN,
+  SAME_BOX_TOLERANCE_PX,
   compareFingerprint,
   fingerprintFor,
   hasMeasurableBox,
   identityKey,
   indexSnapshot,
   relationHolds,
+  sameBox,
 } from './relational-fingerprint';
 export type {
   AnchorRelation,

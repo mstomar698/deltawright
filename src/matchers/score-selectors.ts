@@ -16,6 +16,7 @@ import {
   fingerprintFor,
   hasMeasurableBox,
   indexSnapshot,
+  sameBox,
   type RelationalFingerprint,
   type RelationalStatus,
 } from './relational-fingerprint';
@@ -612,6 +613,7 @@ export async function measureRetention(
       let retention: RetentionVerdict;
       let centerShift: number | null = null;
       let mapRefAfter: string | null = null;
+      let boxAfter: { x: number; y: number; width: number; height: number } | null = null;
       if (!loc) {
         // The candidate could not be rebuilt (a synthesized fallback with no rawSelector, or a tier with
         // no locator). Unique-match unknown — report honest `inconclusive`, never a silent `lost`.
@@ -621,15 +623,20 @@ export async function measureRetention(
         let box: { x: number; y: number; width: number; height: number } | null = null;
         try {
           matchesAfter = await loc.count();
-          if (matchesAfter === 1) {
-            box = await loc.boundingBox();
-            // How the re-resolved element finds ITSELF in snapshot B's salient map: `pageMap()` stamped
-            // `data-dw-map-ref` moments ago. Absent means the element is outside the salient set (or the
-            // map was never read) — reported as `candidate-unmapped`, never guessed at from the box.
-            if (snapshotB) mapRefAfter = await loc.getAttribute('data-dw-map-ref');
-          }
+          if (matchesAfter === 1) box = await loc.boundingBox();
         } catch {
           matchesAfter = 0; // detached page/frame or an invalid rebuilt selector
+        }
+        boxAfter = box;
+        // How the re-resolved element finds ITSELF in snapshot B's salient map: `pageMap()` stamped
+        // `data-dw-map-ref` moments ago. Read in its OWN try — it is optional evidence, and a detach
+        // racing this extra round-trip must not be able to turn a measured `retained` into `lost`.
+        if (snapshotB && matchesAfter === 1) {
+          try {
+            mapRefAfter = await loc.getAttribute('data-dw-map-ref');
+          } catch {
+            mapRefAfter = null;
+          }
         }
         if (matchesAfter === 0) {
           retention = 'lost';
@@ -669,12 +676,17 @@ export async function measureRetention(
           relationalStatus = 'not-re-resolved';
         } else if (!fingerprints.has(c.ref) || !afterNode || !snapshotB) {
           relationalStatus = 'candidate-unmapped';
-        } else if (!fingerprint || !hasMeasurableBox(afterNode)) {
-          // The candidate's box did not clear the 5x5px floor on one of the two snapshots — hidden,
-          // zero-layout, or genuinely tiny. Refusing to score here is the same call `centerShift`
-          // makes when `boundingBox()` returns null: an unmeasurable position must not masquerade as
-          // a measured 0.
+        } else if (!boxAfter || !fingerprint || !hasMeasurableBox(afterNode)) {
+          // No usable box on one of the two snapshots — Playwright measured none at all, or the rect
+          // did not clear the 5x5px floor (hidden, zero-layout, or genuinely tiny). Refusing to score
+          // here is the same call `centerShift` makes when `boundingBox()` returns null: an
+          // unmeasurable position must not masquerade as a measured 0.
           relationalStatus = 'candidate-unmeasurable';
+        } else if (!sameBox(afterNode.geometry.rect, boxAfter)) {
+          // The `data-dw-map-ref` stamp resolved to a node whose box is NOT the box Playwright just
+          // measured for this same locator — so the stamp is stale and names a DIFFERENT element (see
+          // {@link sameBox}). Decline to score rather than score the wrong neighbourhood.
+          relationalStatus = 'candidate-unmapped';
         } else {
           const cmp = compareFingerprint(fingerprint, afterNode, snapshotB);
           if (cmp.agreement === null) {
@@ -781,15 +793,28 @@ export async function measureRetention(
     // The whole point of the signal is the candidate whose position looks fine and whose CONTEXT does
     // not — a selector that may have re-resolved onto a look-alike standing in the right place. That
     // never moves `retention` (DW-02/03), so if it were not said out loud here the caller reading
-    // `retentionRate`/`bestRetained` would never see it.
+    // `retentionRate`/`bestRetained` would never see it at all.
     const brokenContext = measured.filter((m) => m.flags.includes('relational-context-broken'));
     if (brokenContext.length > 0) {
-      const suspect = brokenContext.filter((m) => m.retention === 'retained');
       warnings.push(
-        `measureRetention: ${brokenContext.length} selector(s) re-resolved with a BROKEN relational context (\`relationalAgreement\` <= ${RELATIONAL_BROKEN_MAX}) — their neighbourhood is not the one they were fingerprinted in.` +
-          (suspect.length > 0
-            ? ` ${suspect.length} of those still measured \`retained\` on position alone: review them first — a selector re-resolving onto a DIFFERENT element that happens to sit in the same place is exactly what \`centerShift\` cannot see, and \`retentionRate\`/\`bestRetained\` still count them as retained.`
-            : ''),
+        `measureRetention: ${brokenContext.length} selector(s) re-resolved with a BROKEN relational context (\`relationalAgreement\` <= ${RELATIONAL_BROKEN_MAX}) — their neighbourhood is not the one they were fingerprinted in.`,
+      );
+    }
+    // Deliberately a WIDER net than the `relational-context-broken` flag. A `retained` verdict rests
+    // entirely on position, and position is exactly what a look-alike standing in the right place
+    // reproduces — so for those candidates ANY agreement below the preserved bar is worth naming, not
+    // just one under the broken bar. Otherwise a false heal scoring in the 0.4–0.8 gap between the two
+    // thresholds produces no flag and no warning at all, and `retentionRate`/`bestRetained` count it
+    // silently.
+    const suspectRetains = measured.filter(
+      (m) =>
+        m.retention === 'retained' &&
+        m.relationalAgreement !== null &&
+        m.relationalAgreement < RELATIONAL_PRESERVED_MIN,
+    );
+    if (suspectRetains.length > 0) {
+      warnings.push(
+        `measureRetention: ${suspectRetains.length} selector(s) measured \`retained\` on position while their relational context did NOT hold (\`relationalAgreement\` < ${RELATIONAL_PRESERVED_MIN}) — review these first. A selector re-resolving onto a DIFFERENT element that happens to sit in the same place is precisely what \`centerShift\` cannot see, and because the relational reading never overrides Playwright's verdict (DW-02/03), \`retentionRate\` and \`bestRetained\` still count them as retained.`,
       );
     }
   } else if (readStatus === 'frame-root') {
