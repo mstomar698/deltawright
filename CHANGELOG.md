@@ -8,6 +8,33 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Relational geometric fingerprint on `measureRetention` (`relationalAgreement`)** — a SECOND position
+  witness reported alongside `centerShift`, never replacing it. `centerShift` tracks one ABSOLUTE point,
+  and its own doc comment already admitted the gap: a page scroll (or a responsive breakpoint, or a row
+  inserted above the target) moves that point hundreds of px while the element has not changed position
+  relative to anything around it. The fingerprint asks the other question — how much of the candidate's
+  position **relative to its K=6 nearest identifiable salient neighbours** survived the re-render — and
+  the two together separate "the page moved" from "this is a different element". New fields on
+  `SelectorRetention`: `relationalAgreement` (0..1 | null), `relationalAnchorsCompared` (the denominator,
+  because 1-of-1 is not the evidence 1-of-6 is) and `relationalStatus` (a closed union saying exactly why
+  a reading is absent). New options: `relational` (default on) and `relationalAnchors`.
+  `measureRetention`'s signature is unchanged. Reuses a shipped primitive — `pageMap()` is the only
+  geometry source, with **no** new capture code and **no** new taxonomy code (DW-04 untouched).
+  Every tolerance is traced to the research briefs in `docs/research/geometric-identification/deep/`
+  (GWALI's validated 45° direction α, X-PERT's shipped 5px gap `diffThreshold`, X-PERT/ReDeCheck's 5×5px
+  box filter, CLS's ~3px significance floor) or carries an explicit `// UNCALIBRATED — chosen, not
+  measured` mark. Honest by construction (DW-02/03): it is **evidence, never a verdict** — it never
+  changes `retention`, never touches Playwright's uniqueness result, and folds into `measuredDurability`
+  **additively and only in the `moved` band**, where it can recover part of the `moved` penalty but is
+  capped at the snapshot-A estimate, so it can never mint durability the estimate never granted. It
+  refuses to guess rather than degrade silently: a child-Frame root stands down (`pageMap()` scans the
+  main document, a different coordinate space), a blocked observer reports `page-map-blocked`, an anchor
+  whose (role, name) key is not unique on both snapshots is **dropped rather than mismatched** (the
+  false-heal mode VON Similo documents), and a hidden/zero-layout candidate reports null rather than a 0
+  that would read as "context destroyed". Its own limits are stated the way `centerShift` states its
+  own: anchor identity is inferred, only `pageMap()`'s salient set is visible, and the signal is
+  invariant to whole-block translation but **not** to reflow inside the candidate's own neighbourhood.
+
 - **`examples/flake-triage-benchmark/`** — a runnable, ground-truthed example: Deltawright wired into a
   realistic ~300-test Playwright suite over a synthetic app with seeded fault injection, with the zero-edit
   triage/reporting band and the per-test primitives both exercised and **scored against a manifest of ground

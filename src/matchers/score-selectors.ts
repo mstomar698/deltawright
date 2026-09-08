@@ -496,15 +496,22 @@ const DEFAULT_POSITION_TOLERANCE = 250;
 /**
  * Narrow a `Page | Frame` root to a `Page`, or null for a child Frame.
  *
- * `pageMap()` takes a `Page` and scans the MAIN document only, while a child Frame's rects are in that
+ * `pageMap()` takes a `Page` and scans the MAIN document only, while a CHILD Frame's rects are in that
  * frame's own coordinate space — so anchoring a frame-hosted candidate against the top document's
  * salient nodes would compare two different coordinate systems and manufacture relations that were
  * never there. Rather than silently produce that, the relational pass reports `frame-root` and stands
- * down; `centerShift` (which carries its own frame caveat) still measures. Discriminated on `context()`,
- * which `Page` has and `Frame` does not.
+ * down; `centerShift` (which carries its own frame caveat) still measures.
+ *
+ * A `Page` is discriminated on `context()`, which `Frame` does not have. A main frame passed as a
+ * `Frame` is NOT a child frame — it shares the page's document and coordinate space exactly — so it is
+ * resolved back to its `Page` and measured normally, rather than refused on a technicality about which
+ * object type the caller happened to hand us.
  */
 function asPage(root: Page | Frame): Page | null {
-  return typeof (root as Page).context === 'function' ? (root as Page) : null;
+  if (typeof (root as Page).context === 'function') return root as Page;
+  const frame = root as Frame;
+  const page = frame.page();
+  return page.mainFrame() === frame ? page : null;
 }
 
 /** Read one snapshot's salient map, degrading to null rather than failing the whole measurement. A
