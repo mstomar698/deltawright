@@ -14,6 +14,9 @@ export default tseslint.config(
       'bench/corpus/**',
       '.claude/worktrees/',
       'examples/', // standalone runnable examples with their own deps/tsconfig — not part of the lib build
+      'docs/research/', // research working trees: fetched papers + VENDORED upstream source (X-PERT,
+      // ReDeCheck, Playwright internals) read as evidence and quoted verbatim. Linting third-party code
+      // we deliberately did not author says nothing about this library. Prettier already ignores `docs`.
     ],
   },
   js.configs.recommended,
