@@ -44,6 +44,31 @@ export type {
   RetentionVerdict,
   SelectorRetention,
 } from './score-selectors';
+export {
+  BAND_OVERLAP_THRESHOLD,
+  DEFAULT_ANCHOR_COUNT,
+  DIRECTION_ANGLE_TOLERANCE_DEG,
+  DIRECTION_MIN_CENTRE_DISTANCE_PX,
+  GAP_ABSOLUTE_TOLERANCE_PX,
+  GAP_RELATIVE_TOLERANCE,
+  MIN_ANCHOR_DIMENSION_PX,
+  RELATIONAL_BROKEN_MAX,
+  RELATIONAL_PRESERVED_MIN,
+  compareFingerprint,
+  fingerprintFor,
+  hasMeasurableBox,
+  identityKey,
+  indexSnapshot,
+  relationHolds,
+} from './relational-fingerprint';
+export type {
+  AnchorRelation,
+  DirectionBucket,
+  RelationalComparison,
+  RelationalFingerprint,
+  RelationalSnapshot,
+  RelationalStatus,
+} from './relational-fingerprint';
 export { suggestAssertions } from './suggest-assertions';
 export type {
   SynthesizedAssertion,

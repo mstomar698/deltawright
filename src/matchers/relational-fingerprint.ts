@@ -85,6 +85,8 @@ export type RelationalStatus =
   | 'page-map-blocked' // `pageMap()` could not scan (observer injection blocked — e.g. a strict CSP)
   | 'not-re-resolved' // the selector did not re-resolve to exactly one element — nothing to compare
   | 'candidate-unmapped' // the candidate was outside `pageMap()`'s salient set on A or on B
+  | 'candidate-unmeasurable' // the candidate was in the salient set but had no usable box (hidden /
+  // zero-layout), so its relations are degenerate — the relational twin of `centerShift`'s null
   | 'no-anchors'; // no salient neighbour carried an identity key usable on both snapshots
 
 /** A candidate's snapshot-A relational fingerprint: its relations to the K nearest usable anchors. */
@@ -221,12 +223,26 @@ function isAnchorSized(rect: Rect): boolean {
 }
 
 /**
+ * Does this node have a box worth reasoning about relationally?
+ *
+ * The CANDIDATE has to clear the same 5×5 px floor its anchors do. A hidden or zero-layout node still
+ * appears in `pageMap()`'s salient set with a 0×0 rect, and every relation computed from that rect is
+ * degenerate — the bearings collapse onto one point and the band overlaps are all 0, which reads as a
+ * confident "context destroyed" when the truth is "position unmeasurable". That is precisely the case
+ * `centerShift` already refuses to score (it returns null and the verdict is `inconclusive`), and the
+ * relational witness must refuse it the same way rather than invent a 0.
+ */
+export function hasMeasurableBox(node: Pick<PageMapNode, 'geometry'>): boolean {
+  return isAnchorSized(node.geometry.rect);
+}
+
+/**
  * Index the salient nodes that carry an identity key that is UNIQUE within this snapshot. A key held by
  * two nodes is dropped from the index entirely rather than resolved arbitrarily: picking one would be
  * exactly VON Similo's documented "selects a random element from the visual overlap" failure
  * (`deep/similo-family.md` §4), which is how a relational score turns into a confident false heal.
  */
-export function keyedNodes(nodes: readonly PageMapNode[]): Map<string, PageMapNode> {
+function keyedNodes(nodes: readonly PageMapNode[]): Map<string, PageMapNode> {
   const byKey = new Map<string, PageMapNode>();
   const duplicated = new Set<string>();
   for (const n of nodes) {
@@ -249,7 +265,7 @@ export function keyedNodes(nodes: readonly PageMapNode[]): Map<string, PageMapNo
  * container's area to be STRICTLY greater, so two equal boxes never contain each other and the map is
  * always acyclic. Nodes with no container map to null (top level).
  */
-export function containerIndex(nodes: readonly PageMapNode[]): Map<string, string | null> {
+function containerIndex(nodes: readonly PageMapNode[]): Map<string, string | null> {
   const sized = nodes.filter((n) => isAnchorSized(n.geometry.rect));
   const out = new Map<string, string | null>();
   for (const n of nodes) {
@@ -270,6 +286,21 @@ export function containerIndex(nodes: readonly PageMapNode[]): Map<string, strin
     out.set(n.ref, best ? best.ref : null);
   }
   return out;
+}
+
+/** One snapshot's salient set, pre-indexed. Built ONCE per `pageMap()` read and shared by every
+ *  candidate re-checked against it — {@link containerIndex} is O(n²) in the salient set, so building it
+ *  per candidate would multiply that by the number of selectors under test for no benefit. */
+export interface RelationalSnapshot {
+  /** Nodes carrying an identity key that is UNIQUE in this snapshot, by key. */
+  keyed: Map<string, PageMapNode>;
+  /** Innermost geometric container per node `ref` (null = top level). */
+  containers: Map<string, string | null>;
+}
+
+/** Index one snapshot's salient nodes for fingerprinting. */
+export function indexSnapshot(nodes: readonly PageMapNode[]): RelationalSnapshot {
+  return { keyed: keyedNodes(nodes), containers: containerIndex(nodes) };
 }
 
 // --- Fingerprint ------------------------------------------------------------------------------------
@@ -298,11 +329,8 @@ function relationTo(
 }
 
 /** Every relation from `candidate` to the keyed nodes of one snapshot, nearest first. */
-function allRelations(
-  candidate: PageMapNode,
-  keyed: Map<string, PageMapNode>,
-  containers: Map<string, string | null>,
-): AnchorRelation[] {
+function allRelations(candidate: PageMapNode, snapshot: RelationalSnapshot): AnchorRelation[] {
+  const { keyed, containers } = snapshot;
   const candidateContainer = containers.get(candidate.ref) ?? null;
   const out: AnchorRelation[] = [];
   for (const [key, anchor] of keyed) {
@@ -332,20 +360,13 @@ function allRelations(
   );
 }
 
-/**
- * Snapshot A: the candidate's relations to its `k` nearest identifiable salient neighbours.
- * Returns null when the candidate itself is not in the salient set.
- */
+/** Snapshot A: the candidate's relations to its `k` nearest identifiable salient neighbours. */
 export function fingerprintFor(
   candidate: PageMapNode,
-  nodes: readonly PageMapNode[],
+  snapshot: RelationalSnapshot,
   k: number,
 ): RelationalFingerprint {
-  const relations = allRelations(candidate, keyedNodes(nodes), containerIndex(nodes)).slice(
-    0,
-    Math.max(0, k),
-  );
-  return { relations };
+  return { relations: allRelations(candidate, snapshot).slice(0, Math.max(0, k)) };
 }
 
 /** Does one snapshot-A relation still hold on snapshot B, within the documented tolerances? All four
@@ -383,12 +404,11 @@ export function relationHolds(a: AnchorRelation, b: AnchorRelation): boolean {
 export function compareFingerprint(
   fingerprint: RelationalFingerprint,
   candidate: PageMapNode,
-  nodes: readonly PageMapNode[],
+  snapshot: RelationalSnapshot,
 ): RelationalComparison {
   const anchors = fingerprint.relations.length;
   if (anchors === 0) return { agreement: 0, anchors: 0, preserved: 0 };
-  const keyed = keyedNodes(nodes);
-  const containers = containerIndex(nodes);
+  const { keyed, containers } = snapshot;
   const candidateContainer = containers.get(candidate.ref) ?? null;
   let preserved = 0;
   for (const before of fingerprint.relations) {

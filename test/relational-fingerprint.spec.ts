@@ -8,10 +8,9 @@ import {
   GAP_ABSOLUTE_TOLERANCE_PX,
   MIN_ANCHOR_DIMENSION_PX,
   compareFingerprint,
-  containerIndex,
   fingerprintFor,
   identityKey,
-  keyedNodes,
+  indexSnapshot,
   relationHolds,
 } from '../src/matchers/relational-fingerprint';
 
@@ -100,7 +99,7 @@ test('a DUPLICATED identity key is dropped entirely, never resolved arbitrarily'
     node('m2', 'button', 'Publish', r(0, 40, 60, 24)),
     node('m3', 'button', 'Save', r(0, 80, 60, 24)),
   ];
-  const keyed = keyedNodes(nodes);
+  const keyed = indexSnapshot(nodes).keyed;
   // Picking either "Publish" would be VON Similo's "random element from the overlap" failure.
   expect(keyed.has(key('button', 'Publish'))).toBe(false);
   expect(keyed.get(key('button', 'Save'))?.ref).toBe('m3');
@@ -112,12 +111,12 @@ test('anchors under the 5x5 px floor (incl. display:none 0x0 rects) are dropped'
     node('m2', 'button', 'Hidden', r(0, 0, 0, 0)),
     node('m3', 'button', 'Real', r(0, 40, 60, 24)),
   ];
-  const keyed = keyedNodes(nodes);
+  const keyed = indexSnapshot(nodes).keyed;
   expect([...keyed.keys()]).toEqual([key('button', 'Real')]);
 });
 
 test('the geometric container is the innermost containing box, and equal boxes never nest', () => {
-  const containers = containerIndex(card());
+  const containers = indexSnapshot(card()).containers;
   expect(containers.get('m4')).toBe('m1'); // Save sits inside the card
   expect(containers.get('m5')).toBe('m1');
   expect(containers.get('m1')).toBeNull(); // the card itself is top level here
@@ -129,14 +128,14 @@ test('the geometric container is the innermost containing box, and equal boxes n
     node('m1', 'region', 'Wrapper', r(0, 0, 100, 100)),
     node('m2', 'region', 'Inner', r(0, 0, 100, 100)),
   ];
-  const twinContainers = containerIndex(twins);
+  const twinContainers = indexSnapshot(twins).containers;
   expect(twinContainers.get('m1')).toBeNull();
   expect(twinContainers.get('m2')).toBeNull();
 });
 
 test('the fingerprint takes the K nearest anchors and never includes the candidate itself', () => {
   const nodes = card();
-  const fp = fingerprintFor(save(nodes), nodes, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(nodes), indexSnapshot(nodes), DEFAULT_ANCHOR_COUNT);
   const keys = fp.relations.map((rel) => rel.anchorKey);
   expect(keys).not.toContain(key('button', 'Save'));
   // Only 5 other nodes exist, so K=6 is not binding here; nearest-first ordering is.
@@ -147,12 +146,12 @@ test('the fingerprint takes the K nearest anchors and never includes the candida
     key('heading', 'Account'), // 50px above
     key('link', 'Help'), // far outside the card
   ]);
-  expect(fingerprintFor(save(nodes), nodes, 2).relations).toHaveLength(2);
+  expect(fingerprintFor(save(nodes), indexSnapshot(nodes), 2).relations).toHaveLength(2);
 });
 
 test('the tuple reads the way the layout looks: direction bucket, gap, per-axis band, container', () => {
   const nodes = card();
-  const fp = fingerprintFor(save(nodes), nodes, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(nodes), indexSnapshot(nodes), DEFAULT_ANCHOR_COUNT);
   const byKey = new Map(fp.relations.map((rel) => [rel.anchorKey, rel]));
 
   const cancel = byKey.get(key('button', 'Cancel'))!;
@@ -180,9 +179,9 @@ test('the tuple reads the way the layout looks: direction bucket, gap, per-axis 
 
 test('a PURE TRANSLATION (what a page scroll is) preserves every single relation', () => {
   const before = card();
-  const fp = fingerprintFor(save(before), before, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(before), indexSnapshot(before), DEFAULT_ANCHOR_COUNT);
   const after = translate(before, 0, -600);
-  const cmp = compareFingerprint(fp, save(after), after);
+  const cmp = compareFingerprint(fp, save(after), indexSnapshot(after));
   expect(cmp.anchors).toBe(5);
   expect(cmp.preserved).toBe(5);
   expect(cmp.agreement).toBe(1);
@@ -190,9 +189,9 @@ test('a PURE TRANSLATION (what a page scroll is) preserves every single relation
 
 test('a VANISHED anchor counts as broken, not as unmeasured — the denominator is snapshot A', () => {
   const before = card();
-  const fp = fingerprintFor(save(before), before, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(before), indexSnapshot(before), DEFAULT_ANCHOR_COUNT);
   const after = card().filter((n) => n.ref !== 'm5' && n.ref !== 'm3'); // Cancel + Email removed
-  const cmp = compareFingerprint(fp, save(after), after);
+  const cmp = compareFingerprint(fp, save(after), indexSnapshot(after));
   expect(cmp.anchors).toBe(5);
   expect(cmp.preserved).toBe(3);
   expect(cmp.agreement).toBeCloseTo(3 / 5, 10);
@@ -200,18 +199,18 @@ test('a VANISHED anchor counts as broken, not as unmeasured — the denominator 
 
 test('an anchor whose key stopped being UNIQUE is not silently matched to a look-alike', () => {
   const before = card();
-  const fp = fingerprintFor(save(before), before, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(before), indexSnapshot(before), DEFAULT_ANCHOR_COUNT);
   // A second "Cancel" appears somewhere else: the key is now ambiguous, so that relation is dropped
   // rather than scored against whichever node happened to be indexed first.
   const after = [...card(), node('m7', 'button', 'Cancel', r(800, 600, 60, 24))];
-  const cmp = compareFingerprint(fp, save(after), after);
+  const cmp = compareFingerprint(fp, save(after), indexSnapshot(after));
   expect(cmp.preserved).toBe(4);
   expect(cmp.agreement).toBeCloseTo(4 / 5, 10);
 });
 
 test('a candidate torn out of its context scores near zero even with the SAME absolute position', () => {
   const before = card();
-  const fp = fingerprintFor(save(before), before, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(save(before), indexSnapshot(before), DEFAULT_ANCHOR_COUNT);
   // Same rect for Save (centerShift would read 0 — a perfect "retained"), entirely new neighbourhood.
   const after = [
     node('m1', 'region', 'Billing', r(100, 100, 300, 200)),
@@ -220,7 +219,7 @@ test('a candidate torn out of its context scores near zero even with the SAME ab
     node('m4', 'button', 'Save', r(110, 180, 60, 24)),
     node('m5', 'button', 'Pay', r(190, 180, 60, 24)),
   ];
-  const cmp = compareFingerprint(fp, save(after), after);
+  const cmp = compareFingerprint(fp, save(after), indexSnapshot(after));
   expect(cmp.agreement).toBe(0); // every snapshot-A anchor key is gone
 });
 
@@ -266,7 +265,7 @@ test('near-concentric centres are bucketed `coincident`, not given a spurious di
     node('m2', 'button', 'Save', r(101, 101, 198, 98)), // same centre, 1px inset
     node('m3', 'button', 'Cancel', r(500, 100, 60, 24)),
   ];
-  const fp = fingerprintFor(nodes[1]!, nodes, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(nodes[1]!, indexSnapshot(nodes), DEFAULT_ANCHOR_COUNT);
   const wrapper = fp.relations.find((rel) => rel.anchorKey === key('region', 'Wrapper'))!;
   expect(wrapper.direction).toBe('coincident');
 
@@ -290,8 +289,8 @@ test('a candidate with no identifiable neighbour yields an empty fingerprint, no
     node('m1', 'button', 'Save', r(0, 0, 60, 24)),
     node('m2', null, null, r(0, 40, 60, 24)), // no role/name → unusable as an anchor
   ];
-  const fp = fingerprintFor(nodes[0]!, nodes, DEFAULT_ANCHOR_COUNT);
+  const fp = fingerprintFor(nodes[0]!, indexSnapshot(nodes), DEFAULT_ANCHOR_COUNT);
   expect(fp.relations).toHaveLength(0);
-  const cmp = compareFingerprint(fp, nodes[0]!, nodes);
+  const cmp = compareFingerprint(fp, nodes[0]!, indexSnapshot(nodes));
   expect(cmp).toEqual({ agreement: 0, anchors: 0, preserved: 0 });
 });

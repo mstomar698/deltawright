@@ -7,6 +7,18 @@ import {
   type VerifySuggestionsOptions,
 } from './verify-suggest';
 import type { AssertionSuggestion, SelectorTier } from '../host/suggest';
+import { pageMap, type PageMap, type PageMapNode } from '../host/page-map';
+import {
+  DEFAULT_ANCHOR_COUNT,
+  RELATIONAL_BROKEN_MAX,
+  RELATIONAL_PRESERVED_MIN,
+  compareFingerprint,
+  fingerprintFor,
+  hasMeasurableBox,
+  indexSnapshot,
+  type RelationalFingerprint,
+  type RelationalStatus,
+} from './relational-fingerprint';
 import type { Delta, DeltaNode, Rect } from '../host/types';
 
 // R3 (Phase 3) — a DURABILITY recommender layered on `verifySuggestions`. verifySuggestions answers
@@ -32,7 +44,10 @@ export interface ScoredSelectorSuggestion extends VerifiedSelectorSuggestion {
   /** Estimate band from `durability` (see {@link SelectorGrade}) — an estimate, not a guarantee. */
   grade: SelectorGrade;
   /** Brittleness/context flags: unstable-id · text-volatile · heuristic-role-unverified · tag-only ·
-   *  ambiguous · wrong-element · no-match · geometry-relative · occluded · offscreen · not-actionable. */
+   *  ambiguous · wrong-element · no-match · geometry-relative · occluded · offscreen · not-actionable.
+   *  {@link measureRetention} appends its own: retained · moved-after-rerender · lost-after-rerender ·
+   *  ambiguous-after-rerender · position-unmeasured · unresolvable · relational-context-preserved ·
+   *  relational-context-broken. */
   flags: string[];
   /** True when this candidate was SYNTHESIZED as a geometry-relative fallback (not from suggest()). */
   synthesized?: boolean;
@@ -364,6 +379,19 @@ export async function scoreSelectors(
 // jumped beyond `positionTolerance` is surfaced as `moved` (review it — possibly a different instance),
 // never silently counted as retained. The measurement is a real signal for the OBSERVED transition —
 // still NOT a guarantee of stability across future releases; the result says so.
+//
+// v1.2 adds a SECOND, differently-fragile position witness alongside `centerShift`: a RELATIONAL
+// fingerprint (`relationalAgreement`). `centerShift` is one ABSOLUTE point, which its own doc comment
+// already admits a page scroll inflates; `relationalAgreement` asks instead how much of the candidate's
+// position RELATIVE TO ITS NEAREST SALIENT NEIGHBOURS survived. The two are reported side by side and
+// neither replaces the other — a scroll or a responsive breakpoint moves the point while preserving the
+// relations, and a selector re-resolving onto a look-alike elsewhere can do the exact reverse. See
+// `relational-fingerprint.ts` for the algorithm, its citations and its own caveats.
+//
+// HONESTY (DW-02/03): the relational signal is EVIDENCE, never a verdict. It never changes `retention`,
+// never overrides Playwright's uniqueness/identity result, and folds into `measuredDurability` ADDITIVELY
+// and only in the `moved` band — where it can partially undo the `moved` penalty but never lift a
+// candidate above the snapshot-A estimate it started from.
 
 export interface MeasureRetentionOptions {
   /** A re-render to run BETWEEN the two snapshots (a data refresh, an SPA in-place re-render, a reload).
@@ -375,6 +403,20 @@ export interface MeasureRetentionOptions {
   positionTolerance?: number;
   /** Bound on concurrent re-resolution round-trips (default 12). */
   concurrency?: number;
+  /**
+   * Also measure the RELATIONAL fingerprint (`relationalAgreement`) — position relative to the
+   * candidate's nearest salient neighbours, the invariant `centerShift` is not. Default true.
+   *
+   * Cost when on: two extra `pageMap()` reads (one per snapshot) plus one attribute read per
+   * re-resolved candidate. `pageMap()` is a single offline in-page pass — it is NOT reconciled and
+   * runs no Playwright trial actions — but it does stamp `data-dw-map-ref` on the salient nodes it
+   * scans (clearing its own prior stamps each time, and never touching the delta's `data-dw-ref`).
+   * Set false for a byte-identical pre-v1.2 measurement on a page that must not be written to.
+   */
+  relational?: boolean;
+  /** How many nearest salient neighbours anchor the fingerprint (default 6). See
+   *  {@link DEFAULT_ANCHOR_COUNT} for why that number is uncalibrated. */
+  relationalAnchors?: number;
 }
 
 /** Retention MEASURED across the observed re-render (snapshot A → B). */
@@ -401,6 +443,29 @@ export interface SelectorRetention {
    *  snapshots, or a `root` that is an offset child Frame, inflates the shift (mislabeling a retained
    *  element `moved`, never the reverse). Widen `positionTolerance` or keep the viewport stable. */
   centerShift: number | null;
+  /**
+   * Fraction (0..1) of the candidate's snapshot-A anchor relations that still hold on snapshot B —
+   * the RELATIONAL counterpart to `centerShift`, null unless {@link relationalStatus} is `measured`.
+   *
+   * Read the two TOGETHER; neither replaces the other. A large `centerShift` with an agreement near 1
+   * says the candidate travelled but its neighbourhood travelled with it (a page scroll, a responsive
+   * breakpoint, a row inserted above it) — the exact case `centerShift` alone over-reports as `moved`.
+   * A small `centerShift` with a low agreement says the opposite and is the more dangerous one: the
+   * selector may have re-resolved onto a different element that merely sits in the same place.
+   *
+   * NOTE, in the same spirit as `centerShift`'s own caveat: anchor identity across the two snapshots is
+   * INFERRED from DW's lightweight (role, name) derivation and used only where that key is unique on
+   * both snapshots, so anchors are dropped rather than mismatched; only `pageMap()`'s salient set
+   * (interactive + landmark/heading, `maxNodes`-capped) is visible; and the signal is invariant to
+   * whole-block translation, NOT to reflow inside the candidate's own neighbourhood. It is evidence,
+   * never a verdict — it never changes `retention`.
+   */
+  relationalAgreement: number | null;
+  /** How many snapshot-A anchor relations `relationalAgreement` was computed over (0 when none). The
+   *  denominator matters: an agreement of 1 over a single anchor is far weaker evidence than 1 over 6. */
+  relationalAnchorsCompared: number;
+  /** Why `relationalAgreement` is (or is not) available — a closed set, never prose. */
+  relationalStatus: RelationalStatus;
   /** The single-page ESTIMATE from scoreSelectors (snapshot A). */
   estimatedDurability: number;
   /** Durability re-scored with the measured retention folded in. */
@@ -429,6 +494,32 @@ function gradeFor(durability: number): SelectorGrade {
 const DEFAULT_POSITION_TOLERANCE = 250;
 
 /**
+ * Narrow a `Page | Frame` root to a `Page`, or null for a child Frame.
+ *
+ * `pageMap()` takes a `Page` and scans the MAIN document only, while a child Frame's rects are in that
+ * frame's own coordinate space — so anchoring a frame-hosted candidate against the top document's
+ * salient nodes would compare two different coordinate systems and manufacture relations that were
+ * never there. Rather than silently produce that, the relational pass reports `frame-root` and stands
+ * down; `centerShift` (which carries its own frame caveat) still measures. Discriminated on `context()`,
+ * which `Page` has and `Frame` does not.
+ */
+function asPage(root: Page | Frame): Page | null {
+  return typeof (root as Page).context === 'function' ? (root as Page) : null;
+}
+
+/** Read one snapshot's salient map, degrading to null rather than failing the whole measurement. A
+ *  relational read is ADDITIONAL evidence; it must never be able to break the retention check that
+ *  worked before v1.2. */
+async function readMapOrNull(page: Page): Promise<PageMap | null> {
+  try {
+    const map = await pageMap(page);
+    return map.partial?.injectionBlocked ? null : map;
+  } catch {
+    return null; // a detached page, or an evaluate rejected mid-scan
+  }
+}
+
+/**
  * Two-snapshot MEASURED cross-render check for the selectors {@link scoreSelectors} verified. Re-resolves
  * each snapshot-A `verified` selector on a SECOND snapshot — after the `reRender` you pass, or the
  * current DOM — and reports whether it still resolves UNIQUELY to a control in ~the same place
@@ -453,8 +544,47 @@ export async function measureRetention(
   // Snapshot this list BEFORE the re-render — `scored`/`delta` are in-memory, unaffected by the DOM.
   const targets = scored.selectors.filter((s) => s.verified);
 
+  // --- Relational fingerprint (v1.2), snapshot A -----------------------------------------------------
+  // Read the salient map BEFORE the re-render, while the delta's `data-dw-ref` markers still tie each
+  // candidate to a scanned node. Both this map's rects and the delta's come from the SAME injected
+  // getBoundingClientRect() read, so the fingerprint is built in one coordinate space; it deliberately
+  // uses the map's rect rather than the delta's for the candidate, so candidate and anchors are read at
+  // the same instant.
+  const relationalPage = opts.relational === false ? null : asPage(root);
+  const anchorCount = opts.relationalAnchors ?? DEFAULT_ANCHOR_COUNT;
+  const disabledStatus: RelationalStatus =
+    opts.relational === false ? 'disabled' : asPage(root) ? 'measured' : 'frame-root';
+  const mapA = relationalPage ? await readMapOrNull(relationalPage) : null;
+  const snapshotA = mapA ? indexSnapshot(mapA.nodes) : null;
+  // A `null` entry means "found in snapshot A's salient set, but with no usable box" — kept distinct
+  // from an absent entry ("not in the salient set at all") so the two report different, honest statuses.
+  const fingerprints = new Map<string, RelationalFingerprint | null>();
+  if (mapA && snapshotA) {
+    const byDeltaRef = new Map<string, PageMapNode>();
+    for (const n of mapA.nodes) if (n.deltaRef) byDeltaRef.set(n.deltaRef, n);
+    for (const c of targets) {
+      if (fingerprints.has(c.ref)) continue;
+      const node = byDeltaRef.get(c.ref);
+      if (!node) continue;
+      fingerprints.set(
+        c.ref,
+        hasMeasurableBox(node) ? fingerprintFor(node, snapshotA, anchorCount) : null,
+      );
+    }
+  }
+
   // Snapshot B: run the caller's re-render (if any). A throw here is a real failure — propagate it.
   if (opts.reRender) await opts.reRender();
+
+  // …then re-read the salient map, so every candidate below is scored against the SAME snapshot-B
+  // neighbourhood (and against fresh `data-dw-map-ref` stamps, which is how each candidate finds itself
+  // in it).
+  const mapB = relationalPage && mapA ? await readMapOrNull(relationalPage) : null;
+  const snapshotB = mapB ? indexSnapshot(mapB.nodes) : null;
+  const mapBByRef = new Map<string, PageMapNode>(mapB ? mapB.nodes.map((n) => [n.ref, n]) : []);
+  // A read that was asked for and did not land is reported as blocked, not silently as `disabled`.
+  const readStatus: RelationalStatus =
+    disabledStatus !== 'measured' ? disabledStatus : mapA && mapB ? 'measured' : 'page-map-blocked';
 
   const measured = await mapWithConcurrency(
     targets,
@@ -474,6 +604,7 @@ export async function measureRetention(
       let matchesAfter = 0;
       let retention: RetentionVerdict;
       let centerShift: number | null = null;
+      let mapRefAfter: string | null = null;
       if (!loc) {
         // The candidate could not be rebuilt (a synthesized fallback with no rawSelector, or a tier with
         // no locator). Unique-match unknown — report honest `inconclusive`, never a silent `lost`.
@@ -483,7 +614,13 @@ export async function measureRetention(
         let box: { x: number; y: number; width: number; height: number } | null = null;
         try {
           matchesAfter = await loc.count();
-          if (matchesAfter === 1) box = await loc.boundingBox();
+          if (matchesAfter === 1) {
+            box = await loc.boundingBox();
+            // How the re-resolved element finds ITSELF in snapshot B's salient map: `pageMap()` stamped
+            // `data-dw-map-ref` moments ago. Absent means the element is outside the salient set (or the
+            // map was never read) — reported as `candidate-unmapped`, never guessed at from the box.
+            if (snapshotB) mapRefAfter = await loc.getAttribute('data-dw-map-ref');
+          }
         } catch {
           matchesAfter = 0; // detached page/frame or an invalid rebuilt selector
         }
@@ -512,15 +649,57 @@ export async function measureRetention(
         }
       }
 
+      // Snapshot B: re-score the snapshot-A fingerprint against the candidate's CURRENT neighbourhood.
+      const fingerprint = fingerprints.get(c.ref);
+      const afterNode = mapRefAfter ? mapBByRef.get(mapRefAfter) : undefined;
+      let relationalAgreement: number | null = null;
+      let relationalAnchorsCompared = 0;
+      let relationalStatus: RelationalStatus = readStatus;
+      if (relationalStatus === 'measured') {
+        if (matchesAfter !== 1) {
+          // Zero or many matches — there is no single element on snapshot B whose neighbourhood could
+          // even be asked about. `retention` already says so; this must not read as a low score.
+          relationalStatus = 'not-re-resolved';
+        } else if (!fingerprints.has(c.ref) || !afterNode || !snapshotB) {
+          relationalStatus = 'candidate-unmapped';
+        } else if (!fingerprint || !hasMeasurableBox(afterNode)) {
+          // Hidden / zero-layout on one of the two snapshots. Refusing to score here is the same call
+          // `centerShift` makes when `boundingBox()` returns null — an unmeasurable position must not
+          // masquerade as a measured 0.
+          relationalStatus = 'candidate-unmeasurable';
+        } else if (fingerprint.relations.length === 0) {
+          relationalStatus = 'no-anchors';
+        } else {
+          const cmp = compareFingerprint(fingerprint, afterNode, snapshotB!);
+          relationalAgreement = cmp.agreement;
+          relationalAnchorsCompared = cmp.anchors;
+          if (relationalAgreement >= RELATIONAL_PRESERVED_MIN) {
+            flags.push('relational-context-preserved');
+          } else if (relationalAgreement <= RELATIONAL_BROKEN_MAX) {
+            flags.push('relational-context-broken');
+          }
+        }
+      }
+
       const est = c.durability;
       let measuredDurability: number;
       switch (retention) {
         case 'retained':
           measuredDurability = Math.min(100, est + 10); // a modest confirmation nudge, never inflated
           break;
-        case 'moved':
-          measuredDurability = Math.round(est * 0.7);
+        case 'moved': {
+          // ADDITIVE ONLY, and only here. `moved` means "unique, but the absolute centre jumped" — the
+          // one verdict a relational reading is genuinely able to inform, because a preserved
+          // neighbourhood is real evidence the jump was the page moving, not a different element. The
+          // bonus can therefore recover part of the 30% `moved` penalty and NOTHING more: it is capped
+          // at the snapshot-A estimate, so relational agreement can never manufacture durability the
+          // single-page estimate never granted, and it never touches `retention` itself (DW-02/03).
+          const penalised = Math.round(est * 0.7);
+          const bonus =
+            relationalAgreement === null ? 0 : Math.round(est * 0.3 * relationalAgreement);
+          measuredDurability = Math.min(est, penalised + bonus);
           break;
+        }
         case 'ambiguous':
           measuredDurability = Math.round(est * 0.3);
           break;
@@ -540,6 +719,9 @@ export async function measureRetention(
         retention,
         matchesAfter,
         centerShift,
+        relationalAgreement,
+        relationalAnchorsCompared,
+        relationalStatus,
         estimatedDurability: est,
         measuredDurability,
         grade: gradeFor(measuredDurability),
@@ -572,6 +754,27 @@ export async function measureRetention(
     'measureRetention: the `data-dw-ref` identity marker does not survive a re-render, so object identity is INFERRED from a unique semantic/layout match + geometry proximity (not proven) — a unique match that moved beyond `positionTolerance` is reported `moved` for review, never silently counted as retained.',
     "measureRetention: `centerShift` compares the observer's snapshot-A viewport rect against Playwright's boundingBox() (main-frame-viewport coordinates), so it assumes a stable viewport — a page scroll between snapshots, or a `root` that is an offset child Frame, can inflate the shift and mislabel a retained element `moved` (never the reverse). Widen `positionTolerance` or keep the viewport stable.",
   ];
+  if (readStatus === 'measured') {
+    warnings.push(
+      "measureRetention: `relationalAgreement` is a SECOND position witness reported ALONGSIDE `centerShift`, not a replacement — it measures how much of the candidate's position RELATIVE to its nearest salient neighbours survived, so a scroll or a responsive breakpoint that moves the whole block preserves it while `centerShift` inflates. It is EVIDENCE, never a verdict: it never changes `retention`, and folds into `measuredDurability` only additively, only in the `moved` band, and never above the snapshot-A estimate.",
+    );
+    warnings.push(
+      "measureRetention: relational anchor identity is INFERRED from DW's lightweight (role, name) derivation and used ONLY where that key is unique on both snapshots — anchors are dropped, never mismatched, so a page of look-alike rows yields few anchors (see `relationalAnchorsCompared`) rather than a confident score. Only `pageMap()`'s salient set is visible (interactive + landmark/heading, `maxNodes`-capped), and the signal is invariant to whole-block translation, NOT to reflow within the candidate's own neighbourhood.",
+    );
+    if (mapA?.stats.capped || mapB?.stats.capped) {
+      warnings.push(
+        'measureRetention: the salient page map hit `maxNodes` on at least one snapshot, so an anchor may be absent for capping reasons rather than because the page changed — read `relationalAgreement` as a floor on those candidates.',
+      );
+    }
+  } else if (readStatus === 'frame-root') {
+    warnings.push(
+      'measureRetention: `root` is a child Frame, so the relational fingerprint stood down (`relationalStatus: "frame-root"`) — `pageMap()` scans the main document, whose coordinate space is not the frame\'s. Only `centerShift` measured position here, with the frame caveat it already carries.',
+    );
+  } else if (readStatus === 'page-map-blocked') {
+    warnings.push(
+      'measureRetention: the salient page map could not be read on at least one snapshot (observer injection blocked, e.g. a strict CSP, or the page detached), so no relational fingerprint was measured (`relationalStatus: "page-map-blocked"`) — `centerShift` stands alone.',
+    );
+  }
   if (inconclusiveCount > 0) {
     warnings.push(
       `measureRetention: ${inconclusiveCount} selector(s) resolved uniquely but could not be position-measured (hidden/detached/unrebuildable) → \`inconclusive\`, excluded from retentionRate and bestRetained rather than counted as retained.`,
