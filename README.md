@@ -188,10 +188,24 @@ const { selectors, retentionRate, bestRetained } = await measureRetention(page, 
   reRender: () => page.click('#refresh'),
 });
 // each: { retention: 'retained'|'moved'|'ambiguous'|'lost', matchesAfter, centerShift,
+//         relationalAgreement, relationalAnchorsCompared, relationalStatus,
 //         estimatedDurability, measuredDurability, grade, flags }
 ```
 
 `retained` = still resolves uniquely **and** to a control in ~the same place; `moved` = unique but jumped past `positionTolerance` (default 250px — possibly a different instance, flagged for review); `ambiguous` = lost uniqueness; `lost` = gone. **Honesty:** this is a measurement of the **one re-render you observed**, not a cross-release guarantee — and because the `data-dw-ref` marker doesn't survive a re-render, object identity is *inferred* (a unique semantic/layout match + geometry proximity), not proven. A big jump is surfaced as `moved`, never silently counted as retained.
+
+##### Two position witnesses: `centerShift` **and** `relationalAgreement`
+
+`centerShift` tracks one **absolute** point, so a page scroll, a responsive breakpoint or a row inserted above your element all move it hundreds of px while the element hasn't budged relative to anything around it. `relationalAgreement` (0..1) answers the other question: of the candidate's **6 nearest identifiable neighbours** on snapshot A — direction, gap, row/column alignment, shared geometric container — how many relations still hold on snapshot B? Read them together:
+
+| | `centerShift` small | `centerShift` large |
+|---|---|---|
+| **agreement ≈ 1** | it simply didn't move | the page moved, the element probably didn't — a scroll or a whole-block re-layout |
+| **agreement low** | ⚠️ same spot, different neighbourhood — the selector may have re-resolved onto a **look-alike** | it moved *and* left its context |
+
+The bottom-left cell is the one position alone cannot see — and seeing it is all this does. The verdict stays `retained`, and `retentionRate`/`bestRetained` still count it, so the candidate is named in `warnings` instead. Acting on it is your call, deliberately (DW-02/03). `relationalAnchorsCompared` is the denominator (1-of-1 is not the evidence 1-of-6 is), and `relationalStatus` is a closed union saying exactly why a reading is absent (`frame-root`, `page-map-blocked`, `candidate-unmapped`, `candidate-unmeasurable`, `not-re-resolved`, `no-anchors`, `disabled`). Opt out with `relational: false`; tune K with `relationalAnchors`.
+
+**Honesty:** it is **evidence, never a verdict.** It never changes `retention`, never touches Playwright's uniqueness result, and folds into `measuredDurability` only *additively* and only in the `moved` band — capped at the snapshot-A estimate, so it can never mint durability the estimate never granted. Its limits, stated like `centerShift`'s: anchor identity is *inferred* from DW's lightweight (role, name) and used only where that key is unique on **both** snapshots (anchors are dropped, never mismatched); only `pageMap()`'s salient set is visible; and it is invariant to whole-block translation, **not** to reflow inside the candidate's own neighbourhood.
 
 ### Candidate assertions from a transition: `suggestAssertions`
 

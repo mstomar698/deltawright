@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deltawright relational-retention fixture</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    button, a, input { font-size: 14px; }
+    #app { display: flex; align-items: flex-start; }
+    /* A wide navigation rail. Wide on purpose: collapsing it translates the whole content column by
+       more than measureRetention's default 250px positionTolerance, which is what makes `centerShift`
+       report `moved` for a page that merely re-laid-out. */
+    #rail { flex: 0 0 420px; width: 420px; box-sizing: border-box; padding: 12px; background: #eef; }
+    #rail a { display: block; margin: 8px 0; }
+    main { flex: 1; box-sizing: border-box; padding: 24px; }
+    .card { width: 360px; box-sizing: border-box; margin: 0 auto 24px; padding: 12px; border: 1px solid #ccc; }
+    .card h2 { margin: 0 0 12px; font-size: 16px; }
+    .card input { display: block; width: 320px; margin: 0 0 12px; }
+    .card button { margin-right: 12px; }
+    #banner { width: 360px; height: 320px; margin: 0 auto 24px; background: #ffe; }
+    /* The responsive breakpoint. Below 900px the rail collapses and the content column slides left —
+       every element inside a card keeps its exact position RELATIVE to its neighbours. */
+    @media (max-width: 900px) { #rail { display: none; } }
+  </style>
+</head>
+<body>
+  <button id="go">Build</button>
+  <button id="insert-above">Insert row above</button>
+  <button id="swap-panel">Swap panel</button>
+  <button id="remount">Remount card</button>
+  <div id="app"></div>
+  <!-- Tall enough that the page can actually scroll 600px. Not salient, so it anchors nothing. -->
+  <div style="height: 1600px"></div>
+  <script>
+    // v1.2 relational-fingerprint harness. Clicking #go builds a rail + two cards. The target under
+    // test is the "Save changes" button in the Account card; it verifies uniquely on snapshot A, and
+    // its six nearest identifiable salient neighbours all live inside (or immediately below) that card.
+    //
+    // Three snapshot-B transitions, each isolating one thing `centerShift` alone gets wrong:
+    //   • a page SCROLL, or a responsive breakpoint that collapses #rail — the target's absolute centre
+    //     moves hundreds of px while every relation to its neighbours is preserved exactly.
+    //   • #insert-above — a tall sibling row inserted BEFORE the target's card pushes the card (and all
+    //     of the target's anchors) down together: same reflow signature, same preserved relations.
+    //   • #swap-panel — the FALSE HEAL. The Account card is replaced by a Billing card of identical
+    //     geometry that also holds a "Save changes" button, so the selector re-resolves uniquely at
+    //     essentially the same coordinates. `centerShift` reads ~0 and calls it `retained`; the
+    //     neighbourhood is a different neighbourhood, and the relational signal is what says so.
+    var CARD_ACCOUNT =
+      '<section class="card" id="account" aria-label="Account">' +
+      '<h2>Account</h2>' +
+      '<input aria-label="Email" />' +
+      '<input aria-label="Display name" />' +
+      '<button class="save">Save changes</button>' +
+      '<button class="discard">Discard</button>' +
+      '</section>';
+
+    // Byte-for-byte the same box structure as CARD_ACCOUNT — same tag, same children, same sizes — so
+    // the swapped-in "Save changes" lands at the same coordinates and centerShift cannot tell them
+    // apart. Only the NAMES differ, which is exactly the information the relational fingerprint reads.
+    var CARD_BILLING =
+      '<section class="card" id="billing" aria-label="Billing">' +
+      '<h2>Billing</h2>' +
+      '<input aria-label="Card number" />' +
+      '<input aria-label="Billing email" />' +
+      '<button class="save">Save changes</button>' +
+      '<button class="cancel-payment">Cancel payment</button>' +
+      '</section>';
+
+    var CARD_DANGER =
+      '<section class="card" id="danger" aria-label="Danger zone">' +
+      '<h2>Danger zone</h2>' +
+      '<button class="delete">Delete account</button>' +
+      '</section>';
+
+    document.getElementById('go').addEventListener('click', function () {
+      document.getElementById('app').innerHTML =
+        '<nav id="rail" role="navigation" aria-label="Sections">' +
+        '<a href="#overview">Overview</a>' +
+        '<a href="#reports">Reports</a>' +
+        '<a href="#settings">Settings</a>' +
+        '</nav>' +
+        '<main>' + CARD_ACCOUNT + CARD_DANGER + '</main>';
+    });
+
+    document.getElementById('insert-above').addEventListener('click', function () {
+      var main = document.querySelector('main');
+      var banner = document.createElement('div');
+      banner.id = 'banner';
+      main.insertBefore(banner, main.firstChild);
+    });
+
+    // A framework re-mounting a subtree (a tab panel, a modal, a virtualised row) — the Account card is
+    // detached and put straight back, unchanged, in the window while Deltawright's snapshot-B page scan
+    // runs. The final DOM is IDENTICAL to snapshot A, so any relational answer other than "preserved"
+    // or "could not measure" is a fabrication. It is a trap for `data-dw-map-ref`: the injected scan
+    // clears its old stamps with a document query, which cannot reach a detached subtree, so the card
+    // comes back still wearing a snapshot-A ref that scan B has since given to some other element.
+    document.getElementById('remount').addEventListener('click', function () {
+      var main = document.querySelector('main');
+      var account = document.getElementById('account');
+      var next = account.nextSibling;
+      main.removeChild(account);
+      var mo = new MutationObserver(function () {
+        if (document.querySelector('[data-dw-map-ref]')) {
+          mo.disconnect();
+          main.insertBefore(account, next);
+        }
+      });
+      mo.observe(document.documentElement, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['data-dw-map-ref'],
+      });
+    });
+
+    document.getElementById('swap-panel').addEventListener('click', function () {
+      var account = document.getElementById('account');
+      if (account) account.outerHTML = CARD_BILLING;
+    });
+  </script>
+</body>
+</html>
