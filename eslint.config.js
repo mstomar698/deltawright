@@ -14,6 +14,12 @@ export default tseslint.config(
       'bench/corpus/**',
       '.claude/worktrees/',
       'examples/', // standalone runnable examples with their own deps/tsconfig — not part of the lib build
+      'docs/research/', // Research working trees. Only the deep-read BRIEFS (.md) are committed; the
+      // rest of the tree stays local and holds fetched papers plus vendored upstream source (X-PERT,
+      // ReDeCheck, Playwright internals) read as evidence and quoted in those briefs. Linting
+      // third-party code we deliberately did not author says nothing about this library, and it
+      // otherwise fails `npm run lint` for anyone with that tree checked out. Prettier already ignores
+      // `docs` wholesale.
     ],
   },
   js.configs.recommended,
